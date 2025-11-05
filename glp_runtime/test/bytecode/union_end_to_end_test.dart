@@ -27,12 +27,12 @@ void main() {
       SuspendEnd(),
     ]);
 
-    final cx = RunnerContext(rt: rt, goalId: 1000, kappa: 7);
+    final cx = RunnerContext(rt: rt, goalId: 1000, kappa: p.labels['C1']!);
     BytecodeRunner(p).run(cx);
 
     final acts1 = rt.roq.processOnBind(r1);
     expect(acts1.map((a) => a.id).toList(), [1000]);
-    expect(acts1.map((a) => a.pc).toSet(), {7});
+    expect(acts1.map((a) => a.pc).toSet(), {p.labels['C1']!});
 
     final acts2 = rt.roq.processOnBind(r2);
     expect(acts2, isEmpty, reason: 'hanger single-reactivation prevents duplicate');
@@ -54,10 +54,10 @@ void main() {
       Proceed(),
     ]);
 
-    final cx = RunnerContext(rt: rt, goalId: 2000, kappa: 9);
+    final cx = RunnerContext(rt: rt, goalId: 2000, kappa: p.labels['C1']!);
 
-    final h1 = Hanger(goalId: 3000, kappa: 9, armed: true);
-    final h2 = Hanger(goalId: 4000, kappa: 9, armed: true);
+    final h1 = Hanger(goalId: 3000, kappa: p.labels['C1']!, armed: true);
+    final h2 = Hanger(goalId: 4000, kappa: p.labels['C1']!, armed: true);
     rt.roq.enqueue(readerId, SuspensionNote(readerId, h1));
     rt.roq.enqueue(readerId, SuspensionNote(readerId, h2));
 
@@ -71,6 +71,6 @@ void main() {
       }
     }
     expect(acts.map((x) => x.id).toList(), [3000, 4000]);
-    expect(acts.map((x) => x.pc).toSet(), {9});
+    expect(acts.map((x) => x.pc).toSet(), {p.labels['C1']!});
   });
 }

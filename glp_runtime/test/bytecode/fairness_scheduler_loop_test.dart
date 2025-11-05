@@ -16,8 +16,8 @@ void main() {
     final runner = BytecodeRunner(p);
     final sched = Scheduler(rt: rt, runner: runner);
 
-    rt.gq.enqueue(GoalRef(1, 123));
-    rt.gq.enqueue(GoalRef(2, 456));
+    rt.gq.enqueue(GoalRef(1, p.labels['LOOP']!));
+    rt.gq.enqueue(GoalRef(2, p.labels['LOOP']!));
 
     final ran1 = sched.drain(maxCycles: 2);
     expect(ran1, [1, 2], reason: 'each goal runs until its first yield');
