@@ -619,6 +619,106 @@ class BytecodeRunner {
         pc++; continue;
       }
 
+      if (op is UnifyWriter) {
+        // Match/add writer variable at current S position
+        if (cx.mode == UnifyMode.write) {
+          // WRITE mode: Add writer to structure being built
+          if (cx.currentStructure is _TentativeStruct) {
+            final struct = cx.currentStructure as _TentativeStruct;
+            final value = cx.clauseVars[op.varIndex];
+            if (value is int) {
+              // It's a writer ID
+              struct.args[cx.S] = WriterTerm(value);
+            } else if (value == null) {
+              // Create fresh writer/reader pair
+              final (freshWriterId, freshReaderId) = cx.rt.heap.allocateFreshPair();
+              cx.rt.heap.addWriter(WriterCell(freshWriterId, freshReaderId));
+              cx.rt.heap.addReader(ReaderCell(freshReaderId));
+              cx.clauseVars[op.varIndex] = freshWriterId;
+              struct.args[cx.S] = WriterTerm(freshWriterId);
+            } else {
+              struct.args[cx.S] = _ClauseVar(op.varIndex, isWriter: true);
+            }
+            cx.S++;
+          }
+        } else {
+          // READ mode: Unify with writer at S position
+          // Similar to UnifyConstant logic but for writers
+          if (cx.currentStructure is StructTerm) {
+            final struct = cx.currentStructure as StructTerm;
+            if (cx.S < struct.args.length) {
+              final value = struct.args[cx.S];
+              // Store the writer in clause var
+              if (value is WriterTerm) {
+                cx.clauseVars[op.varIndex] = value.writerId;
+                cx.S++;
+              } else if (value is ReaderTerm) {
+                // Trying to unify writer with reader - suspend if reader unbound
+                final rid = value.readerId;
+                final wid = cx.rt.heap.writerIdForReader(rid);
+                if (wid != null && cx.rt.heap.isWriterBound(wid)) {
+                  // Reader is bound - extract the value (complex unification needed)
+                  // For now, just store the reader ID and handle later
+                  cx.clauseVars[op.varIndex] = rid;
+                  cx.S++;
+                } else {
+                  // Unbound reader - suspend
+                  cx.si.add(rid);
+                  cx.S++;
+                }
+              } else {
+                // Mismatch
+                _softFailToNextClause(cx, pc);
+                pc = _findNextClauseTry(pc);
+                continue;
+              }
+            }
+          }
+        }
+        pc++; continue;
+      }
+
+      if (op is UnifyReader) {
+        // Match/add reader variable at current S position
+        if (cx.mode == UnifyMode.write) {
+          // WRITE mode: Add reader to structure being built
+          if (cx.currentStructure is _TentativeStruct) {
+            final struct = cx.currentStructure as _TentativeStruct;
+            final writerId = cx.clauseVars[op.varIndex];
+            if (writerId is int) {
+              // Get the reader for this writer
+              final wc = cx.rt.heap.writer(writerId);
+              if (wc != null) {
+                struct.args[cx.S] = ReaderTerm(wc.readerId);
+              }
+            }
+            cx.S++;
+          }
+        } else {
+          // READ mode: Unify with reader at S position
+          if (cx.currentStructure is StructTerm) {
+            final struct = cx.currentStructure as StructTerm;
+            if (cx.S < struct.args.length) {
+              final value = struct.args[cx.S];
+              if (value is ReaderTerm) {
+                // Store the writer ID (not the reader ID) in clause var
+                final wid = cx.rt.heap.writerIdForReader(value.readerId);
+                if (wid != null) {
+                  cx.clauseVars[op.varIndex] = wid;
+                }
+                cx.S++;
+              } else {
+                // Mismatch
+                _softFailToNextClause(cx, pc);
+                pc = _findNextClauseTry(pc);
+                continue;
+              }
+            }
+          }
+        }
+        pc++; continue;
+      }
+
       // Legacy HEAD opcodes (for backward compatibility)
       if (op is HeadBindWriter) {
         // Mark writer as involved (no value binding for legacy opcode)

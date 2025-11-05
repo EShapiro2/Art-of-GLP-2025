@@ -134,6 +134,20 @@ class UnifyVoid implements Op {
   UnifyVoid({this.count = 1});
 }
 
+/// Match writer variable at current S position
+/// In READ mode: unify with writer, In WRITE mode: add writer to structure
+class UnifyWriter implements Op {
+  final int varIndex;  // clause variable index holding the writer
+  UnifyWriter(this.varIndex);
+}
+
+/// Match reader variable at current S position
+/// In READ mode: unify with reader, In WRITE mode: add reader to structure
+class UnifyReader implements Op {
+  final int varIndex;  // clause variable index holding the writer (reader derived from it)
+  UnifyReader(this.varIndex);
+}
+
 /// Load argument into clause variable (first occurrence)
 /// Records tentative association in σ̂w during HEAD phase
 class GetVariable implements Op {
