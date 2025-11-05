@@ -133,7 +133,7 @@ A minimal VM for executing unit goals (single predicates) over unit clauses with
 Tests are organized under `test/`:
 - `bytecode/`: Tests for bytecode operations
 - `conformance/`: Conformance tests against specification
-- `custom/`: Custom test scenarios
+- `custom/`: Custom test scenarios (merge, p/q programs, circular dependencies)
 - `v216_vm_min_test.dart`: Core VM test demonstrating writer/reader/suspend/fail outcomes
 
 **IMPORTANT - Test Preservation**:
@@ -143,9 +143,110 @@ Tests are organized under `test/`:
 - Run `dart test` before committing to ensure all tests pass
 - Include test descriptions in commit messages to document what functionality is being tested
 
+### VM Trace Output
+
+The bytecode runner (`lib/bytecode/runner.dart`) automatically prints execution traces:
+- `>>> TRY: Goal X at PC Y` - Starting clause execution
+- `>>> REDUCTION: Goal X at PC Y (commit succeeded, σ̂w has N bindings)` - Successful commit
+- `>>> ACTIVATION: Goal X awakened at PC Y` - Goal reactivated from suspension
+- `>>> SUSPENSION: Goal X suspended on readers: {reader_ids}` - Goal suspended on unbound readers
+- `>>> FAIL: Goal X (all clauses exhausted, U empty)` - Definitive failure
+
+To see only VM trace output in tests: `dart test <file> 2>&1 | grep ">>>"`
+
+### Reduction Budget
+
+The VM supports a reduction budget to limit execution:
+- Set `reductionBudget: <number>` when creating `RunnerContext`
+- Default is `null` (unlimited)
+- Each instruction execution increments the reduction counter
+- Returns `RunResult.outOfReductions` when budget exhausted
+- Useful for testing infinite loops and circular dependencies
+
+Example:
+```dart
+final cx = RunnerContext(
+  rt: rt,
+  goalId: goalId,
+  kappa: 0,
+  env: env,
+  reductionBudget: 100,  // Limit to 100 instruction executions
+);
+runner.runWithStatus(cx);
+```
+
 ## Development Context
 
 - This is an active research implementation aligned with a formal specification
 - Recent work (commits) focused on v2.16 VM with σ̂w commit semantics and Si/U suspension model
 - The runtime models concurrent execution with fairness (tail-recursion budgets) and single-shot reactivation (armed hangers)
 - Writer variables bind at commit; reader variables may cause suspension until bound
+
+### Working with Goals and Programs
+
+**Goal Management**:
+- Each goal remembers which program it's executing via `runtime.setGoalProgram(goalId, programKey)`
+- The scheduler uses a `Map<Object?, BytecodeRunner>` to look up the correct runner per goal
+- This prevents bugs where reactivated goals would use the wrong program's runner
+
+**Creating Multi-Program Tests**:
+```dart
+// Create runners for different programs
+final runnerQ = BytecodeRunner(progQ);
+final runnerP = BytecodeRunner(progP);
+
+// Register with scheduler using string keys
+final sched = Scheduler(rt: rt, runners: {
+  'q': runnerQ,
+  'p': runnerP,
+});
+
+// Associate each goal with its program
+rt.setGoalProgram(goalId1, 'q');
+rt.setGoalProgram(goalId2, 'p');
+```
+
+**Circular Dependencies**:
+- Goals can create circular dependencies via reader/writer pairs (e.g., `merge(Xs?,[a],Ys), merge(Ys?,[b],Xs)`)
+- Circular dependencies create infinite streams that ping-pong between goals
+- Use reduction budgets to prevent infinite loops in tests
+- Example patterns tested: two-way circles (Xs↔Ys), three-way circles (Xs→Ys→Zs→Xs)
+
+**Suspension and Reactivation**:
+- Goals suspend when encountering unbound readers (added to U set)
+- When a writer binds (via commit), all goals suspended on its paired reader are activated
+- Activated goals are enqueued and restart from PC = kappa (clause 1)
+- The ROQ (Read-Only Queue) maintains FIFO order for fairness
+
+## Terminology - CRITICAL
+
+**NEVER use "pattern matching" terminology** when discussing GLP or logic programs. This causes conceptual errors and implementation bugs.
+
+**ALWAYS use the correct terms**:
+- **Unification**: The process of making two terms equal by finding substitutions
+- **Writer MGU** (Most General Unifier): Unification that only binds writers, never readers
+- **Writer extension**: Adding new bindings to σ̂w during HEAD phase
+- **Reader MGU**: Verifying readers against their paired writers
+
+GLP uses **three-valued unification**:
+1. **Success**: Terms unify, σ̂w extended or verified
+2. **Suspend**: Unbound reader encountered, add to Si/U
+3. **Fail**: Terms cannot unify (mismatch)
+
+The HEAD phase performs **tentative unification** building σ̂w without heap mutation. COMMIT applies σ̂w atomically to the heap.
+
+## Research Sources - REQUIRED
+
+**When implementing or debugging abstract machine semantics, you MUST consult primary sources**:
+
+1. **WAM Paper**: `/Users/udi/GLP/docs/wam.pdf` - Warren's Abstract Machine (Technical Note 309, 1983)
+   - Definitive source for Prolog abstract machine design
+   - Explains heap allocation, environments, variable renaming, structure creation
+
+2. **GLP Spec**: `/Users/udi/GLP/docs/glp_spec.pdf` - Formal GLP specification (ESOP 2026)
+   - Normative semantics for GLP language
+
+3. **FCP Paper**: `/Users/udi/GLP/docs/1-s2.0-0743106689900113-main.pdf` - Flat Concurrent Prolog paper
+   - Reference for concurrent logic programming and reader/writer variables
+
+**NEVER guess, use secondary sources, or rely on general knowledge about abstract machines. Always verify against these papers.**
