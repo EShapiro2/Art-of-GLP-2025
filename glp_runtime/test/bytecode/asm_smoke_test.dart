@@ -27,12 +27,12 @@ void main() {
       BC.SUSP(),
     ]);
 
-    final cx = RunnerContext(rt: rt, goalId: 6000, kappa: 1);
+    final cx = RunnerContext(rt: rt, goalId: 6000, kappa: program.labels['C1']!);
     BytecodeRunner(program).run(cx);
 
     final acts1 = rt.roq.processOnBind(r1);
     expect(acts1.map((a) => a.id).toList(), [6000]);
-    expect(acts1.map((a) => a.pc).toSet(), {1});
+    expect(acts1.map((a) => a.pc).toSet(), {program.labels['C1']!});
 
     final acts2 = rt.roq.processOnBind(r2);
     expect(acts2, isEmpty);
@@ -53,10 +53,10 @@ void main() {
       BC.PROCEED(),
     ]);
 
-    final cx = RunnerContext(rt: rt, goalId: 7000, kappa: 9);
+    final cx = RunnerContext(rt: rt, goalId: 7000, kappa: program.labels['C1']!);
 
-    final h1 = Hanger(goalId: 9001, kappa: 9, armed: true);
-    final h2 = Hanger(goalId: 9002, kappa: 9, armed: true);
+    final h1 = Hanger(goalId: 9001, kappa: program.labels['C1']!, armed: true);
+    final h2 = Hanger(goalId: 9002, kappa: program.labels['C1']!, armed: true);
     rt.roq.enqueue(r, SuspensionNote(r, h1));
     rt.roq.enqueue(r, SuspensionNote(r, h2));
 
@@ -68,6 +68,6 @@ void main() {
       if (a != null) acts.add(a);
     }
     expect(acts.map((x) => x.id).toList(), [9001, 9002]);
-    expect(acts.map((x) => x.pc).toSet(), {9});
+    expect(acts.map((x) => x.pc).toSet(), {program.labels['C1']!});
   });
 }
