@@ -525,9 +525,35 @@ class BytecodeRunner {
             final termArgs = <Term>[];
             for (final arg in value.args) {
               if (arg is _ClauseVar) {
-                // TODO: resolve clause variables to actual writer/reader IDs
-                // For now, leave as placeholder
-                termArgs.add(ConstTerm('${arg.toString()}'));
+                // Clause variable placeholder - need to resolve to actual writer/reader
+                // Check if already resolved in clauseVars
+                final resolved = cx.clauseVars[arg.varIndex];
+                if (resolved is int) {
+                  // Already resolved to a writer ID - use its reader
+                  final wc = cx.rt.heap.writer(resolved);
+                  if (wc != null) {
+                    termArgs.add(ReaderTerm(wc.readerId));
+                  } else {
+                    // Shouldn't happen - create fresh pair as fallback
+                    final freshWriterId = cx.goalId * 10000 + arg.varIndex * 100 + 80;
+                    final freshReaderId = cx.goalId * 10000 + arg.varIndex * 100 + 81;
+                    cx.rt.heap.addWriter(WriterCell(freshWriterId, freshReaderId));
+                    cx.rt.heap.addReader(ReaderCell(freshReaderId));
+                    cx.clauseVars[arg.varIndex] = freshWriterId;
+                    termArgs.add(ReaderTerm(freshReaderId));
+                  }
+                } else if (resolved is Term) {
+                  // Already a term - use as-is
+                  termArgs.add(resolved);
+                } else {
+                  // Not yet resolved - create fresh writer/reader pair
+                  final freshWriterId = cx.goalId * 10000 + arg.varIndex * 100 + 80;
+                  final freshReaderId = cx.goalId * 10000 + arg.varIndex * 100 + 81;
+                  cx.rt.heap.addWriter(WriterCell(freshWriterId, freshReaderId));
+                  cx.rt.heap.addReader(ReaderCell(freshReaderId));
+                  cx.clauseVars[arg.varIndex] = freshWriterId;
+                  termArgs.add(ReaderTerm(freshReaderId));
+                }
               } else if (arg == null) {
                 // Void/unbound - create fresh writer?
                 // For now, leave as null constant

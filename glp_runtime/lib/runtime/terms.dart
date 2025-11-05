@@ -14,3 +14,12 @@ class StructTerm implements Term {
   @override
   String toString() => '$functor(${args.join(",")})';
 }
+
+/// Reader reference in a structure - just holds the reader ID
+/// The actual value is obtained by dereferencing through the heap
+class ReaderTerm implements Term {
+  final int readerId;
+  ReaderTerm(this.readerId);
+  @override
+  String toString() => 'R$readerId';
+}
