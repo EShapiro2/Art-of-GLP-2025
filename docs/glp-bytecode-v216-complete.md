@@ -171,26 +171,44 @@ All put_*/body construction instructions are **heap-mutating**: they allocate an
 These instructions fill in structure arguments after head_structure or put_structure.
 
 ### 8.1 writer Xi
-**Operation**: Process writer variable in structure  
+**Operation**: Process writer variable in structure
 **Behavior**:
-- In READ mode: extract value at S into Xi
+- In READ mode:
+  - Extract value at S (may be constant, structure, or writer variable)
+  - If unbound writer: record writer-to-writer unification in σ̂w
+  - If bound writer: use its value
+  - If reader: check paired writer (suspend if unbound)
 - In WRITE mode: create new writer variable, store at H and in Xi
 - Increment S (READ) or H (WRITE)
 
+**Note**: Writer-to-writer unification follows Writer MGU semantics
+
 ### 8.2 reader Xi
-**Operation**: Process reader variable in structure  
+**Operation**: Process reader variable in structure
 **Behavior**:
-- In READ mode: verify against paired writer Xi
+- In READ mode:
+  - If value at S is reader R: verify R pairs with Xi
+  - If value at S is unbound writer: bind it to reader Xi in σ̂w
+  - If value at S is bound writer/constant: verify it equals Xi's paired writer value
+  - Add to Si if Xi's paired writer is unbound
 - In WRITE mode: create reader reference at H
-- Add to suspension set if writer unbound
 - Increment S (READ) or H (WRITE)
 
+**Note**: Reader unification follows Writer MGU semantics - readers can only be read, not written
+
 ### 8.3 constant c
-**Operation**: Process constant in structure  
+**Operation**: Process constant in structure
 **Behavior**:
-- In READ mode: verify value at S equals c
+- In READ mode:
+  - If value at S is constant c: succeed
+  - If value at S is unbound writer W: bind W = c in σ̂w (writer MGU)
+  - If value at S is reader R with unbound paired writer: add R to Si (suspend)
+  - If value at S is reader R with bound paired writer ≠ c: fail
+  - Otherwise: fail
 - In WRITE mode: write constant c at H
 - Increment S (READ) or H (WRITE)
+
+**Rationale**: Follows Writer MGU semantics from GLP spec Definition 2.1. In READ mode, we perform writer unification: constants unify with unbound writers by binding them, and with readers by checking their paired writer's value.
 
 ### 8.4 void n
 **Operation**: Process n anonymous variables  
