@@ -2,6 +2,8 @@ import 'package:test/test.dart';
 import 'package:glp_runtime/runtime/runtime.dart';
 import 'package:glp_runtime/runtime/cells.dart';
 import 'package:glp_runtime/runtime/terms.dart';
+import 'package:glp_runtime/runtime/machine_state.dart';
+import 'package:glp_runtime/runtime/scheduler.dart';
 import 'package:glp_runtime/bytecode/runner.dart';
 import 'package:glp_runtime/bytecode/opcodes.dart';
 import 'package:glp_runtime/bytecode/asm.dart';
@@ -68,11 +70,19 @@ void main() {
       StructTerm('.', [ConstTerm('b'), ConstTerm(null)])
     ]);
 
-    final env = CallEnv(readers: {0: rList}, writers: {1: wX});
-    final cx = RunnerContext(rt: rt, goalId: 100, kappa: 0, env: env);
+    // Create scheduler and runner
+    final runner = BytecodeRunner(prog);
+    final sched = Scheduler(rt: rt, runner: runner);
 
-    final result = BytecodeRunner(prog).runWithStatus(cx);
-    print('Result: $result');
+    // Set up goal environment and enqueue goal
+    const goalId = 100;
+    final env = CallEnv(readers: {0: rList}, writers: {1: wX});
+    rt.setGoalEnv(goalId, env);
+    rt.gq.enqueue(GoalRef(goalId, 0));
+
+    // Run the scheduler
+    final ran = sched.drain(maxCycles: 100);
+    print('Goals executed: $ran');
     print('Writer $wX bound? ${rt.heap.isWriterBound(wX)}');
     if (rt.heap.isWriterBound(wX)) {
       final val = rt.heap.valueOfWriter(wX);
@@ -80,7 +90,7 @@ void main() {
     }
 
     // Verify results
-    expect(result, RunResult.terminated, reason: 'Goal should succeed');
+    expect(ran, [goalId], reason: 'Goal should execute');
     expect(rt.heap.isWriterBound(wX), true, reason: 'X should be bound');
 
     final value = rt.heap.valueOfWriter(wX);
@@ -131,13 +141,21 @@ void main() {
     print('--- Executing Goal: is_cons([a,b,c]) ---');
     print('Expected: SUCCESS (list is non-empty)\n');
 
+    // Create scheduler and runner
+    final runner = BytecodeRunner(prog);
+    final sched = Scheduler(rt: rt, runner: runner);
+
+    // Set up goal environment and enqueue goal
+    const goalId = 100;
     final env = CallEnv(readers: {0: rList});
-    final cx = RunnerContext(rt: rt, goalId: 100, kappa: 0, env: env);
+    rt.setGoalEnv(goalId, env);
+    rt.gq.enqueue(GoalRef(goalId, 0));
 
-    final result = BytecodeRunner(prog).runWithStatus(cx);
-    print('Result: $result\n');
+    // Run the scheduler
+    final ran = sched.drain(maxCycles: 100);
+    print('Goals executed: $ran\n');
 
-    expect(result, RunResult.terminated, reason: 'Non-empty list should match');
+    expect(ran, [goalId], reason: 'Goal should execute');
 
     print('✓ List cons check succeeded');
     print('✓ Test passed!');
@@ -176,14 +194,22 @@ void main() {
     print('--- Executing Goal: is_cons([]) ---');
     print('Expected: FAIL (empty list is not a cons)\n');
 
+    // Create scheduler and runner
+    final runner = BytecodeRunner(prog);
+    final sched = Scheduler(rt: rt, runner: runner);
+
+    // Set up goal environment and enqueue goal
+    const goalId = 100;
     final env = CallEnv(readers: {0: rList});
-    final cx = RunnerContext(rt: rt, goalId: 100, kappa: 0, env: env);
+    rt.setGoalEnv(goalId, env);
+    rt.gq.enqueue(GoalRef(goalId, 0));
 
-    final result = BytecodeRunner(prog).runWithStatus(cx);
-    print('Result: $result\n');
+    // Run the scheduler
+    final ran = sched.drain(maxCycles: 100);
+    print('Goals executed: $ran\n');
 
-    // Should terminate without success (clause exhausted)
-    expect(result, RunResult.terminated, reason: 'Should complete');
+    // Should execute (clause exhausted with no match)
+    expect(ran, [goalId], reason: 'Goal should execute');
 
     print('✓ Empty list correctly rejected');
     print('✓ Test passed!');
@@ -248,14 +274,19 @@ void main() {
     print('--- Executing Goal: cons(a, [b], Z) ---');
     print('Expected: Z will be bound to [a, b]\n');
 
-    final env = CallEnv(
-      readers: {0: rX, 1: rXs},
-      writers: {2: wZ}
-    );
-    final cx = RunnerContext(rt: rt, goalId: 100, kappa: 0, env: env);
+    // Create scheduler and runner
+    final runner = BytecodeRunner(prog);
+    final sched = Scheduler(rt: rt, runner: runner);
 
-    final result = BytecodeRunner(prog).runWithStatus(cx);
-    print('Result: $result');
+    // Set up goal environment and enqueue goal
+    const goalId = 100;
+    final env = CallEnv(readers: {0: rX, 1: rXs}, writers: {2: wZ});
+    rt.setGoalEnv(goalId, env);
+    rt.gq.enqueue(GoalRef(goalId, 0));
+
+    // Run the scheduler
+    final ran = sched.drain(maxCycles: 100);
+    print('Goals executed: $ran');
     print('Writer $wZ bound? ${rt.heap.isWriterBound(wZ)}');
     if (rt.heap.isWriterBound(wZ)) {
       final val = rt.heap.valueOfWriter(wZ);
@@ -263,7 +294,7 @@ void main() {
     }
 
     // Verify results
-    expect(result, RunResult.terminated, reason: 'Goal should succeed');
+    expect(ran, [goalId], reason: 'Goal should execute');
     expect(rt.heap.isWriterBound(wZ), true, reason: 'Z should be bound');
 
     final value = rt.heap.valueOfWriter(wZ);
@@ -273,13 +304,23 @@ void main() {
     expect(listStruct.functor, '.', reason: 'Should be list cons');
     expect(listStruct.args.length, 2, reason: 'Cons has 2 args');
 
-    // Head should be 'a'
-    expect(listStruct.args[0], isA<ConstTerm>());
-    expect((listStruct.args[0] as ConstTerm).value, 'a');
+    // Head should be a reader pointing to 'a'
+    expect(listStruct.args[0], isA<ReaderTerm>());
+    final headReader = (listStruct.args[0] as ReaderTerm).readerId;
+    final headWriterId = rt.heap.writerIdForReader(headReader);
+    expect(headWriterId, isNotNull, reason: 'Head reader should have paired writer');
+    final headValue = rt.heap.valueOfWriter(headWriterId!);
+    expect(headValue, isA<ConstTerm>());
+    expect((headValue as ConstTerm).value, 'a');
 
-    // Tail should be [b] = '.'(b, [])
-    expect(listStruct.args[1], isA<StructTerm>());
-    final tail = listStruct.args[1] as StructTerm;
+    // Tail should be a reader pointing to [b]
+    expect(listStruct.args[1], isA<ReaderTerm>());
+    final tailReader = (listStruct.args[1] as ReaderTerm).readerId;
+    final tailWriterId = rt.heap.writerIdForReader(tailReader);
+    expect(tailWriterId, isNotNull, reason: 'Tail reader should have paired writer');
+    final tailValue = rt.heap.valueOfWriter(tailWriterId!);
+    expect(tailValue, isA<StructTerm>());
+    final tail = tailValue as StructTerm;
     expect(tail.functor, '.');
     expect((tail.args[0] as ConstTerm).value, 'b');
 
@@ -322,11 +363,19 @@ void main() {
     print('--- Executing Goal: p(X) ---');
     print('Expected: X will be bound to [a, b]\n');
 
-    final env = CallEnv(writers: {0: wX});
-    final cx = RunnerContext(rt: rt, goalId: 100, kappa: 0, env: env);
+    // Create scheduler and runner
+    final runner = BytecodeRunner(prog);
+    final sched = Scheduler(rt: rt, runner: runner);
 
-    final result = BytecodeRunner(prog).runWithStatus(cx);
-    print('Result: $result');
+    // Set up goal environment and enqueue goal
+    const goalId = 100;
+    final env = CallEnv(writers: {0: wX});
+    rt.setGoalEnv(goalId, env);
+    rt.gq.enqueue(GoalRef(goalId, 0));
+
+    // Run the scheduler
+    final ran = sched.drain(maxCycles: 100);
+    print('Goals executed: $ran');
     print('Writer $wX bound? ${rt.heap.isWriterBound(wX)}');
     if (rt.heap.isWriterBound(wX)) {
       final val = rt.heap.valueOfWriter(wX);
@@ -334,7 +383,7 @@ void main() {
     }
 
     // Verify results
-    expect(result, RunResult.terminated, reason: 'Goal should succeed');
+    expect(ran, [goalId], reason: 'Goal should execute');
     expect(rt.heap.isWriterBound(wX), true, reason: 'X should be bound');
 
     final value = rt.heap.valueOfWriter(wX);

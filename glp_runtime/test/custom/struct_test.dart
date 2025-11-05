@@ -2,6 +2,8 @@ import 'package:test/test.dart';
 import 'package:glp_runtime/runtime/runtime.dart';
 import 'package:glp_runtime/runtime/cells.dart';
 import 'package:glp_runtime/runtime/terms.dart';
+import 'package:glp_runtime/runtime/machine_state.dart';
+import 'package:glp_runtime/runtime/scheduler.dart';
 import 'package:glp_runtime/bytecode/runner.dart';
 import 'package:glp_runtime/bytecode/opcodes.dart';
 import 'package:glp_runtime/bytecode/asm.dart';
@@ -43,12 +45,19 @@ void main() {
     print('--- Executing Goal: p(X) ---');
     print('Expected: X (writer) will be bound to f(a, b) in σ̂w\n');
 
-    // Set up call environment with writer X at slot 0
-    final env = CallEnv(writers: {0: wX});
-    final cx = RunnerContext(rt: rt, goalId: 100, kappa: 0, env: env);
+    // Create scheduler and runner
+    final runner = BytecodeRunner(prog);
+    final sched = Scheduler(rt: rt, runner: runner);
 
-    final result = BytecodeRunner(prog).runWithStatus(cx);
-    print('Result: $result');
+    // Set up goal environment and enqueue goal
+    const goalId = 100;
+    final env = CallEnv(writers: {0: wX});
+    rt.setGoalEnv(goalId, env);
+    rt.gq.enqueue(GoalRef(goalId, 0));
+
+    // Run the scheduler
+    final ran = sched.drain(maxCycles: 100);
+    print('Goals executed: $ran');
     print('Writer $wX bound? ${rt.heap.isWriterBound(wX)}');
     if (rt.heap.isWriterBound(wX)) {
       final val = rt.heap.valueOfWriter(wX);
@@ -56,7 +65,7 @@ void main() {
     }
 
     // Verify results
-    expect(result, RunResult.terminated, reason: 'Goal should succeed');
+    expect(ran, [goalId], reason: 'Goal should execute');
     expect(rt.heap.isWriterBound(wX), true, reason: 'Writer should be bound');
 
     final value = rt.heap.valueOfWriter(wX);
@@ -111,16 +120,23 @@ void main() {
     print('--- Executing Goal: p(X?) ---');
     print('Expected: Match X? (reads f(a, b)) with pattern f(a, b)\n');
 
-    // Set up call environment with reader X? at slot 0
-    final env = CallEnv(readers: {0: rX});
-    final cx = RunnerContext(rt: rt, goalId: 100, kappa: 0, env: env);
+    // Create scheduler and runner
+    final runner = BytecodeRunner(prog);
+    final sched = Scheduler(rt: rt, runner: runner);
 
-    final result = BytecodeRunner(prog).runWithStatus(cx);
-    print('Result: $result');
-    print('Expected: TERMINATED (structure matches pattern)\n');
+    // Set up goal environment and enqueue goal
+    const goalId = 100;
+    final env = CallEnv(readers: {0: rX});
+    rt.setGoalEnv(goalId, env);
+    rt.gq.enqueue(GoalRef(goalId, 0));
+
+    // Run the scheduler
+    final ran = sched.drain(maxCycles: 100);
+    print('Goals executed: $ran');
+    print('Expected: Goal executes successfully (structure matches pattern)\n');
 
     // Verify results
-    expect(result, RunResult.terminated, reason: 'Goal should succeed - structure matches');
+    expect(ran, [goalId], reason: 'Goal should execute - structure matches');
 
     print('✓ Structure correctly matched in READ mode');
     print('✓ Test passed!');
@@ -162,14 +178,22 @@ void main() {
     print('--- Executing Goal: p(X?) ---');
     print('Expected: FAIL or SUSPEND (no matching clause)\n');
 
+    // Create scheduler and runner
+    final runner = BytecodeRunner(prog);
+    final sched = Scheduler(rt: rt, runner: runner);
+
+    // Set up goal environment and enqueue goal
+    const goalId = 100;
     final env = CallEnv(readers: {0: rX});
-    final cx = RunnerContext(rt: rt, goalId: 100, kappa: 0, env: env);
+    rt.setGoalEnv(goalId, env);
+    rt.gq.enqueue(GoalRef(goalId, 0));
 
-    final result = BytecodeRunner(prog).runWithStatus(cx);
-    print('Result: $result');
+    // Run the scheduler
+    final ran = sched.drain(maxCycles: 100);
+    print('Goals executed: $ran');
 
-    // Should either suspend (if no clauses left) or terminate (if clause exhausted)
-    expect(result != RunResult.yielded, true, reason: 'Should not yield');
+    // Should execute (clause exhausted with no match)
+    expect(ran, [goalId], reason: 'Goal should execute');
 
     print('✓ Mismatch correctly detected');
     print('✓ Test passed!');
