@@ -195,13 +195,21 @@ class BytecodeRunner {
       if (op is HeadWriter) {
         // Process writer variable in structure (at S position)
         if (cx.mode == UnifyMode.write) {
-          // WRITE mode: Building a structure - create placeholder for writer variable
+          // WRITE mode: Building a structure - check if variable already bound
           if (cx.currentStructure is _TentativeStruct) {
             final struct = cx.currentStructure as _TentativeStruct;
-            // Store clause variable reference as placeholder
-            final placeholder = _ClauseVar(op.varIndex, isWriter: true);
-            struct.args[cx.S] = placeholder;
-            cx.clauseVars[op.varIndex] = placeholder;
+
+            // Check if this clause variable already has a value (from get_variable)
+            final existingValue = cx.clauseVars[op.varIndex];
+            if (existingValue != null) {
+              // Variable already bound - use its value
+              struct.args[cx.S] = existingValue;
+            } else {
+              // New variable - create placeholder
+              final placeholder = _ClauseVar(op.varIndex, isWriter: true);
+              struct.args[cx.S] = placeholder;
+              cx.clauseVars[op.varIndex] = placeholder;
+            }
             cx.S++; // Advance to next arg
           }
         } else {
@@ -210,7 +218,21 @@ class BytecodeRunner {
             final struct = cx.currentStructure as StructTerm;
             if (cx.S < struct.args.length) {
               final value = struct.args[cx.S];
-              cx.clauseVars[op.varIndex] = value;
+
+              // Check if variable already bound (from get_variable/get_value)
+              final existingValue = cx.clauseVars[op.varIndex];
+              if (existingValue != null) {
+                // Need to unify - for now, just check equality
+                // TODO: proper unification
+                if (existingValue != value) {
+                  _softFailToNextClause(cx, pc);
+                  pc = _findNextClauseTry(pc);
+                  continue;
+                }
+              } else {
+                // First occurrence - store it
+                cx.clauseVars[op.varIndex] = value;
+              }
               cx.S++; // Advance to next arg
             } else {
               // Structure arity mismatch - soft fail
@@ -231,12 +253,21 @@ class BytecodeRunner {
       if (op is HeadReader) {
         // Process reader variable in structure (at S position)
         if (cx.mode == UnifyMode.write) {
-          // WRITE mode: Building structure - add reader placeholder
+          // WRITE mode: Building structure - add reader value/reference
           if (cx.currentStructure is _TentativeStruct) {
             final struct = cx.currentStructure as _TentativeStruct;
-            final placeholder = _ClauseVar(op.varIndex, isWriter: false);
-            struct.args[cx.S] = placeholder;
-            cx.clauseVars[op.varIndex] = placeholder;
+
+            // Check if this clause variable already has a value (from get_variable)
+            final existingValue = cx.clauseVars[op.varIndex];
+            if (existingValue != null) {
+              // Variable already bound - use its value
+              struct.args[cx.S] = existingValue;
+            } else {
+              // New variable - create placeholder
+              final placeholder = _ClauseVar(op.varIndex, isWriter: false);
+              struct.args[cx.S] = placeholder;
+              cx.clauseVars[op.varIndex] = placeholder;
+            }
             cx.S++; // Advance to next arg
           }
         } else {
@@ -245,10 +276,21 @@ class BytecodeRunner {
             final struct = cx.currentStructure as StructTerm;
             if (cx.S < struct.args.length) {
               final value = struct.args[cx.S];
-              // Check if value matches the tentative writer binding (if any)
-              // For now, just store the value and continue
-              // TODO: implement proper reader verification against writer
-              cx.clauseVars[op.varIndex] = value;
+
+              // Check if variable already bound (from get_variable/get_value)
+              final existingValue = cx.clauseVars[op.varIndex];
+              if (existingValue != null) {
+                // Need to unify - for now, just check equality
+                // TODO: proper unification
+                if (existingValue != value) {
+                  _softFailToNextClause(cx, pc);
+                  pc = _findNextClauseTry(pc);
+                  continue;
+                }
+              } else {
+                // First occurrence - store it
+                cx.clauseVars[op.varIndex] = value;
+              }
               cx.S++; // Advance to next arg
             } else {
               // Structure arity mismatch - soft fail
@@ -262,6 +304,110 @@ class BytecodeRunner {
             pc = _findNextClauseTry(pc);
             continue;
           }
+        }
+        pc++; continue;
+      }
+
+      // ===== Argument loading instructions (GET class) =====
+      if (op is GetVariable) {
+        // Load argument into clause variable (first occurrence)
+        final arg = _getArg(cx, op.argSlot);
+        if (arg == null) {
+          // No argument provided
+          _softFailToNextClause(cx, pc);
+          pc = _findNextClauseTry(pc);
+          continue;
+        }
+
+        // Store the argument value/reference in clause variable
+        if (arg.isWriter) {
+          cx.clauseVars[op.varIndex] = arg.writerId;
+        } else if (arg.isReader) {
+          // For reader, we need to check if it's bound and get the value
+          final wid = cx.rt.heap.writerIdForReader(arg.readerId!);
+          if (wid != null && cx.rt.heap.isWriterBound(wid)) {
+            // Bound reader - store the actual value
+            final value = cx.rt.heap.valueOfWriter(wid);
+            cx.clauseVars[op.varIndex] = value;
+          } else {
+            // Unbound reader - store reader reference
+            cx.clauseVars[op.varIndex] = arg.readerId;
+          }
+        } else {
+          // Ground term - would need to handle if CallEnv supported it
+          _softFailToNextClause(cx, pc);
+          pc = _findNextClauseTry(pc);
+          continue;
+        }
+        pc++; continue;
+      }
+
+      if (op is GetValue) {
+        // Unify argument with clause variable (subsequent occurrence)
+        final arg = _getArg(cx, op.argSlot);
+        if (arg == null) {
+          _softFailToNextClause(cx, pc);
+          pc = _findNextClauseTry(pc);
+          continue;
+        }
+
+        // Get the previously stored value
+        final storedValue = cx.clauseVars[op.varIndex];
+        if (storedValue == null) {
+          // Variable not initialized - error
+          _softFailToNextClause(cx, pc);
+          pc = _findNextClauseTry(pc);
+          continue;
+        }
+
+        // Unify argument with stored value
+        if (arg.isWriter) {
+          // Argument is a writer - bind it to stored value in σ̂w
+          if (storedValue is int) {
+            // storedValue is a writer ID - check they match
+            if (arg.writerId != storedValue) {
+              _softFailToNextClause(cx, pc);
+              pc = _findNextClauseTry(pc);
+              continue;
+            }
+          } else {
+            // storedValue is a Term - bind writer to it
+            cx.sigmaHat[arg.writerId!] = storedValue;
+          }
+        } else if (arg.isReader) {
+          // Argument is a reader - verify it matches stored value
+          final wid = cx.rt.heap.writerIdForReader(arg.readerId!);
+          if (wid != null && cx.rt.heap.isWriterBound(wid)) {
+            // Reader is bound - check value matches
+            final readerValue = cx.rt.heap.valueOfWriter(wid);
+            if (storedValue is Term) {
+              if (readerValue != storedValue) {
+                _softFailToNextClause(cx, pc);
+                pc = _findNextClauseTry(pc);
+                continue;
+              }
+            } else if (storedValue is int && wid != storedValue) {
+              // storedValue is a writer ID
+              _softFailToNextClause(cx, pc);
+              pc = _findNextClauseTry(pc);
+              continue;
+            }
+          } else if (storedValue is int) {
+            // Reader unbound, storedValue is writer ID - check they match
+            if (wid != storedValue) {
+              _softFailToNextClause(cx, pc);
+              pc = _findNextClauseTry(pc);
+              continue;
+            }
+          } else {
+            // Reader unbound, storedValue is a Term - add to Si
+            cx.si.add(arg.readerId!);
+          }
+        } else {
+          // Ground term - TODO
+          _softFailToNextClause(cx, pc);
+          pc = _findNextClauseTry(pc);
+          continue;
         }
         pc++; continue;
       }
@@ -373,8 +519,11 @@ class BytecodeRunner {
                 // Void/unbound - create fresh writer?
                 // For now, leave as null constant
                 termArgs.add(ConstTerm(null));
+              } else if (arg is Term) {
+                // Already a Term (ConstTerm, StructTerm, etc.) - use as-is
+                termArgs.add(arg);
               } else {
-                // Direct constant value
+                // Raw constant value - wrap in ConstTerm
                 termArgs.add(ConstTerm(arg));
               }
             }
@@ -437,7 +586,10 @@ class BytecodeRunner {
       }
       if (op is BodySetStructConstArgs) {
         if (cx.inBody) {
-          final args = <Term>[for (final v in op.constArgs) ConstTerm(v)];
+          final args = <Term>[
+            for (final v in op.constArgs)
+              v is Term ? v : ConstTerm(v)
+          ];
           cx.rt.heap.bindWriterStruct(op.writerId, op.functor, args);
           final w = cx.rt.heap.writer(op.writerId);
           if (w != null) {

@@ -21,8 +21,11 @@ class CommitOps {
       if (value is StructTerm) {
         // Structure binding
         heap.bindWriterStruct(writerId, value.functor, value.args);
+      } else if (value is ConstTerm) {
+        // ConstTerm - extract the actual value
+        heap.bindWriterConst(writerId, value.value);
       } else if (value is String || value is int || value is bool || value == null) {
-        // Constant value
+        // Primitive constant value
         heap.bindWriterConst(writerId, value);
       } else {
         // Unknown type - try to bind as constant

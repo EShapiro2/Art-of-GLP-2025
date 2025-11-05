@@ -23,6 +23,8 @@ class BC {
   static UnifyConstant unifyConst(Object? value) => UnifyConstant(value);
   static UnifyVoid unifyVoid({int count = 1}) => UnifyVoid(count: count);
   static HeadConstant headConst(Object? value, int argSlot) => HeadConstant(value, argSlot);
+  static GetVariable getVar(int varIndex, int argSlot) => GetVariable(varIndex, argSlot);
+  static GetValue getVal(int varIndex, int argSlot) => GetValue(varIndex, argSlot);
 
   // UPPERCASE aliases
   static Label L(String name) => l(name);

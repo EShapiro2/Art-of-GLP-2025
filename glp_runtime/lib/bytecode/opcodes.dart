@@ -81,6 +81,22 @@ class UnifyVoid implements Op {
   UnifyVoid({this.count = 1});
 }
 
+/// Load argument into clause variable (first occurrence)
+/// Records tentative association in σ̂w during HEAD phase
+class GetVariable implements Op {
+  final int varIndex;  // clause variable index
+  final int argSlot;   // argument register
+  GetVariable(this.varIndex, this.argSlot);
+}
+
+/// Unify argument with clause variable (subsequent occurrence)
+/// Performs writer MGU, updates σ̂w during HEAD phase
+class GetValue implements Op {
+  final int varIndex;  // clause variable index
+  final int argSlot;   // argument register
+  GetValue(this.varIndex, this.argSlot);
+}
+
 // Legacy opcodes (for backward compatibility with existing tests)
 class HeadBindWriter implements Op {
   final int writerId;
