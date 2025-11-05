@@ -17,6 +17,9 @@ class GlpRuntime {
   final Map<GoalId, CallEnv> _goalEnvs = <GoalId, CallEnv>{};
   final Map<GoalId, Object?> _goalPrograms = <GoalId, Object?>{};
 
+  // Goal ID counter for spawn
+  int nextGoalId = 10000;  // Start at 10000 to avoid collisions with test goal IDs
+
   GlpRuntime({Heap? heap, ROQueues? roq, GoalQueue? gq})
       : heap = heap ?? Heap(),
         roq = roq ?? ROQueues(),

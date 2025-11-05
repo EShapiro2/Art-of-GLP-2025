@@ -63,13 +63,23 @@ void main() {
     print('');
 
     // Goal: clause(p(X), Y)
+    // Arg 0: p(X) structure (as reader rPX)
+    // Arg 1: Y (as writer wY)
     const goalId = 100;
-    final env = CallEnv(readers: {0: rPX, 1: rY});
+    final env = CallEnv(readers: {0: rPX}, writers: {1: wY});
     rt.setGoalEnv(goalId, env);
 
     final cx = RunnerContext(rt: rt, goalId: goalId, kappa: prog.labels['clause/2_start']!, env: env);
 
     print('Goal: clause(p(X), Y) at PC ${prog.labels['clause/2_start']}');
+    print('CallEnv: readers={${env.readerBySlot}}, writers={${env.writerBySlot}}');
+    print('');
+
+    print('Checking arguments:');
+    print('  env.r(0) = ${env.r(0)} (should be rPX=$rPX)');
+    print('  env.r(1) = ${env.r(1)} (should be null)');
+    print('  env.w(0) = ${env.w(0)} (should be null)');
+    print('  env.w(1) = ${env.w(1)} (should be wY=$wY)');
     print('');
 
     final runner = BytecodeRunner(prog);

@@ -65,6 +65,9 @@ class RunnerContext {
   final Map<int, int> argWriters = {};  // argSlot → writer ID
   final Map<int, int> argReaders = {};  // argSlot → reader ID
 
+  // BODY argument registers for spawn/requeue
+  final Map<int, Object?> bodyArgs = {};  // argSlot → value (int for writer/reader ID, or ConstTerm)
+
   // Reduction budget (null = unlimited)
   int? reductionBudget;
   int reductionsUsed = 0;
@@ -233,6 +236,7 @@ class BytecodeRunner {
         final arg = _getArg(cx, op.argSlot);
         if (arg == null) {
           // No argument - soft fail to next clause
+          if (debug && cx.goalId >= 4000) print('  HeadStructure: arg is null, failing');
           _softFailToNextClause(cx, pc);
           pc = _findNextClauseTry(pc);
           continue;
@@ -240,6 +244,7 @@ class BytecodeRunner {
 
         if (arg.isWriter) {
           // WRITE mode: create tentative structure for writer
+          if (debug && cx.goalId >= 4000) print('  HeadStructure: WRITE mode for writer ${arg.writerId}');
           final struct = _TentativeStruct(op.functor, op.arity, List.filled(op.arity, null));
           cx.sigmaHat[arg.writerId!] = struct;
           cx.currentStructure = struct;
@@ -251,8 +256,10 @@ class BytecodeRunner {
         if (arg.isReader) {
           // Reader: check if bound and has matching structure
           final wid = cx.rt.heap.writerIdForReader(arg.readerId!);
+          if (debug && cx.goalId >= 4000) print('  HeadStructure: READ mode, reader ${arg.readerId} -> writer $wid');
           if (wid == null || !cx.rt.heap.isWriterBound(wid)) {
             // Unbound reader - add to Si and soft fail
+            if (debug && cx.goalId >= 4000) print('  HeadStructure: writer $wid unbound or null, adding to Si and failing');
             cx.si.add(arg.readerId!);
             _softFailToNextClause(cx, pc);
             pc = _findNextClauseTry(pc);
@@ -261,14 +268,17 @@ class BytecodeRunner {
 
           // Bound reader - get value and check if it's a matching structure
           final value = cx.rt.heap.valueOfWriter(wid);
+          if (debug && cx.goalId >= 4000) print('  HeadStructure: writer $wid value = $value, expecting ${op.functor}/${op.arity}');
           if (value is StructTerm && value.functor == op.functor && value.args.length == op.arity) {
             // Matching structure - enter READ mode
+            if (debug && cx.goalId >= 4000) print('  HeadStructure: MATCH! Entering READ mode');
             cx.currentStructure = value;
             cx.mode = UnifyMode.read;
             cx.S = 0;
             pc++; continue;
           } else {
             // Non-matching structure or not a structure - soft fail
+            if (debug && cx.goalId >= 4000) print('  HeadStructure: NO MATCH, failing');
             _softFailToNextClause(cx, pc);
             pc = _findNextClauseTry(pc);
             continue;
@@ -517,11 +527,35 @@ class BytecodeRunner {
             final struct = cx.currentStructure as StructTerm;
             if (cx.S < struct.args.length) {
               final value = struct.args[cx.S];
-              // Check if value is a constant term matching op.value
+              if (debug && cx.goalId >= 4000) print('  UnifyConstant: S=${cx.S}, value=$value (${value.runtimeType}), expecting ${op.value}');
+
               if (value is ConstTerm && value.value == op.value) {
-                cx.S++; // Match successful, advance
+                // Constant matches - advance
+                cx.S++;
+              } else if (value is WriterTerm) {
+                // Writer variable - bind to constant in σ̂w
+                final wid = value.writerId;
+                if (cx.rt.heap.isWriterBound(wid)) {
+                  // Already bound - check if it matches
+                  final boundValue = cx.rt.heap.valueOfWriter(wid);
+                  if (boundValue is ConstTerm && boundValue.value == op.value) {
+                    cx.S++; // Match successful
+                  } else {
+                    // Bound to different value - fail
+                    if (debug && cx.goalId >= 4000) print('  UnifyConstant: writer already bound to $boundValue, failing');
+                    _softFailToNextClause(cx, pc);
+                    pc = _findNextClauseTry(pc);
+                    continue;
+                  }
+                } else {
+                  // Unbound writer - add tentative binding to σ̂w
+                  if (debug && cx.goalId >= 4000) print('  UnifyConstant: binding writer $wid to ${op.value} in σ̂w');
+                  cx.sigmaHat[wid] = ConstTerm(op.value);
+                  cx.S++;
+                }
               } else {
                 // Mismatch - soft fail
+                if (debug && cx.goalId >= 4000) print('  UnifyConstant: MISMATCH, failing');
                 _softFailToNextClause(cx, pc);
                 pc = _findNextClauseTry(pc);
                 continue;
@@ -1065,6 +1099,148 @@ class BytecodeRunner {
           continue;
         }
         pc++; continue;
+      }
+
+      // ===== VARIABLE INSTRUCTIONS =====
+
+      if (op is GetVariable) {
+        // get_variable Xi, Ai: Load argument Ai into clause variable Xi
+        // This records the argument value for later use in BODY
+        final argInfo = _getArg(cx, op.argSlot);
+        if (argInfo != null) {
+          if (argInfo.isWriter) {
+            cx.clauseVars[op.varIndex] = argInfo.writerId!;
+          } else if (argInfo.isReader) {
+            cx.clauseVars[op.varIndex] = argInfo.readerId!;
+          }
+        }
+        pc++; continue;
+      }
+
+      // ===== BODY INSTRUCTIONS =====
+      // These execute after COMMIT
+
+      if (op is PutWriter) {
+        // Place writer variable in argument slot
+        final writerId = cx.clauseVars[op.varIndex];
+        if (writerId == null) {
+          throw StateError('PutWriter: variable ${op.varIndex} not found in clauseVars');
+        }
+        cx.bodyArgs[op.argSlot] = writerId;
+        pc++; continue;
+      }
+
+      if (op is PutReader) {
+        // Place reader (of writer variable) in argument slot
+        final writerId = cx.clauseVars[op.varIndex];
+        if (writerId == null) {
+          throw StateError('PutReader: variable ${op.varIndex} not found in clauseVars');
+        }
+        if (writerId is! int) {
+          throw StateError('PutReader: writerId must be int, got ${writerId.runtimeType}');
+        }
+        // Get the paired reader ID for this writer
+        final writer = cx.rt.heap.writer(writerId as int);
+        if (writer == null) {
+          throw StateError('PutReader: writer $writerId not found in heap');
+        }
+        cx.bodyArgs[op.argSlot] = writer.readerId;
+        pc++; continue;
+      }
+
+      if (op is PutConstant) {
+        // Place constant value in argument slot
+        cx.bodyArgs[op.argSlot] = ConstTerm(op.value);
+        pc++; continue;
+      }
+
+      if (op is PutStructure) {
+        // TODO: Implement put_structure for building structures in BODY
+        throw UnimplementedError('PutStructure not yet implemented');
+      }
+
+      if (op is Spawn) {
+        // Spawn new goal: create fresh goal ID, build CallEnv from bodyArgs, enqueue
+        final newGoalId = cx.rt.nextGoalId++;
+
+        // Build CallEnv from bodyArgs
+        final readers = <int, int>{};
+        final writers = <int, int>{};
+
+        for (final entry in cx.bodyArgs.entries) {
+          final slot = entry.key;
+          final value = entry.value;
+
+          if (value is int) {
+            // Could be writer ID or reader ID - need to check heap
+            final writer = cx.rt.heap.writer(value);
+            if (writer != null) {
+              writers[slot] = value;
+            } else {
+              readers[slot] = value;
+            }
+          } else if (value is ConstTerm) {
+            // Create a reader for the constant value
+            // TODO: Handle ground terms properly
+            throw UnimplementedError('Spawn with constant arguments not yet implemented');
+          }
+        }
+
+        final newEnv = CallEnv(readers: readers, writers: writers);
+        cx.rt.setGoalEnv(newGoalId, newEnv);
+
+        // Get entry PC for the target procedure
+        final entryPc = prog.labels[op.procedureLabel];
+        if (entryPc == null) {
+          throw StateError('Spawn: label ${op.procedureLabel} not found');
+        }
+
+        // Enqueue the new goal
+        cx.rt.gq.enqueue(GoalRef(newGoalId, entryPc));
+
+        // Clear bodyArgs for next instruction
+        cx.bodyArgs.clear();
+
+        pc++; continue;
+      }
+
+      if (op is Requeue) {
+        // Tail call: requeue current goal at new entry point
+        // Build CallEnv from bodyArgs
+        final readers = <int, int>{};
+        final writers = <int, int>{};
+
+        for (final entry in cx.bodyArgs.entries) {
+          final slot = entry.key;
+          final value = entry.value;
+
+          if (value is int) {
+            // Could be writer ID or reader ID
+            final writer = cx.rt.heap.writer(value);
+            if (writer != null) {
+              writers[slot] = value;
+            } else {
+              readers[slot] = value;
+            }
+          } else if (value is ConstTerm) {
+            throw UnimplementedError('Requeue with constant arguments not yet implemented');
+          }
+        }
+
+        final newEnv = CallEnv(readers: readers, writers: writers);
+        cx.rt.setGoalEnv(cx.goalId, newEnv);
+
+        // Get entry PC for the target procedure
+        final entryPc = prog.labels[op.procedureLabel];
+        if (entryPc == null) {
+          throw StateError('Requeue: label ${op.procedureLabel} not found');
+        }
+
+        // Requeue current goal at new entry point
+        cx.rt.gq.enqueue(GoalRef(cx.goalId, entryPc));
+
+        // Terminate current execution (goal will be restarted)
+        return RunResult.terminated;
       }
 
       if (op is Proceed) {
