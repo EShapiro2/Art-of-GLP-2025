@@ -136,6 +136,13 @@ Tests are organized under `test/`:
 - `custom/`: Custom test scenarios
 - `v216_vm_min_test.dart`: Core VM test demonstrating writer/reader/suspend/fail outcomes
 
+**IMPORTANT - Test Preservation**:
+- **ALL tests must be committed to git** to prevent loss across conversations
+- When creating new tests or modifying existing ones, always commit them immediately
+- Tests serve as executable documentation and regression prevention
+- Run `dart test` before committing to ensure all tests pass
+- Include test descriptions in commit messages to document what functionality is being tested
+
 ## Development Context
 
 - This is an active research implementation aligned with a formal specification
