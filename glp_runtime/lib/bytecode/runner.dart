@@ -235,8 +235,12 @@ class BytecodeRunner {
       }
 
       if (op is HeadStructure) {
-        final arg = _getArg(cx, op.argSlot);
-        if (arg == null) {
+        // Check if argSlot refers to a clause variable (for nested structures) or argument register
+        // Clause variables are used when matching extracted nested structures (argSlot >= 10 by convention)
+        final bool isClauseVar = op.argSlot >= 10;
+        final arg = isClauseVar ? null : _getArg(cx, op.argSlot);
+
+        if (!isClauseVar && arg == null) {
           // No argument - soft fail to next clause
           if (debug && cx.goalId >= 4000) print('  HeadStructure: arg is null, failing');
           _softFailToNextClause(cx, pc);
@@ -244,7 +248,53 @@ class BytecodeRunner {
           continue;
         }
 
-        if (arg.isWriter) {
+        // For clause variables, get the value from clauseVars
+        if (isClauseVar) {
+          final clauseVarValue = cx.clauseVars[op.argSlot];
+          if (clauseVarValue == null) {
+            // Unbound clause variable - soft fail
+            if (debug && cx.goalId >= 4000) print('  HeadStructure: clause var ${op.argSlot} is unbound, failing');
+            _softFailToNextClause(cx, pc);
+            pc = _findNextClauseTry(pc);
+            continue;
+          }
+
+          // If clauseVarValue is a WriterTerm or ReaderId, treat it as if it came from argument
+          if (clauseVarValue is int) {
+            // It's a writer ID
+            final struct = _TentativeStruct(op.functor, op.arity, List.filled(op.arity, null));
+            cx.sigmaHat[clauseVarValue] = struct;
+            cx.currentStructure = struct;
+            cx.mode = UnifyMode.write;
+            cx.S = 0;
+            pc++; continue;
+          } else if (clauseVarValue is WriterTerm) {
+            // Check if this writer is bound to a structure
+            final wid = clauseVarValue.writerId;
+            if (cx.rt.heap.isWriterBound(wid)) {
+              final value = cx.rt.heap.valueOfWriter(wid);
+              if (value is StructTerm && value.functor == op.functor && value.args.length == op.arity) {
+                if (debug && cx.goalId >= 4000) print('  HeadStructure: clause var ${op.argSlot} = W$wid = $value, MATCH!');
+                cx.currentStructure = value;
+                cx.mode = UnifyMode.read;
+                cx.S = 0;
+                pc++; continue;
+              }
+            }
+            // No match
+            if (debug && cx.goalId >= 4000) print('  HeadStructure: clause var ${op.argSlot} = W$wid, NO MATCH');
+            _softFailToNextClause(cx, pc);
+            pc = _findNextClauseTry(pc);
+            continue;
+          }
+
+          // Unexpected clauseVar type
+          _softFailToNextClause(cx, pc);
+          pc = _findNextClauseTry(pc);
+          continue;
+        }
+
+        if (arg!.isWriter) {
           // WRITE mode: create tentative structure for writer
           if (debug && cx.goalId >= 4000) print('  HeadStructure: WRITE mode for writer ${arg.writerId}');
           final struct = _TentativeStruct(op.functor, op.arity, List.filled(op.arity, null));

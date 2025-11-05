@@ -181,18 +181,39 @@ All put_*/body construction instructions are **heap-mutating**: they allocate an
 
 These instructions fill in structure arguments after head_structure or put_structure.
 
+**Nested Structures** (from WAM Technical Note 309, Section 8.4):
+When a nested structure occurs during structure traversal:
+- **In HEAD mode**: Use `unifyWriter Xi` to extract the nested structure into a temporary variable Xi, then after the current unify sequence completes, use `headStruct(f, n, Xi)` to match the extracted structure against pattern f/n
+- **In BODY mode**: Pre-build the nested structure with `putStructure(f, n, Xi)` before the unify sequence, then reference it with `unifyValue Xi` during traversal
+
+**Example**: For `clause(merge([X|Xs],Ys,[X?|Zs?]), ...)`:
+```
+headStruct('merge', 3, 0)      // Match merge/3, enter READ mode, S=0
+  unifyWriter(10)              // Extract arg at S=0 into X10 (the list [X|Xs])
+  unifyWriter(2)               // Extract arg at S=1 into X2 (Ys)
+  unifyWriter(11)              // Extract arg at S=2 into X11 (the list [X?|Zs?])
+// Now match the extracted nested structures
+headStruct('[|]', 2, 10)       // Match X10 against [|]/2
+  unifyWriter(0)               // X
+  unifyWriter(1)               // Xs
+headStruct('[|]', 2, 11)       // Match X11 against [|]/2
+  unifyReader(0)               // X?
+  unifyReader(3)               // Zs?
+```
+
 ### 8.1 writer Xi
 **Operation**: Process writer variable in structure
 **Behavior**:
 - In READ mode:
   - Extract value at S (may be constant, structure, or writer variable)
+  - Store the extracted value in clause variable Xi
   - If unbound writer: record writer-to-writer unification in σ̂w
-  - If bound writer: use its value
+  - If bound writer: use its value (including bound structures)
   - If reader: check paired writer (suspend if unbound)
 - In WRITE mode: create new writer variable, store at H and in Xi
 - Increment S (READ) or H (WRITE)
 
-**Note**: Writer-to-writer unification follows Writer MGU semantics
+**Note**: Writer-to-writer unification follows Writer MGU semantics. In READ mode, this instruction extracts any term (including nested structures) for later matching.
 
 ### 8.2 reader Xi
 **Operation**: Process reader variable in structure
