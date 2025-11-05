@@ -147,13 +147,15 @@ class BytecodeRunner {
 
       // Otherwise guard: succeeds if Si is empty (all previous clauses failed, not suspended)
       if (op is Otherwise) {
-        if (cx.si.isNotEmpty) {
-          // Previous clauses suspended (Si non-empty), so fail to next clause
+        // Otherwise succeeds only if all previous clauses definitively failed
+        // If any clause suspended (U non-empty), then otherwise should also suspend
+        if (cx.U.isNotEmpty || cx.si.isNotEmpty) {
+          // Previous clauses suspended, so this clause also suspends
           _softFailToNextClause(cx, pc);
           pc = _findNextClauseTry(pc);
           continue;
         }
-        // Si is empty - all previous clauses definitely failed, so succeed
+        // U and Si both empty - all previous clauses definitely failed, so succeed
         pc++;
         continue;
       }
@@ -824,6 +826,9 @@ class BytecodeRunner {
 
       if (op is PutReader) {
         if (cx.inBody) {
+          if (debug) {
+            print('  [G${cx.goalId}] PC=$pc PutReader varIndex=${op.varIndex} argSlot=${op.argSlot} clauseVars=${cx.clauseVars}');
+          }
           // Get ID from clause variable - could be writer ID, reader ID, or StructTerm
           final value = cx.clauseVars[op.varIndex];
           if (value is int) {
@@ -1052,9 +1057,13 @@ class BytecodeRunner {
             return RunResult.terminated;
           }
 
-          // Create and enqueue new goal
-          final newGoalId = cx.goalId * 1000 + pc;  // Simple ID generation
+          // Create and enqueue new goal with unique ID
+          final newGoalId = cx.rt.nextGoalId++;
           final newGoalRef = GoalRef(newGoalId, entryPc);
+
+          if (debug) {
+            print('  [G${cx.goalId}] PC=$pc Spawn ${op.procedureLabel} -> Goal $newGoalId at PC $entryPc with env: W=${newEnv.writerBySlot} R=${newEnv.readerBySlot}');
+          }
 
           // Register environment with the runtime
           cx.rt.setGoalEnv(newGoalId, newEnv);
