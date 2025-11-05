@@ -31,6 +31,7 @@ class GoalState {
   GoalStatus status;
   int tailBudget;
   SigmaHat sigmaHat;    // cleared at clause_next and suspend
+  final Object? program; // program identifier (runner, bytecode, etc.) for this goal
 
   GoalState({
     required this.goalId,
@@ -39,6 +40,7 @@ class GoalState {
     this.status = GoalStatus.active,
     this.tailBudget = tailRecursionBudgetInit,
     SigmaHat? sigmaHat,
+    this.program,
   }) : sigmaHat = sigmaHat ?? <WriterId, Object?>{};
 }
 

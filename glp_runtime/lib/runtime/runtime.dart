@@ -6,6 +6,7 @@ import 'commit.dart';
 import 'abandon.dart';
 import 'fairness.dart';
 import 'hanger.dart';
+import '../bytecode/runner.dart' show CallEnv;
 
 class GlpRuntime {
   final Heap heap;
@@ -13,6 +14,8 @@ class GlpRuntime {
   final GoalQueue gq;
 
   final Map<GoalId, int> _budgets = <GoalId, int>{};
+  final Map<GoalId, CallEnv> _goalEnvs = <GoalId, CallEnv>{};
+  final Map<GoalId, Object?> _goalPrograms = <GoalId, Object?>{};
 
   GlpRuntime({Heap? heap, ROQueues? roq, GoalQueue? gq})
       : heap = heap ?? Heap(),
@@ -65,6 +68,18 @@ class GlpRuntime {
   }
 
   int budgetOf(GoalId g) => _budgets[g] ?? tailRecursionBudgetInit;
+
+  void setGoalEnv(GoalId g, CallEnv env) {
+    _goalEnvs[g] = env;
+  }
+
+  CallEnv? getGoalEnv(GoalId g) => _goalEnvs[g];
+
+  void setGoalProgram(GoalId g, Object? program) {
+    _goalPrograms[g] = program;
+  }
+
+  Object? getGoalProgram(GoalId g) => _goalPrograms[g];
 
   void _enqueueAll(List<GoalRef> acts) {
     for (final a in acts) {
