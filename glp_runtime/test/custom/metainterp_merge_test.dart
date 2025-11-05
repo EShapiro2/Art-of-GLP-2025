@@ -30,25 +30,27 @@ void main() {
       // ===== CLAUSE/2: Object program with merge =====
 
       // Clause 1: clause(merge([X|Xs],Ys,[X?|Zs?]), merge(Ys?,Xs?,Zs)).
+      // Variables: 0=X, 1=Xs, 2=Ys, 3=Zs
+      // Temporaries for nested structures: 10=first arg list, 11=third arg list
       BC.L('clause/2'),
       BC.TRY(),
       // Match first arg: merge([X|Xs],Ys,[X?|Zs?])
-      BC.headStruct('merge', 3, 0),     // Match merge/3 at arg0, enter READ mode
-        BC.unifyWriter(10),             // Extract first arg into X10 (will be [X|Xs])
-        BC.unifyWriter(2),              // Extract second arg into X2 (Ys)
-        BC.unifyWriter(11),             // Extract third arg into X11 (will be [X?|Zs?])
+      BC.headStruct('merge', 3, 0),     // Match merge/3 at arg0, enter READ mode, S=0
+        BC.unifyWriter(10),             // S=0: Extract first merge arg into temp X10
+        BC.unifyWriter(2),              // S=1: Extract second merge arg into var 2 (Ys)
+        BC.unifyWriter(11),             // S=2: Extract third merge arg into temp X11
       // Now match the extracted nested structures
-      BC.headStruct('[|]', 2, 10),      // Match X10 against [|]/2
-        BC.unifyWriter(0),              // X
-        BC.unifyWriter(1),              // Xs
-      BC.headStruct('[|]', 2, 11),      // Match X11 against [|]/2
-        BC.unifyReader(0),              // X? (reader of X)
-        BC.unifyReader(3),              // Zs? (reader of Zs)
+      BC.headStruct('[|]', 2, 10),      // Match temp X10 (extracted list) against [|]/2
+        BC.unifyWriter(0),              // S=0: X (head of first list)
+        BC.unifyWriter(1),              // S=1: Xs (tail of first list)
+      BC.headStruct('[|]', 2, 11),      // Match temp X11 (extracted list) against [|]/2
+        BC.unifyReader(0),              // S=0: X? (reader - head of third list)
+        BC.unifyReader(3),              // S=1: Zs? (reader - tail of third list)
       // Match second arg: merge(Ys?,Xs?,Zs)
       BC.headStruct('merge', 3, 1),     // Match merge/3 at arg1
-        BC.unifyReader(2),              // Ys? (reader of Ys)
-        BC.unifyReader(1),              // Xs? (reader of Xs)
-        BC.unifyWriter(3),              // Zs (writer)
+        BC.unifyReader(2),              // S=0: Ys? (reader of var 2)
+        BC.unifyReader(1),              // S=1: Xs? (reader of var 1)
+        BC.unifyWriter(3),              // S=2: Zs (writer var 3)
       BC.COMMIT(),
       BC.PROCEED(),
 

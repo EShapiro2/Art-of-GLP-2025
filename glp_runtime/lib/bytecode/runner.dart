@@ -741,6 +741,14 @@ class BytecodeRunner {
               if (wc != null) {
                 struct.args[cx.S] = ReaderTerm(wc.readerId);
               }
+            } else if (writerId == null) {
+              // First occurrence of this variable is a reader!
+              // Must create the paired writer first
+              final (freshWriterId, freshReaderId) = cx.rt.heap.allocateFreshPair();
+              cx.rt.heap.addWriter(WriterCell(freshWriterId, freshReaderId));
+              cx.rt.heap.addReader(ReaderCell(freshReaderId));
+              cx.clauseVars[op.varIndex] = freshWriterId;
+              struct.args[cx.S] = ReaderTerm(freshReaderId);
             }
             cx.S++;
           }
