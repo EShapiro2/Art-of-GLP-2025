@@ -1,6 +1,7 @@
 import 'machine_state.dart';
 import 'heap.dart';
 import 'roq.dart';
+import 'terms.dart';
 
 class CommitOps {
   /// Apply tentative writer substitution σ̂w (v2.16 semantics)
@@ -17,12 +18,15 @@ class CommitOps {
       final value = entry.value;
 
       // Apply binding to heap
-      if (value is String || value is int || value is bool || value == null) {
+      if (value is StructTerm) {
+        // Structure binding
+        heap.bindWriterStruct(writerId, value.functor, value.args);
+      } else if (value is String || value is int || value is bool || value == null) {
         // Constant value
         heap.bindWriterConst(writerId, value);
       } else {
-        // TODO: Handle structure bindings when we implement tentative structures
-        // For now, just process ROQ even without binding
+        // Unknown type - try to bind as constant
+        heap.bindWriterConst(writerId, value);
       }
 
       // Process ROQ to wake goals suspended on this writer's reader

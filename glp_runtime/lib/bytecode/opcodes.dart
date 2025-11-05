@@ -67,6 +67,20 @@ class HeadReader implements Op {
   HeadReader(this.varIndex);
 }
 
+/// Match constant at current S position in structure
+/// Operates in READ or WRITE mode
+class UnifyConstant implements Op {
+  final Object? value;
+  UnifyConstant(this.value);
+}
+
+/// Match void (anonymous variable) at current S position
+/// In READ mode: skip, In WRITE mode: create fresh variable
+class UnifyVoid implements Op {
+  final int count; // number of void positions to skip/create
+  UnifyVoid({this.count = 1});
+}
+
 // Legacy opcodes (for backward compatibility with existing tests)
 class HeadBindWriter implements Op {
   final int writerId;

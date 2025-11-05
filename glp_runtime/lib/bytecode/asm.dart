@@ -16,6 +16,13 @@ class BC {
   static BodySetConst bconst(int writerId, Object? v) => BodySetConst(writerId, v);
   static BodySetStructConstArgs bstructC(int writerId, String f, List<Object?> constArgs)
     => BodySetStructConstArgs(writerId, f, constArgs);
+  static HeadStructure headStruct(String functor, int arity, int argSlot)
+    => HeadStructure(functor, arity, argSlot);
+  static HeadWriter headWriter(int varIndex) => HeadWriter(varIndex);
+  static HeadReader headReader(int varIndex) => HeadReader(varIndex);
+  static UnifyConstant unifyConst(Object? value) => UnifyConstant(value);
+  static UnifyVoid unifyVoid({int count = 1}) => UnifyVoid(count: count);
+  static HeadConstant headConst(Object? value, int argSlot) => HeadConstant(value, argSlot);
 
   // UPPERCASE aliases
   static Label L(String name) => l(name);

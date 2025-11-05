@@ -79,6 +79,23 @@ class BytecodeRunner {
 
   void run(RunnerContext cx) { runWithStatus(cx); }
 
+  /// Helper: find next ClauseTry instruction after current PC
+  int _findNextClauseTry(int fromPc) {
+    for (var i = fromPc + 1; i < prog.ops.length; i++) {
+      if (prog.ops[i] is ClauseTry) return i;
+    }
+    return prog.ops.length; // End of program if no more clauses
+  }
+
+  /// Soft-fail to next clause: union Si to U, clear clause state, jump to next ClauseTry
+  void _softFailToNextClause(RunnerContext cx, int currentPc) {
+    // Union Si into U
+    if (cx.si.isNotEmpty) cx.U.addAll(cx.si);
+    // Clear clause-local state
+    cx.clearClause();
+    // Jump to next clause (will be handled by returning new PC)
+  }
+
   RunResult runWithStatus(RunnerContext cx) {
     var pc = 0;
     while (pc < prog.ops.length) {
@@ -124,7 +141,12 @@ class BytecodeRunner {
 
       if (op is HeadStructure) {
         final arg = _getArg(cx, op.argSlot);
-        if (arg == null) { pc++; continue; }
+        if (arg == null) {
+          // No argument - soft fail to next clause
+          _softFailToNextClause(cx, pc);
+          pc = _findNextClauseTry(pc);
+          continue;
+        }
 
         if (arg.isWriter) {
           // WRITE mode: create tentative structure for writer
@@ -133,37 +155,75 @@ class BytecodeRunner {
           cx.currentStructure = struct;
           cx.mode = UnifyMode.write;
           cx.S = 0; // Start at first arg
-        } else if (arg.isReader) {
+          pc++; continue;
+        }
+
+        if (arg.isReader) {
           // Reader: check if bound and has matching structure
           final wid = cx.rt.heap.writerIdForReader(arg.readerId!);
           if (wid == null || !cx.rt.heap.isWriterBound(wid)) {
+            // Unbound reader - add to Si and soft fail
             cx.si.add(arg.readerId!);
-            pc++; continue;
+            _softFailToNextClause(cx, pc);
+            pc = _findNextClauseTry(pc);
+            continue;
           }
-          // TODO: READ mode - traverse existing structure
-          // For now, just continue
-        } else {
-          // Ground structure: READ mode
-          // TODO: implement structure matching for ground terms
+
+          // Bound reader - get value and check if it's a matching structure
+          final value = cx.rt.heap.valueOfWriter(wid);
+          if (value is StructTerm && value.functor == op.functor && value.args.length == op.arity) {
+            // Matching structure - enter READ mode
+            cx.currentStructure = value;
+            cx.mode = UnifyMode.read;
+            cx.S = 0;
+            pc++; continue;
+          } else {
+            // Non-matching structure or not a structure - soft fail
+            _softFailToNextClause(cx, pc);
+            pc = _findNextClauseTry(pc);
+            continue;
+          }
         }
-        pc++; continue;
+
+        // Ground term case (not writer or reader)
+        // TODO: Handle ground structures when CallEnv supports them
+        _softFailToNextClause(cx, pc);
+        pc = _findNextClauseTry(pc);
+        continue;
       }
 
       if (op is HeadWriter) {
         // Process writer variable in structure (at S position)
         if (cx.mode == UnifyMode.write) {
-          // WRITE mode: We're building a structure - create placeholder for writer
-          // The actual writer ID will be determined later (this is a clause variable)
+          // WRITE mode: Building a structure - create placeholder for writer variable
           if (cx.currentStructure is _TentativeStruct) {
             final struct = cx.currentStructure as _TentativeStruct;
-            // Create a placeholder - actual writer binding happens separately
-            struct.args[cx.S] = 'W${op.varIndex}'; // Placeholder
-            cx.clauseVars[op.varIndex] = 'W${op.varIndex}';
+            // Store clause variable reference as placeholder
+            final placeholder = _ClauseVar(op.varIndex, isWriter: true);
+            struct.args[cx.S] = placeholder;
+            cx.clauseVars[op.varIndex] = placeholder;
             cx.S++; // Advance to next arg
           }
         } else {
-          // READ mode: Extract value from structure at S position
-          // TODO: implement READ mode structure traversal
+          // READ mode: Extract value from structure at S position into clause variable
+          if (cx.currentStructure is StructTerm) {
+            final struct = cx.currentStructure as StructTerm;
+            if (cx.S < struct.args.length) {
+              final value = struct.args[cx.S];
+              cx.clauseVars[op.varIndex] = value;
+              cx.S++; // Advance to next arg
+            } else {
+              // Structure arity mismatch - soft fail
+              _softFailToNextClause(cx, pc);
+              pc = _findNextClauseTry(pc);
+              continue;
+            }
+          } else {
+            // Not a structure - soft fail
+            _softFailToNextClause(cx, pc);
+            pc = _findNextClauseTry(pc);
+            continue;
+          }
         }
         pc++; continue;
       }
@@ -174,13 +234,93 @@ class BytecodeRunner {
           // WRITE mode: Building structure - add reader placeholder
           if (cx.currentStructure is _TentativeStruct) {
             final struct = cx.currentStructure as _TentativeStruct;
-            struct.args[cx.S] = 'R${op.varIndex}'; // Placeholder
-            cx.clauseVars[op.varIndex] = 'R${op.varIndex}';
+            final placeholder = _ClauseVar(op.varIndex, isWriter: false);
+            struct.args[cx.S] = placeholder;
+            cx.clauseVars[op.varIndex] = placeholder;
             cx.S++; // Advance to next arg
           }
         } else {
-          // READ mode: Check reader at S position
-          // TODO: implement READ mode reader checking
+          // READ mode: Verify value at S matches paired writer in tentative state
+          if (cx.currentStructure is StructTerm) {
+            final struct = cx.currentStructure as StructTerm;
+            if (cx.S < struct.args.length) {
+              final value = struct.args[cx.S];
+              // Check if value matches the tentative writer binding (if any)
+              // For now, just store the value and continue
+              // TODO: implement proper reader verification against writer
+              cx.clauseVars[op.varIndex] = value;
+              cx.S++; // Advance to next arg
+            } else {
+              // Structure arity mismatch - soft fail
+              _softFailToNextClause(cx, pc);
+              pc = _findNextClauseTry(pc);
+              continue;
+            }
+          } else {
+            // Not a structure - soft fail
+            _softFailToNextClause(cx, pc);
+            pc = _findNextClauseTry(pc);
+            continue;
+          }
+        }
+        pc++; continue;
+      }
+
+      // ===== Structure subterm matching instructions =====
+      if (op is UnifyConstant) {
+        // Match constant at current S position
+        if (cx.mode == UnifyMode.write) {
+          // WRITE mode: Add constant to structure being built
+          if (cx.currentStructure is _TentativeStruct) {
+            final struct = cx.currentStructure as _TentativeStruct;
+            struct.args[cx.S] = op.value;
+            cx.S++; // Advance to next arg
+          }
+        } else {
+          // READ mode: Verify value at S position matches constant
+          if (cx.currentStructure is StructTerm) {
+            final struct = cx.currentStructure as StructTerm;
+            if (cx.S < struct.args.length) {
+              final value = struct.args[cx.S];
+              // Check if value is a constant term matching op.value
+              if (value is ConstTerm && value.value == op.value) {
+                cx.S++; // Match successful, advance
+              } else {
+                // Mismatch - soft fail
+                _softFailToNextClause(cx, pc);
+                pc = _findNextClauseTry(pc);
+                continue;
+              }
+            } else {
+              // Structure arity mismatch - soft fail
+              _softFailToNextClause(cx, pc);
+              pc = _findNextClauseTry(pc);
+              continue;
+            }
+          } else {
+            // Not a structure - soft fail
+            _softFailToNextClause(cx, pc);
+            pc = _findNextClauseTry(pc);
+            continue;
+          }
+        }
+        pc++; continue;
+      }
+
+      if (op is UnifyVoid) {
+        // Skip/create void (anonymous) variables
+        if (cx.mode == UnifyMode.write) {
+          // WRITE mode: Create fresh unbound variables
+          if (cx.currentStructure is _TentativeStruct) {
+            final struct = cx.currentStructure as _TentativeStruct;
+            for (var i = 0; i < op.count && cx.S < struct.args.length; i++) {
+              struct.args[cx.S] = null; // Void/unbound
+              cx.S++;
+            }
+          }
+        } else {
+          // READ mode: Skip over positions
+          cx.S += op.count;
         }
         pc++; continue;
       }
@@ -215,11 +355,41 @@ class BytecodeRunner {
 
       // Commit (apply σ̂w and wake suspended goals) - v2.16 semantics
       if (op is Commit) {
+        // Convert tentative structures to real Terms before committing
+        final convertedSigmaHat = <int, Object?>{};
+        for (final entry in cx.sigmaHat.entries) {
+          final writerId = entry.key;
+          final value = entry.value;
+
+          if (value is _TentativeStruct) {
+            // Convert tentative structure to StructTerm
+            final termArgs = <Term>[];
+            for (final arg in value.args) {
+              if (arg is _ClauseVar) {
+                // TODO: resolve clause variables to actual writer/reader IDs
+                // For now, leave as placeholder
+                termArgs.add(ConstTerm('${arg.toString()}'));
+              } else if (arg == null) {
+                // Void/unbound - create fresh writer?
+                // For now, leave as null constant
+                termArgs.add(ConstTerm(null));
+              } else {
+                // Direct constant value
+                termArgs.add(ConstTerm(arg));
+              }
+            }
+            convertedSigmaHat[writerId] = StructTerm(value.functor, termArgs);
+          } else {
+            // Direct value (constant)
+            convertedSigmaHat[writerId] = value;
+          }
+        }
+
         // Apply σ̂w: bind writers to tentative values, then wake suspended goals
         final acts = CommitOps.applySigmaHatV216(
           heap: cx.rt.heap,
           roq: cx.rt.roq,
-          sigmaHat: cx.sigmaHat,
+          sigmaHat: convertedSigmaHat,
         );
         for (final a in acts) {
           cx.rt.gq.enqueue(a);
@@ -352,6 +522,17 @@ class _TentativeStruct {
 
   @override
   String toString() => '$functor/${arity}(${args.join(", ")})';
+}
+
+/// Helper to represent clause variables (before actual binding)
+class _ClauseVar {
+  final int varIndex;
+  final bool isWriter;
+
+  _ClauseVar(this.varIndex, {required this.isWriter});
+
+  @override
+  String toString() => isWriter ? 'W$varIndex' : 'R$varIndex';
 }
 
 /// Helper to represent list structures
