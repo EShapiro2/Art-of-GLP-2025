@@ -45,6 +45,26 @@ class CallEnv {
   }
 }
 
+/// Environment frame for permanent variables (Y registers)
+/// Used by non-tail-recursive predicates to save local state across procedure calls
+class EnvironmentFrame {
+  final EnvironmentFrame? parent;  // Previous environment (E register)
+  final int continuationPointer;   // Return address (CP register)
+  final List<Object?> permanentVars; // Y1, Y2, ..., Yn permanent variables
+
+  EnvironmentFrame({
+    required this.parent,
+    required this.continuationPointer,
+    required int size,
+  }) : permanentVars = List.filled(size, null);
+
+  /// Get permanent variable Yi (1-indexed)
+  Object? getY(int index) => permanentVars[index - 1];
+
+  /// Set permanent variable Yi (1-indexed)
+  void setY(int index, Object? value) => permanentVars[index - 1] = value;
+}
+
 class RunnerContext {
   final GlpRuntime rt;
   final int goalId;
@@ -71,6 +91,10 @@ class RunnerContext {
   // Reduction budget (null = unlimited)
   int? reductionBudget;
   int reductionsUsed = 0;
+
+  // Environment frames for permanent variables (Y registers)
+  EnvironmentFrame? E;  // Current environment pointer
+  int? CP;              // Continuation pointer (return address)
 
   final void Function(GoalRef)? onActivation; // host log hook
 
@@ -952,6 +976,47 @@ class BytecodeRunner {
       }
 
       // Clause control / suspend
+
+      // clause_next: Unified instruction for moving to next clause (spec 2.2)
+      // Discard σ̂w, union Si into U, clear clause state, jump to next clause
+      if (op is ClauseNext) {
+        if (cx.si.isNotEmpty) cx.U.addAll(cx.si);
+        cx.clearClause();
+        pc = prog.labels[op.label]!;
+        continue;
+      }
+
+      // try_next_clause: Soft-fail to next clause (spec 2.4)
+      // When HEAD/GUARD fails, discard σ̂w, union Si to U, jump to next ClauseTry
+      if (op is TryNextClause) {
+        _softFailToNextClause(cx, pc);
+        pc = _findNextClauseTry(pc);
+        continue;
+      }
+
+      // no_more_clauses: All clauses exhausted (spec 2.5)
+      // If U non-empty: suspend; otherwise: fail definitively
+      if (op is NoMoreClauses) {
+        if (cx.U.isNotEmpty) {
+          if (debug) {
+            print('>>> SUSPENSION: Goal ${cx.goalId} suspended on readers: ${cx.U}');
+          }
+          cx.rt.suspendGoal(goalId: cx.goalId, kappa: cx.kappa, readers: cx.U);
+          cx.U.clear();
+          cx.inBody = false;
+          return RunResult.suspended;
+        }
+        // U is empty - all clauses failed definitively (no suspension)
+        if (debug) {
+          print('>>> FAIL: Goal ${cx.goalId} (all clauses exhausted, U empty)');
+        }
+        cx.inBody = false;
+        // According to spec, failed goals should be added to F set
+        // For now, just terminate - the goal is done (failed)
+        return RunResult.terminated;
+      }
+
+      // Legacy instructions (deprecated, use ClauseNext instead)
       if (op is UnionSiAndGoto) {
         if (cx.si.isNotEmpty) cx.U.addAll(cx.si);
         cx.clearClause();
@@ -960,6 +1025,7 @@ class BytecodeRunner {
       }
       if (op is ResetAndGoto) { cx.clearClause(); pc = prog.labels[op.label]!; continue; }
 
+      // Legacy SuspendEnd (use NoMoreClauses instead)
       if (op is SuspendEnd) {
         if (cx.U.isNotEmpty) {
           if (debug) {
@@ -1418,99 +1484,8 @@ class BytecodeRunner {
         pc++; continue;
       }
 
-      if (op is PutStructure) {
-        // TODO: Implement put_structure for building structures in BODY
-        throw UnimplementedError('PutStructure not yet implemented');
-      }
-
-      if (op is Spawn) {
-        // Spawn new goal: create fresh goal ID, build CallEnv from bodyArgs, enqueue
-        final newGoalId = cx.rt.nextGoalId++;
-
-        print('[DEBUG Spawn] Creating goal $newGoalId, bodyArgs=${cx.bodyArgs}');
-
-        // Build CallEnv from bodyArgs
-        final readers = <int, int>{};
-        final writers = <int, int>{};
-
-        for (final entry in cx.bodyArgs.entries) {
-          final slot = entry.key;
-          final value = entry.value;
-
-          if (value is int) {
-            // Could be writer ID or reader ID - need to check heap
-            final writer = cx.rt.heap.writer(value);
-            if (writer != null) {
-              writers[slot] = value;
-              print('[DEBUG Spawn] Slot $slot: writer $value');
-            } else {
-              readers[slot] = value;
-              print('[DEBUG Spawn] Slot $slot: reader $value');
-            }
-          } else if (value is ConstTerm) {
-            // Create a reader for the constant value
-            // TODO: Handle ground terms properly
-            throw UnimplementedError('Spawn with constant arguments not yet implemented');
-          }
-        }
-
-        final newEnv = CallEnv(readers: readers, writers: writers);
-        print('[DEBUG Spawn] New CallEnv: writers=$writers, readers=$readers');
-        cx.rt.setGoalEnv(newGoalId, newEnv);
-
-        // Get entry PC for the target procedure
-        final entryPc = prog.labels[op.procedureLabel];
-        if (entryPc == null) {
-          throw StateError('Spawn: label ${op.procedureLabel} not found');
-        }
-
-        // Enqueue the new goal
-        cx.rt.gq.enqueue(GoalRef(newGoalId, entryPc));
-
-        // Clear bodyArgs for next instruction
-        cx.bodyArgs.clear();
-
-        pc++; continue;
-      }
-
-      if (op is Requeue) {
-        // Tail call: requeue current goal at new entry point
-        // Build CallEnv from bodyArgs
-        final readers = <int, int>{};
-        final writers = <int, int>{};
-
-        for (final entry in cx.bodyArgs.entries) {
-          final slot = entry.key;
-          final value = entry.value;
-
-          if (value is int) {
-            // Could be writer ID or reader ID
-            final writer = cx.rt.heap.writer(value);
-            if (writer != null) {
-              writers[slot] = value;
-            } else {
-              readers[slot] = value;
-            }
-          } else if (value is ConstTerm) {
-            throw UnimplementedError('Requeue with constant arguments not yet implemented');
-          }
-        }
-
-        final newEnv = CallEnv(readers: readers, writers: writers);
-        cx.rt.setGoalEnv(cx.goalId, newEnv);
-
-        // Get entry PC for the target procedure
-        final entryPc = prog.labels[op.procedureLabel];
-        if (entryPc == null) {
-          throw StateError('Requeue: label ${op.procedureLabel} not found');
-        }
-
-        // Requeue current goal at new entry point
-        cx.rt.gq.enqueue(GoalRef(cx.goalId, entryPc));
-
-        // Terminate current execution (goal will be restarted)
-        return RunResult.terminated;
-      }
+      // Note: PutStructure, Spawn, and Requeue handlers are earlier in the file (lines 1162, 1324, 1303)
+      // Removed duplicate dead code that was unreachable
 
       // ===== GUARD INSTRUCTIONS =====
       if (op is Guard) {
@@ -1523,93 +1498,168 @@ class BytecodeRunner {
       }
 
       if (op is Ground) {
-        // Test if variable is ground (contains no unbound variables)
-        // Clause variable contains writer ID (int) or reader ID (int)
+        // ground(X): Succeeds if X is ground (contains no unbound variables)
+        //
+        // Three-valued semantics:
+        // 1. If X is ground → SUCCEED (test passes, pc++)
+        // 2. If X contains unbound readers (but no unbound writers) → SUSPEND
+        //    (add readers to Si, pc++ - may become ground when readers bind)
+        // 3. If X contains unbound writers → FAIL (soft-fail to next clause)
+        //    (due to SRSW, cannot wait for unknown future binding)
+        //
+        // Per spec section 5: "A guard that demands an uninstantiated reader
+        // adds that reader to Si and continues scanning"
+
         final value = cx.clauseVars[op.varIndex];
         if (value == null) {
-          // Unbound variable - soft-fail to next clause
+          // Variable doesn't exist - fail
           _softFailToNextClause(cx, pc);
           pc = _findNextClauseTry(pc);
           continue;
         }
 
-        // Helper to check if a term is ground (recursively)
-        bool isGroundTerm(Object? term) {
+        // Collect unbound readers and check for unbound writers
+        final unboundReaders = <int>{};
+        bool hasUnboundWriter = false;
+
+        void collectUnbound(Object? term) {
           if (term is WriterTerm) {
             final wid = term.writerId;
-            if (!cx.rt.heap.isWriterBound(wid)) return false;
-            return isGroundTerm(cx.rt.heap.valueOfWriter(wid));
+            if (!cx.rt.heap.isWriterBound(wid)) {
+              hasUnboundWriter = true;
+            } else {
+              collectUnbound(cx.rt.heap.valueOfWriter(wid));
+            }
           } else if (term is ReaderTerm) {
-            final wid = cx.rt.heap.writerIdForReader(term.readerId);
-            if (wid == null || !cx.rt.heap.isWriterBound(wid)) return false;
-            return isGroundTerm(cx.rt.heap.valueOfWriter(wid));
+            final rid = term.readerId;
+            final wid = cx.rt.heap.writerIdForReader(rid);
+            if (wid == null || !cx.rt.heap.isWriterBound(wid)) {
+              unboundReaders.add(rid);
+            } else {
+              collectUnbound(cx.rt.heap.valueOfWriter(wid));
+            }
           } else if (term is StructTerm) {
-            return term.args.every(isGroundTerm);
-          } else {
-            return true; // constants are ground
+            for (final arg in term.args) {
+              collectUnbound(arg);
+            }
           }
+          // Constants contribute nothing
         }
 
-        // Dereference the clause variable to get the actual term
-        bool isGround;
+        // Dereference the clause variable
         if (value is int) {
-          // Could be writer ID or reader ID - need to check which
-          // Try as writer first
-          if (cx.rt.heap.isWriterBound(value)) {
-            final term = cx.rt.heap.valueOfWriter(value);
-            isGround = isGroundTerm(term);
+          // Could be writer ID or reader ID
+          final wc = cx.rt.heap.writer(value);
+          if (wc != null) {
+            // It's a writer ID
+            if (!cx.rt.heap.isWriterBound(value)) {
+              hasUnboundWriter = true;
+            } else {
+              collectUnbound(cx.rt.heap.valueOfWriter(value));
+            }
           } else {
-            // Unbound writer - not ground
-            isGround = false;
+            // It's a reader ID
+            final wid = cx.rt.heap.writerIdForReader(value);
+            if (wid == null || !cx.rt.heap.isWriterBound(wid)) {
+              unboundReaders.add(value);
+            } else {
+              collectUnbound(cx.rt.heap.valueOfWriter(wid));
+            }
           }
         } else {
-          // It's a Term object - check if it's ground
-          isGround = isGroundTerm(value);
+          // It's a Term - analyze it
+          collectUnbound(value);
         }
 
-        if (!isGround) {
+        // Decision logic (three-valued):
+        if (hasUnboundWriter) {
+          // Contains unbound writer(s) → FAIL (cannot become ground via SRSW)
           _softFailToNextClause(cx, pc);
           pc = _findNextClauseTry(pc);
           continue;
+        } else if (unboundReaders.isNotEmpty) {
+          // Contains unbound readers but no unbound writers → SUSPEND
+          // May become ground when readers bind, add to Si and continue
+          cx.si.addAll(unboundReaders);
+          pc++;
+          continue;
+        } else {
+          // No unbound variables → SUCCEED (is ground)
+          pc++;
+          continue;
         }
-        pc++;
-        continue;
       }
 
       if (op is Known) {
-        // Test if variable is not an unbound variable
-        // Clause variable contains writer ID (int) or reader ID (int)
+        // known(X): Succeeds if X is not an unbound variable
+        //
+        // Three-valued semantics:
+        // 1. If X is bound (to anything) → SUCCEED (test passes, pc++)
+        // 2. If X is an unbound reader → SUSPEND
+        //    (add reader to Si, pc++ - may become known when reader binds)
+        // 3. If X is an unbound writer → FAIL (soft-fail to next clause)
+        //    (due to SRSW, cannot wait for unknown future binding)
+        //
+        // Note: known(X) differs from ground(X) - known only checks if X itself
+        // is bound, not whether X contains unbound variables internally
+
         final value = cx.clauseVars[op.varIndex];
         if (value == null) {
-          // Unbound variable - soft-fail to next clause
+          // Variable doesn't exist - fail
           _softFailToNextClause(cx, pc);
           pc = _findNextClauseTry(pc);
           continue;
         }
 
-        bool isKnown;
+        // Check if value is known
+        bool isKnown = false;
+        int? unboundReader = null;
+
         if (value is int) {
-          // Could be writer ID - check if bound
-          isKnown = cx.rt.heap.isWriterBound(value);
+          // Could be writer ID or reader ID
+          final wc = cx.rt.heap.writer(value);
+          if (wc != null) {
+            // It's a writer ID - check if bound
+            isKnown = cx.rt.heap.isWriterBound(value);
+          } else {
+            // It's a reader ID - check if its paired writer is bound
+            final wid = cx.rt.heap.writerIdForReader(value);
+            if (wid != null && cx.rt.heap.isWriterBound(wid)) {
+              isKnown = true;
+            } else {
+              // Unbound reader - could become known later
+              unboundReader = value;
+            }
+          }
         } else if (value is WriterTerm) {
-          final wid = value.writerId;
-          isKnown = cx.rt.heap.isWriterBound(wid);
+          isKnown = cx.rt.heap.isWriterBound(value.writerId);
         } else if (value is ReaderTerm) {
           final wid = cx.rt.heap.writerIdForReader(value.readerId);
-          isKnown = (wid != null && cx.rt.heap.isWriterBound(wid));
+          if (wid != null && cx.rt.heap.isWriterBound(wid)) {
+            isKnown = true;
+          } else {
+            unboundReader = value.readerId;
+          }
         } else {
-          // Constant or other term - known
+          // Constant or structure - always known
           isKnown = true;
         }
 
-        if (!isKnown) {
+        if (isKnown) {
+          // Variable is known - succeed
+          pc++;
+          continue;
+        } else if (unboundReader != null) {
+          // Variable is unbound reader - could become known later, add to Si
+          cx.si.add(unboundReader);
+          pc++;
+          continue;
+        } else {
+          // Variable is unbound writer - fail
           _softFailToNextClause(cx, pc);
           pc = _findNextClauseTry(pc);
           continue;
         }
-        // Value is known (bound or constant)
-        pc++;
-        continue;
       }
 
       // ===== LIST-SPECIFIC HEAD INSTRUCTIONS =====
@@ -1746,16 +1796,48 @@ class BytecodeRunner {
 
       // ===== ENVIRONMENT FRAME INSTRUCTIONS =====
       if (op is Allocate) {
-        // Create environment frame - not yet implemented
-        // GLP uses committed-choice semantics, so environment frames rarely needed
-        print('[WARN] Allocate instruction not implemented - no-op');
+        // allocate N: Create environment frame with N permanent variable slots
+        // WAM semantics: E' = newFrame(E, CP, N); CP = P+1
+        // Used by non-tail-recursive predicates to save local state
+        if (!cx.inBody) {
+          throw StateError('Allocate must be in BODY phase (after commit)');
+        }
+
+        final newFrame = EnvironmentFrame(
+          parent: cx.E,
+          continuationPointer: cx.CP ?? (pc + 1),  // Save continuation (next instruction)
+          size: op.slots,
+        );
+
+        cx.E = newFrame;
+        cx.CP = pc + 1;  // Update CP to point to next instruction
+
+        if (debug) {
+          print('  [G${cx.goalId}] PC=$pc Allocate ${op.slots} slots - created frame with CP=${cx.CP}');
+        }
+
         pc++;
         continue;
       }
 
       if (op is Deallocate) {
-        // Remove environment frame - not yet implemented
-        print('[WARN] Deallocate instruction not implemented - no-op');
+        // deallocate: Remove current environment frame
+        // WAM semantics: CP = E.CP; E = E.parent; P = CP
+        // Restores previous environment and returns to saved continuation
+        if (cx.E == null) {
+          throw StateError('Deallocate with no environment frame');
+        }
+
+        final frame = cx.E!;
+        cx.CP = frame.continuationPointer;  // Restore continuation pointer
+        cx.E = frame.parent;                 // Restore previous environment
+
+        if (debug) {
+          print('  [G${cx.goalId}] PC=$pc Deallocate - restored CP=${cx.CP}, parent frame=${cx.E != null}');
+        }
+
+        // Note: Unlike WAM, we don't jump to CP here - deallocate just pops the frame
+        // The subsequent proceed or return instruction will handle the jump
         pc++;
         continue;
       }
