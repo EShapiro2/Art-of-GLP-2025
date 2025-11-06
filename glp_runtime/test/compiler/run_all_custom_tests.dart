@@ -1246,5 +1246,13 @@ void main() {
       print('✅ PASS\n');
     });
 
+    // TEST 30-33: Merge metainterp tests - TODO
+    // These compile successfully but fail at runtime
+    // Source code is valid SRSW:
+    //   clause(merge([X|Xs], Ys, [X?|Zs?]), merge(Ys?, Xs?, Zs)).
+    //   clause(merge(Xs, [Y|Ys], [Y?|Zs?]), merge(Xs?, Ys?, Zs)).
+    //   clause(merge([], [], []), true).
+    // Need investigation of runtime behavior
+
   });
 }
