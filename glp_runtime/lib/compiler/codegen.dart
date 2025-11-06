@@ -1,5 +1,6 @@
 import '../bytecode/opcodes.dart' as bc;
 import '../bytecode/asm.dart';
+import '../bytecode/runner.dart' show BytecodeProgram;
 import 'ast.dart';
 import 'analyzer.dart';
 import 'error.dart';
@@ -57,11 +58,9 @@ class CodeGenerator {
       _generateProcedure(proc, ctx);
     }
 
-    // Build final bytecode program
-    return BytecodeProgram(
-      instructions: ctx.instructions,
-      labels: ctx.labels,
-    );
+    // Build final bytecode program using runner's BytecodeProgram
+    // It will auto-index labels from Label instructions
+    return BytecodeProgram(ctx.instructions);
   }
 
   void _generateProcedure(AnnotatedProcedure proc, CodeGenContext ctx) {
@@ -383,17 +382,4 @@ class CodeGenerator {
       ctx.emit(bc.PutWriter(tempReg, argSlot));
     }
   }
-}
-
-/// Bytecode Program result
-class BytecodeProgram {
-  final List<bc.Op> instructions;
-  final Map<String, int> labels;
-
-  BytecodeProgram({required this.instructions, required this.labels});
-
-  int? getLabel(String name) => labels[name];
-
-  @override
-  String toString() => 'BytecodeProgram(${instructions.length} instructions, ${labels.length} labels)';
 }

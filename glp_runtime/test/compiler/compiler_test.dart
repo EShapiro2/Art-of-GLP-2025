@@ -10,17 +10,17 @@ void main() {
 
       final program = compiler.compile(source);
 
-      expect(program.instructions, isNotEmpty);
+      expect(program.ops, isNotEmpty);
       expect(program.labels, contains('p/1'));
 
       // Should have: Label, ClauseTry, HeadConstant, Commit, Proceed, Label, NoMoreClauses
-      expect(program.instructions[0], isA<bc.Label>());
-      expect(program.instructions[1], isA<bc.ClauseTry>());
-      expect(program.instructions[2], isA<bc.HeadConstant>());
-      expect(program.instructions[3], isA<bc.Commit>());
-      expect(program.instructions[4], isA<bc.Proceed>());
-      expect(program.instructions[5], isA<bc.Label>());
-      expect(program.instructions[6], isA<bc.NoMoreClauses>());
+      expect(program.ops[0], isA<bc.Label>());
+      expect(program.ops[1], isA<bc.ClauseTry>());
+      expect(program.ops[2], isA<bc.HeadConstant>());
+      expect(program.ops[3], isA<bc.Commit>());
+      expect(program.ops[4], isA<bc.Proceed>());
+      expect(program.ops[5], isA<bc.Label>());
+      expect(program.ops[6], isA<bc.NoMoreClauses>());
     });
 
     test('compiles clause with variables', () {
@@ -32,9 +32,9 @@ void main() {
       expect(program.labels, contains('p/1'));
 
       // Should have GetVariable for X in head, PutReader for X? in body
-      final hasGetVariable = program.instructions.any((op) => op is bc.GetVariable);
-      final hasPutReader = program.instructions.any((op) => op is bc.PutReader);
-      final hasRequeue = program.instructions.any((op) => op is bc.Requeue);
+      final hasGetVariable = program.ops.any((op) => op is bc.GetVariable);
+      final hasPutReader = program.ops.any((op) => op is bc.PutReader);
+      final hasRequeue = program.ops.any((op) => op is bc.Requeue);
 
       expect(hasGetVariable, isTrue);
       expect(hasPutReader, isTrue);
@@ -48,7 +48,7 @@ void main() {
       final program = compiler.compile(source);
 
       // Should have Ground guard instruction
-      final hasGround = program.instructions.any((op) => op is bc.Ground);
+      final hasGround = program.ops.any((op) => op is bc.Ground);
       expect(hasGround, isTrue);
     });
 
@@ -59,8 +59,8 @@ void main() {
       final program = compiler.compile(source);
 
       // Should have HeadList and Writer instructions
-      final hasHeadList = program.instructions.any((op) => op is bc.HeadList);
-      final hasWriter = program.instructions.any((op) => op is bc.UnifyWriter);
+      final hasHeadList = program.ops.any((op) => op is bc.HeadList);
+      final hasWriter = program.ops.any((op) => op is bc.UnifyWriter);
 
       expect(hasHeadList, isTrue);
       expect(hasWriter, isTrue);
@@ -73,7 +73,7 @@ void main() {
       final program = compiler.compile(source);
 
       // Should have HeadNil
-      final hasHeadNil = program.instructions.any((op) => op is bc.HeadNil);
+      final hasHeadNil = program.ops.any((op) => op is bc.HeadNil);
       expect(hasHeadNil, isTrue);
     });
 
@@ -89,11 +89,11 @@ void main() {
       expect(program.labels, contains('p/1'));
 
       // Should have 2 ClauseTry instructions (one per clause)
-      final clauseTries = program.instructions.where((op) => op is bc.ClauseTry).length;
+      final clauseTries = program.ops.where((op) => op is bc.ClauseTry).length;
       expect(clauseTries, 2);
 
       // Should have 2 Commit instructions (one per clause)
-      final commits = program.instructions.where((op) => op is bc.Commit).length;
+      final commits = program.ops.where((op) => op is bc.Commit).length;
       expect(commits, 2);
 
       // Should have labels for second clause and end
@@ -113,19 +113,19 @@ void main() {
       expect(program.labels, contains('merge/3'));
 
       // Should have 3 clauses
-      final clauseTries = program.instructions.where((op) => op is bc.ClauseTry).length;
+      final clauseTries = program.ops.where((op) => op is bc.ClauseTry).length;
       expect(clauseTries, 3);
 
       // Should have HeadList instructions
-      final headLists = program.instructions.where((op) => op is bc.HeadList).length;
+      final headLists = program.ops.where((op) => op is bc.HeadList).length;
       expect(headLists, greaterThan(0));
 
       // Should have Reader instructions
-      final readers = program.instructions.where((op) => op is bc.UnifyReader).length;
+      final readers = program.ops.where((op) => op is bc.UnifyReader).length;
       expect(readers, greaterThan(0));
 
       // Should have Requeue for tail calls
-      final requeues = program.instructions.where((op) => op is bc.Requeue).length;
+      final requeues = program.ops.where((op) => op is bc.Requeue).length;
       expect(requeues, 2);  // First two clauses have body
     });
 
@@ -136,7 +136,7 @@ void main() {
       final program = compiler.compile(source);
 
       // Should have HeadStructure
-      final hasHeadStruct = program.instructions.any((op) => op is bc.HeadStructure);
+      final hasHeadStruct = program.ops.any((op) => op is bc.HeadStructure);
       expect(hasHeadStruct, isTrue);
     });
 
@@ -147,8 +147,8 @@ void main() {
       final program = compiler.compile(source);
 
       // First goal should use Spawn, second should use Requeue
-      final spawns = program.instructions.where((op) => op is bc.Spawn).length;
-      final requeues = program.instructions.where((op) => op is bc.Requeue).length;
+      final spawns = program.ops.where((op) => op is bc.Spawn).length;
+      final requeues = program.ops.where((op) => op is bc.Requeue).length;
 
       expect(spawns, 1);      // q(X?)
       expect(requeues, 1);    // r(Y?) in tail position
@@ -178,7 +178,7 @@ void main() {
 
       final program = compiler.compile(source);
 
-      final hasOtherwise = program.instructions.any((op) => op is bc.Otherwise);
+      final hasOtherwise = program.ops.any((op) => op is bc.Otherwise);
       expect(hasOtherwise, isTrue);
     });
 
@@ -188,7 +188,7 @@ void main() {
 
       final program = compiler.compile(source);
 
-      final hasKnown = program.instructions.any((op) => op is bc.Known);
+      final hasKnown = program.ops.any((op) => op is bc.Known);
       expect(hasKnown, isTrue);
     });
 
@@ -199,7 +199,7 @@ void main() {
       final program = compiler.compile(source);
 
       // Underscore should generate UnifyVoid instruction
-      final hasVoid = program.instructions.any((op) => op is bc.UnifyVoid);
+      final hasVoid = program.ops.any((op) => op is bc.UnifyVoid);
       expect(hasVoid, isTrue);
     });
   });

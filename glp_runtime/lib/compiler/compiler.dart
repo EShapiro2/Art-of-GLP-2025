@@ -4,6 +4,10 @@ import 'analyzer.dart';
 import 'codegen.dart';
 import 'error.dart';
 import 'token.dart';
+import '../bytecode/runner.dart' show BytecodeProgram;
+
+// Re-export BytecodeProgram for users of this module
+export '../bytecode/runner.dart' show BytecodeProgram;
 
 /// Main GLP compiler
 class GlpCompiler {
