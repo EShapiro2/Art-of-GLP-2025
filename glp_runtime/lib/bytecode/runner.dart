@@ -125,11 +125,12 @@ class BytecodeRunner {
   void run(RunnerContext cx) { runWithStatus(cx); }
 
   /// Helper: find next ClauseTry instruction after current PC
-  /// If no more ClauseTry, look for SuspendEnd to check for suspension/failure
+  /// If no more ClauseTry, look for SuspendEnd/NoMoreClauses to check for suspension/failure
   int _findNextClauseTry(int fromPc) {
     for (var i = fromPc + 1; i < prog.ops.length; i++) {
       if (prog.ops[i] is ClauseTry) return i;
       if (prog.ops[i] is SuspendEnd) return i; // Jump to SUSP to check U
+      if (prog.ops[i] is NoMoreClauses) return i; // Jump to NoMoreClauses to check U
     }
     return prog.ops.length; // End of program if no more clauses or SUSP
   }

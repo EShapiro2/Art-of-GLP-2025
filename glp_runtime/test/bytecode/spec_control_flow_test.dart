@@ -68,27 +68,31 @@ void main() {
 
     final rt = GlpRuntime();
 
-    // Program: p(X?) :- ground(X?) | proceed.
-    // No otherwise clause - should suspend because U will contain blocked reader
-    // Key: ground(X?) on unbound reader adds to Si and continues (not fail)
-    // Then COMMIT/PROCEED would execute, but we need ClauseNext to union Si to U
+    // Program: p(X?) with guard that adds to Si, no matching clauses
+    // The ground(X?) guard on unbound reader adds to Si
+    // Since no clause commits, Si gets unioned to U via ClauseNext
+    // Then NoMoreClauses suspends because U is non-empty
 
     final prog = BC.prog([
       BC.L('p/1'),
 
-      // Clause 1: ground(X?) test - adds reader to Si, then we need to move to next clause
+      // Clause 1: Has ground guard that adds reader to Si, but head fails
       BC.TRY(),
       BC.getVar(0, 0),              // X0 = arg 0 (reader)
       BC.ground(0),                 // Test ground - adds reader to Si, continues
-      // But we need this clause to NOT commit - add a failing guard after
-      BC.headConst('never_matches', 0), // Force clause to fail after ground
+      BC.headConst('no_match', 0),  // Head fails - jumps to next clause with Si→U
       BC.COMMIT(),
       BC.PROCEED(),
-      BC.L('p/1_c1_end'),
-      BC.clauseNext('p/1_end'),     // ClauseNext unions Si to U
+
+      // Clause 2: Also fails
+      BC.L('p/1_c2'),
+      BC.TRY(),
+      BC.headConst('also_no_match', 0), // Also fails
+      BC.COMMIT(),
+      BC.PROCEED(),
 
       BC.L('p/1_end'),
-      BC.noMoreClauses(),           // NEW: NoMoreClauses checks U and suspends
+      BC.noMoreClauses(),           // All clauses exhausted, U non-empty → suspend
     ]);
 
     final runner = BytecodeRunner(prog);
