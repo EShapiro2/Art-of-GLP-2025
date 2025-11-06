@@ -1,8 +1,28 @@
-# GLP Runtime System Specification for Dart Implementation v2.1
+# GLP Runtime System Specification for Dart Implementation v2.16
 
 ## Overview
 
 The GLP runtime system executes bytecode on a Dart-based virtual machine that leverages Dart's native features for memory management, scheduling, and concurrency. Unlike the FCP abstract machine which manages its own process queue and garbage collection, this runtime delegates these responsibilities to Dart while focusing on GLP-specific semantics: reader/writer variables, suspension management, and SRSW enforcement.
+
+## Opcode Name Mappings
+
+This implementation uses slightly different names for some opcodes compared to the paper terminology. Here are the key mappings:
+
+**Suspension/Termination:**
+- Paper: "suspend" (at predicate end)
+- Implementation: `NoMoreClauses` + `SuspendEnd`
+  - `NoMoreClauses`: Check if U is non-empty, suspend if so, fail otherwise
+  - `SuspendEnd`: Legacy instruction, equivalent to NoMoreClauses
+
+**Control Flow:**
+- Paper: "proceed"
+- Implementation: `Proceed` (identical)
+
+**Clause Scanning:**
+- Paper: "clause_try", "clause_next"
+- Implementation: `ClauseTry`, `ClauseNext` (identical)
+
+All other opcodes (head_*, put_*, commit, spawn, requeue, etc.) use identical names in both paper and implementation.
 
 ## System Architecture
 
