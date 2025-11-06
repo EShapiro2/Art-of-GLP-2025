@@ -1027,10 +1027,61 @@ void main() {
     });
 
     // TEST 24: metainterp_conj_test.dart
-    // SKIPPED: Parser doesn't support tuple syntax (A, B) in head arguments
-    test('metainterp with conjunction - SKIPPED (parser limitation)', () {
-      print('\n=== TEST 24: SKIPPED (parser needs tuple support) ===');
-    }, skip: true);
+    test('metainterp with conjunction: run((p(X), q(X?)))', () {
+      print('\n=== TEST 24: metainterp with conjunction ===');
+      final compiler = GlpCompiler();
+      final source = '''
+        run(true).
+        run((A, B)) :- run(A?), run(B?).
+        run(A) :- otherwise | clause(A?, B), run(B?).
+        clause(p(a), true).
+        clause(q(a), true).
+      ''';
+      final program = compiler.compile(source);
+
+      final rt = GlpRuntime();
+
+      // X is unbound writer for p(X)/q(X?)
+      const wX = 1, rX = 2;
+      rt.heap.addWriter(WriterCell(wX, rX));
+      rt.heap.addReader(ReaderCell(rX));
+
+      // Build p(X)
+      const wPX = 3, rPX = 4;
+      rt.heap.addWriter(WriterCell(wPX, rPX));
+      rt.heap.addReader(ReaderCell(rPX));
+      rt.heap.bindWriterStruct(wPX, 'p', [WriterTerm(wX)]);
+
+      // Build q(X?)
+      const wQX = 5, rQX = 6;
+      rt.heap.addWriter(WriterCell(wQX, rQX));
+      rt.heap.addReader(ReaderCell(rQX));
+      rt.heap.bindWriterStruct(wQX, 'q', [ReaderTerm(rX)]);
+
+      // Build conjunction (p(X), q(X?))
+      const wConj = 7, rConj = 8;
+      rt.heap.addWriter(WriterCell(wConj, rConj));
+      rt.heap.addReader(ReaderCell(rConj));
+      rt.heap.bindWriterStruct(wConj, ',', [ReaderTerm(rPX), ReaderTerm(rQX)]);
+
+      final runner = BytecodeRunner(program);
+      final sched = Scheduler(rt: rt, runner: runner);
+
+      const goalId = 100;
+      rt.setGoalEnv(goalId, CallEnv(readers: {0: rConj}));
+      rt.gq.enqueue(GoalRef(goalId, program.labels['run/1']!));
+
+      final ran = sched.drain(maxCycles: 1000);  // May need more cycles
+      expect(ran.isNotEmpty, true);
+
+      // X should eventually bind to 'a'
+      expect(rt.heap.isWriterBound(wX), true);
+      final valueX = rt.heap.valueOfWriter(wX);
+      expect(valueX, isA<ConstTerm>());
+      expect((valueX as ConstTerm).value, 'a');
+
+      print('✅ PASS\n');
+    });
 
   });
 }

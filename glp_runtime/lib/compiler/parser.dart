@@ -181,7 +181,7 @@ class Parser {
     return Guard(functorToken.lexeme, args, functorToken.line, functorToken.column);
   }
 
-  // Term: variable, structure, list, constant, underscore
+  // Term: variable, structure, list, constant, underscore, tuple
   Term _parseTerm() {
     // Variable or Reader
     if (_check(TokenType.VARIABLE)) {
@@ -215,6 +215,39 @@ class Parser {
     // List
     if (_check(TokenType.LBRACKET)) {
       return _parseList();
+    }
+
+    // Parenthesized expression - could be tuple (A, B) or single term (A)
+    if (_match(TokenType.LPAREN)) {
+      final startToken = _previous();
+      final terms = <Term>[];
+
+      // Parse first term
+      terms.add(_parseTerm());
+
+      // Check for comma - indicates tuple/conjunction
+      if (_match(TokenType.COMMA)) {
+        // Build right-associative tuple: (A, B, C) = ','(A, ','(B, C))
+        terms.add(_parseTerm());
+
+        while (_match(TokenType.COMMA)) {
+          terms.add(_parseTerm());
+        }
+
+        _consume(TokenType.RPAREN, 'Expected ")" after tuple');
+
+        // Build right-associative structure
+        Term result = terms.last;
+        for (int i = terms.length - 2; i >= 0; i--) {
+          result = StructTerm(',', [terms[i], result], startToken.line, startToken.column);
+        }
+
+        return result;
+      } else {
+        // Single parenthesized term - just return the term itself
+        _consume(TokenType.RPAREN, 'Expected ")" after term');
+        return terms[0];
+      }
     }
 
     // Structure or Constant Atom
