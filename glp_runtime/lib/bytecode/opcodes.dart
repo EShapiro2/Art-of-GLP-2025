@@ -11,14 +11,35 @@ class Label implements Op {
 class ClauseTry implements Op {}
 class GuardFail implements Op {}
 class Commit implements Op {}
+
+/// clause_next: Unified instruction for clause failure/suspension
+/// Combines the behavior of UnionSiAndGoto (when Si non-empty) and ResetAndGoto (when Si empty)
+/// From spec 2.2: "discard σ̂w; jump to label of Cj"
+class ClauseNext implements Op {
+  final LabelName label;
+  ClauseNext(this.label);
+}
+
+/// try_next_clause: Attempt next clause if current fails during selection phase (spec 2.4)
+/// Behavior: If current clause head fails to unify or guard fails, discard σ̂w and try next clause
+class TryNextClause implements Op {}
+
+/// no_more_clauses: All clauses exhausted without success (spec 2.5)
+/// Behavior: If suspension set non-empty, suspend goal; otherwise mark as permanently failed
+class NoMoreClauses implements Op {}
+
+// Legacy instructions (to be replaced by ClauseNext)
+@deprecated
 class UnionSiAndGoto implements Op {
   final LabelName label;
   UnionSiAndGoto(this.label);
 }
+@deprecated
 class ResetAndGoto implements Op {
   final LabelName label;
   ResetAndGoto(this.label);
 }
+
 class SuspendEnd implements Op {}
 class Proceed implements Op {}
 

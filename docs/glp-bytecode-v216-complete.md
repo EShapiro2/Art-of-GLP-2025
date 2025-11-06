@@ -40,24 +40,20 @@ Note: The E, CP, and Y registers are used exclusively for deterministic environm
 **Effect**: initialize Si := ∅; initialize σ̂w := ∅.
 
 ### 2.2 clause_next Cj
-**Phase**: clause head/guards exit on FAIL or SUSPEND_READY.  
-**Effect**: discard σ̂w; jump to label of Cj.
+**Phase**: clause head/guards exit on FAIL or SUSPEND_READY.
+**Effect**: if Si ≠ ∅ then U := U ∪ Si; discard σ̂w; clear Si; jump to label of Cj.
+**Purpose**: Accumulate suspension sets across clause attempts. When a clause fails or suspends, any readers added to Si during that clause are unioned into the goal-level suspension set U before trying the next clause.
 
-### 2.3 suspend
-**Phase**: control
-**OP-SUSPEND**: if U≠∅ then create a fresh hanger H, enqueue notes ⟨r,H⟩ for each r∈U, set goal Suspended, stop; else fail the goal.
-**Reactivation**: resumes at κ (procedure entry - the PC of the first clause of the procedure currently being executed)
-**Note**: The κ value represents the procedure the goal is executing, which may differ from the procedure where the goal originated if `requeue` was used. For example, if `boot` tail-calls into `p/1` via `requeue`, κ points to `p/1`'s entry, not `boot`'s entry.
+### 2.3 try_next_clause
+**Status**: IMPLEMENTED but UNUSED - functionality overlaps with clause_next
 
-### 2.4 try_next_clause
-**Operation**: Attempt next clause if current fails during selection phase  
-**Behavior**:
-- If current clause head fails to unify, discard σ̂w and try next clause
-- If head unifies but guard fails, discard σ̂w and try next clause  
-- No heap mutations to undo since binding is deferred
-- Once any clause commits, this instruction becomes unreachable
+**Implementation**: Has handler in runner.dart (line 967) that calls `_softFailToNextClause()` and jumps to next `clause_try`.
 
-### 2.5 no_more_clauses
+**Usage**: Never emitted by assembler or used in tests. The `clause_next` instruction (section 2.2) is preferred for all clause transitions as it handles both the Si union and the jump in a single instruction.
+
+**Semantic difference**: `try_next_clause` would be used WITHIN a clause when a guard fails, whereas `clause_next` is used at the END of a clause. In practice, all tests use `clause_next` exclusively.
+
+### 2.4 no_more_clauses
 **Operation**: All clauses exhausted without success  
 **Behavior**:
 - If suspension set non-empty: suspend goal on those readers
@@ -316,22 +312,29 @@ When the original boot goal executes `requeue p/1`, its κ changes from 7 (boot/
 - Restore E and CP from current frame
 - Pop frame from local stack
 
-## 10. Suspension Management Instructions
+## 10. Suspension Management
 
-### 10.1 reactivate X
-**Operation**: Reactivate goals suspended on X  
-**Behavior**:
-- Find all goals suspended on reader X?
-- Move from suspended to active queue in FIFO order
-- Triggered when writer X receives value
+**Note**: Suspension management in GLP is handled by **runtime operations**, not explicit bytecode instructions. The following operations occur automatically during execution:
 
-### 10.2 abandon X
-**Operation**: Mark variable X as abandoned  
+### 10.1 Reactivation (automatic during commit)
+**Trigger**: When `commit` binds a writer X
 **Behavior**:
-- Set abandonment flag for X
-- Immediately reactivate all goals suspended on X? in FIFO order
-- After reactivation, clear X?'s suspension queue
-- Reactivated goals will fail upon resumption due to abandonment
+- Runtime calls `CommitOps.applySigmaHat()` which:
+  - Binds writer X on heap
+  - Binds paired reader X?
+  - Calls `ROQueues.processOnBind(X?)` to find all goals suspended on X?
+  - Enqueues reactivated goals in FIFO order to goal queue
+  - Uses single-shot hanger mechanism (armed flag) to prevent duplicate reactivation
+
+### 10.2 Abandonment (explicit runtime operation)
+**Trigger**: When program explicitly abandons a writer (e.g., exception handling, cancellation)
+**Behavior**:
+- Runtime calls `AbandonOps.abandonWriter(writerId)` which:
+  - Marks writer as abandoned
+  - Processes ROQ for paired reader, reactivating suspended goals
+  - Reactivated goals detect abandonment and fail upon resumption
+
+**Implementation note**: These are not bytecode instructions but rather runtime operations invoked automatically by `commit` or explicitly via runtime API calls. No explicit `reactivate`/`abandon` bytecode instructions exist or are needed.
 
 ## 11. Guard Instructions
 
@@ -346,18 +349,24 @@ Guards execute in **Phase 1** (head+guards) and are **pure tests**; they may suc
 - If suspends: suspend entire goal
 
 ### 11.2 ground X
-**Operation**: Test if X is ground (contains no variables)  
-**Behavior**:
-- Succeed if X contains no unbound variables
-- Used to enable multiple reader occurrences
-- Pure test, no side effects
+**Operation**: Succeeds if X is ground (contains no unbound variables)
+**Three-valued semantics**:
+1. If X is ground → **SUCCEED** (continue to next instruction, pc++)
+2. If X contains unbound readers (but no unbound writers) → **SUSPEND** (add unbound readers to Si, continue to next instruction, pc++)
+3. If X contains unbound writers → **FAIL** (soft-fail to next clause via clause_next)
+
+**Rationale**: Due to SRSW restriction, unbound readers may become ground when their paired writers are bound, so suspension is appropriate. Unbound writers cannot be awaited (unknown future binding), so failure is definitive.
+
+**Usage**: Enables multiple reader occurrences by testing groundness before use.
 
 ### 11.3 known X
-**Operation**: Test if X is not a variable  
-**Behavior**:
-- Succeed if X is not an unbound variable
-- May contain variables internally
-- Pure test operation
+**Operation**: Succeeds if X is not an unbound variable
+**Three-valued semantics**:
+1. If X is bound (to any value, including structures with variables) → **SUCCEED** (continue, pc++)
+2. If X is an unbound reader → **SUSPEND** (add reader to Si, continue, pc++)
+3. If X is an unbound writer → **FAIL** (soft-fail to next clause)
+
+**Difference from ground**: `known(X)` only tests whether X itself is bound, not whether X contains unbound variables internally. `ground(f(Y))` fails if Y is unbound, but `known(f(Y))` succeeds because f(Y) is a bound structure.
 
 ### 11.4 otherwise
 **Operation**: Default guard  
@@ -382,10 +391,12 @@ Guards execute in **Phase 1** (head+guards) and are **pure tests**; they may suc
 - When used during **head matching**, this computes a **tentative writer MGU** and updates **σ̂w** (no heap mutation)
 
 ### 12.3 set Xi
-**Operation**: Initialize argument position  
+**Status**: NOT IMPLEMENTED - reserved for future optimization
+**Operation**: Initialize argument position
 **Behavior**:
-- Set argument register pointer to Xi
-- Used before sequence of put instructions
+- Would set argument register pointer to Xi
+- Would be used before sequence of put instructions
+- Current implementation handles argument setup directly in put_* instructions
 
 ## 13. Utility Instructions
 
@@ -409,20 +420,20 @@ Guards execute in **Phase 1** (head+guards) and are **pure tests**; they may suc
 
 ## 14. Instruction Encoding
 
-### Format
-Each instruction encoded as:
+**Status**: NOT IMPLEMENTED - current implementation uses Dart objects
+
+The current Dart implementation represents instructions as Dart class instances (see `opcodes.dart`), not as byte-encoded binary format. Each instruction is a Dart object implementing the `Op` interface.
+
+**Future binary encoding** could use:
 - **Opcode**: 1 byte (0-255)
 - **Operands**: Variable length based on instruction type
-
-### Operand Encoding
-- **Registers**: 1 byte (0-127 for X registers, 128-255 for Y registers)
+- **Registers**: 1 byte for variable indices
 - **Functors**: 2 bytes (index into symbol table)
 - **Constants**: Variable length with type tag
 - **Labels**: 2 bytes (relative offset)
 - **Arities**: 1 byte (0-255)
 
-### Compact Forms
-Frequently used instruction combinations can be fused:
+**Compact forms** (potential optimization, not implemented):
 - **head_list_writer**: Combines head_list + head_writer
 - **put_list_writer**: Combines put_list + put_writer
 - **get_constant_proceed**: Combines get_constant + proceed
@@ -438,41 +449,65 @@ The writer MGU (Most General Unifier) differs from standard unification:
 
 ### Suspension Mechanism
 Goals suspend when encountering unbound readers:
-1. Goal moved to suspension queue with suspension set
-2. Suspension set contains all readers causing suspension
-3. When any reader's writer receives value, goal reactivated
-4. Reactivated goals re-attempt reduction
+1. `no_more_clauses` instruction triggers suspension if U non-empty
+2. Runtime calls `suspendGoal(goalId, kappa, readers)` with U set
+3. For each reader in U, suspension note added to reader's ROQ (Read-Only Queue)
+4. Suspension note contains: goalId, entry PC (kappa), and single-shot hanger
+5. When reader's paired writer binds (during commit), ROQ processes suspension notes
+6. Reactivated goals enqueued to GQ (goal queue) with PC=kappa (first clause)
+7. Single-shot hanger (armed flag) prevents duplicate reactivation
 
 ### SRSW Enforcement
 The Single-Reader/Single-Writer constraint operates at two levels:
 - **Compile time**: Each clause verified to contain at most one occurrence of any writer/reader
 - **Runtime**: Variable table tracks usage across clauses/agents to detect dynamic violations
 
-## 16. Memory Layout
+## 16. Memory Layout (Dart Implementation)
 
-### Heap Organization
-- **Structures**: Functor cell followed by arguments
-- **Lists**: Optimized two-cell representation
-- **Writers**: Self-referential cells when unbound
-- **Readers**: Reference to paired writer
-- **Constants**: Direct storage with type tags
+**Note**: The Dart implementation uses object-oriented data structures, not traditional WAM-style heap cells.
 
-### Stack Frames
-Environment frames contain:
-- Previous environment pointer
-- Continuation pointer
-- Permanent variables (Y1-Yn)
-- Suspension information
+### Heap Organization (`lib/runtime/heap.dart`)
+The heap manages writer and reader cells:
+- **WriterCell**: `WriterCell(writerId, readerId)` - tracks writer ID and paired reader ID
+- **ReaderCell**: `ReaderCell(readerId)` - tracks reader ID
+- **Bindings**: `Map<int, Object?> writerValue` - maps writer IDs to their bound values
+- **Terms**: `WriterTerm(writerId)`, `ReaderTerm(readerId)`, `StructTerm(functor, args)`, `ConstTerm(value)`
 
-### Variable Table
-Tracks shared variables:
-- Variable ID
-- Creator agent (for multiagent)
-- Writer/Reader status
-- Binding state
-- Suspension list
+### Runtime State (`lib/runtime/runtime.dart`)
+- **GQ (Goal Queue)**: FIFO queue of `GoalRef(goalId, pc)` - active goals ready to execute
+- **ROQ (Read-Only Queues)**: `Map<int, Queue<SuspensionNote>>` - per-reader suspension queues
+- **Goal Environments**: `Map<int, CallEnv>` - maps goalId to argument bindings
+- **Goal Programs**: `Map<int, Object?>` - maps goalId to program key for multi-program execution
+
+### Stack Frames (`allocate`/`deallocate`)
+**Status**: Partially implemented - environment frames for permanent variables
+- Each `allocate N` creates a frame with N slots for Y variables
+- Frame contains: previous E pointer, continuation PC, permanent variable slots
+- `deallocate` restores previous E and CP
+
+### Variable Table (Multiagent Support)
+**Status**: NOT IMPLEMENTED - reserved for future multiagent security features
+- Would track: variable ID, creator agent, writer/reader status, cryptographic attestation
+- Current implementation uses simple integer IDs without agent tracking
 
 ## 17. Interaction with Runtime Structures
-- **U** is the predicate-local union accumulated across SUSPEND_READY clauses only; FAIL does not contribute to U.
-- **κ** is the clause-selection entry; suspend resumes at κ.
-- All reactivations append to the tail of GQ; they are never executed inline.
+
+### Suspension Set Accumulation
+- **Si**: Clause-local suspension set (cleared at each `clause_try`)
+- **U**: Goal-level suspension set accumulated across all attempted clauses
+- **clause_next**: Unions Si into U before jumping to next clause (if Si non-empty)
+- **Important**: Both FAIL and SUSPEND cases execute `clause_next`, which unions Si to U
+  - This means U accumulates readers from ALL clauses, not just "SUSPEND_READY" clauses
+  - Empty Si (definitive fail) contributes nothing to U, but instruction still executes
+
+### Reactivation Entry Point
+- **κ (kappa)**: Entry PC for the goal (typically first clause of predicate)
+- When goal suspends via `no_more_clauses`, it saves: goalId, kappa, U
+- When reactivated (reader binds), goal resumes at PC = kappa (NOT at suspension point)
+- This means goal re-attempts all clauses from the beginning on reactivation
+
+### Scheduler Interaction
+- All reactivations append to the tail of GQ (goal queue)
+- Reactivation is NEVER executed inline - always via scheduler
+- FIFO ordering ensures fairness across concurrent goals
+- Tail-recursion budget (`requeue` instruction) prevents starvation

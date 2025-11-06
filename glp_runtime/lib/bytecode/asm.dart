@@ -9,8 +9,18 @@ class BC {
   static GuardNeedReader r(int readerId) => GuardNeedReader(readerId);
   static HeadBindWriter w(int writerId) => HeadBindWriter(writerId);
   static Commit commit() => Commit();
+
+  // New spec-compliant control flow instructions
+  static ClauseNext clauseNext(String label) => ClauseNext(label);
+  static TryNextClause tryNextClause() => TryNextClause();
+  static NoMoreClauses noMoreClauses() => NoMoreClauses();
+
+  // Legacy (deprecated)
+  @deprecated
   static UnionSiAndGoto u(String label) => UnionSiAndGoto(label);
+  @deprecated
   static ResetAndGoto next(String label) => ResetAndGoto(label);
+
   static SuspendEnd susp() => SuspendEnd();
   static Proceed proceed() => Proceed();
   static BodySetConst bconst(int writerId, Object? v) => BodySetConst(writerId, v);
@@ -63,8 +73,18 @@ class BC {
   static GuardNeedReader R(int readerId) => r(readerId);
   static HeadBindWriter W(int writerId) => w(writerId);
   static Commit COMMIT() => commit();
+
+  // New spec-compliant control flow (UPPERCASE)
+  static ClauseNext CLAUSE_NEXT(String label) => clauseNext(label);
+  static TryNextClause TRY_NEXT_CLAUSE() => tryNextClause();
+  static NoMoreClauses NO_MORE_CLAUSES() => noMoreClauses();
+
+  // Legacy (deprecated)
+  @deprecated
   static UnionSiAndGoto U(String label) => u(label);
+  @deprecated
   static ResetAndGoto NEXT(String label) => next(label);
+
   static SuspendEnd SUSP() => susp();
   static Proceed PROCEED() => proceed();
   static Otherwise OTHERWISE() => otherwise();

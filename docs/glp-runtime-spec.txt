@@ -28,51 +28,72 @@ The writer MGU algorithm forms the core of goal reduction. Unlike standard Prolo
 ### Data Structures
 
 #### Goal State
-Each goal maintains its execution context as a Dart class:
+Each goal's execution context is managed by `RunnerContext` (lib/bytecode/runner.dart):
 
 ```dart
-class GoalState {
-  final int goalId;
-  final Uint8List bytecode;
-  int programCounter;
-  List<Cell> argumentRegisters;
-  List<Cell> temporaryRegisters;
-  Environment? environment;
-  int continuationPointer;
-  SuspensionSet? suspensionSet;
-  GoalStatus status; // Active, Suspended, Failed
-  int tailRecursionBudget = 26; // Number of consecutive tail calls allowed
+class RunnerContext {
+  final GlpRuntime rt;           // Runtime system reference
+  final int goalId;              // Unique goal identifier
+  final int kappa;               // Entry PC (first clause of procedure)
+  final CallEnv env;             // Argument bindings (writers/readers)
+
+  // Execution state
+  final Map<int, Object?> clauseVars = {};  // Clause variable bindings
+  final Map<int, Object?> sigmaHat = {};    // σ̂w: tentative writer substitution
+  final Set<int> si = {};                    // Si: clause-local suspension set
+  final Set<int> U = {};                     // U: goal-level suspension set
+
+  // Control state
+  bool inBody = false;            // Phase: HEAD/GUARDS vs BODY
+  int tailRecursionBudget = 26;   // Budget for tail call fairness
+
+  // Structure traversal (WAM-style)
+  int S = 0;                      // Subterm pointer for structure unification
+  Mode mode = Mode.read;          // READ or WRITE mode for structures
 }
 ```
 
+**Note**: Goals do not store bytecode - the `BytecodeRunner` holds the `BytecodeProgram`, and each goal references it via `runtime.setGoalProgram(goalId, programKey)`.
+
 #### Heap Cell Representation
-Heap cells use Dart's type system with tagged unions:
+The heap (lib/runtime/heap.dart) manages writer and reader cells as simple Dart objects:
 
 ```dart
-abstract class Cell {
-  CellTag get tag;
+class WriterCell {
+  final int writerId;
+  final int readerId;  // Paired reader ID
+  WriterCell(this.writerId, this.readerId);
 }
 
-class WriterCell extends Cell {
-  Cell? binding;
-  final int variableId;
-  bool isUnbound() => binding == null;
+class ReaderCell {
+  final int readerId;
+  ReaderCell(this.readerId);
 }
 
-class ReaderCell extends Cell {
-  final WriterCell pairedWriter;
-  bool isReady() => !pairedWriter.isUnbound();
-}
+class GlpHeap {
+  final Map<int, WriterCell> _writers = {};     // writerId → WriterCell
+  final Map<int, ReaderCell> _readers = {};     // readerId → ReaderCell
+  final Map<int, Object?> writerValue = {};     // writerId → bound value (if any)
 
-class StructureCell extends Cell {
-  final String functor;
-  final int arity;
-  final int heapAddress;
+  bool isWriterBound(int writerId) => writerValue.containsKey(writerId);
+  Object? valueOfWriter(int writerId) => writerValue[writerId];
+  int? writerIdForReader(int readerId) {
+    // Find writer ID paired with this reader
+    for (final entry in _writers.entries) {
+      if (entry.value.readerId == readerId) return entry.key;
+    }
+    return null;
+  }
 }
+```
 
-class ConstantCell extends Cell {
-  final dynamic value; // atom, integer, string, etc.
-}
+**Terms** (lib/runtime/terms.dart) are separate from cells:
+
+```dart
+class WriterTerm { final int writerId; }
+class ReaderTerm { final int readerId; }
+class StructTerm { final String functor; final List<Object?> args; }
+class ConstTerm { final Object? value; }
 ```
 
 #### Environment Frame
@@ -89,29 +110,46 @@ class Environment {
 }
 ```
 
-#### Variable Table
-Tracks shared variables for SRSW enforcement:
+#### ROQ (Read-Only Queues)
+Suspension tracking is managed by ROQ (lib/runtime/roq.dart), NOT a variable table:
 
 ```dart
-class VariableEntry {
-  final int variableId;
-  final WriterCell writer;
-  ReaderCell? reader;
-  final Set<int> suspendedGoals;
-  bool abandoned = false;
-  
-  void suspend(int goalId) {
-    suspendedGoals.add(goalId);
+class SuspensionNote {
+  final int goalId;       // Which goal is suspended
+  final int kappa;        // Entry PC to resume at
+  final Hanger hanger;    // Single-shot reactivation mechanism
+}
+
+class Hanger {
+  bool armed = true;      // Prevents duplicate reactivation
+
+  void fire(GlpRuntime rt, int goalId, int kappa) {
+    if (!armed) return;   // Already fired - ignore
+    armed = false;
+    rt.gq.enqueue(GoalRef(goalId, kappa));  // Reactivate goal
   }
-  
-  void reactivate() {
-    for (final goalId in suspendedGoals) {
-      scheduler.reactivate(goalId);
+}
+
+class ROQueues {
+  final Map<int, Queue<SuspensionNote>> _queues = {};  // readerId → suspension queue
+
+  void addSuspension(int readerId, SuspensionNote note) {
+    _queues.putIfAbsent(readerId, () => Queue()).add(note);
+  }
+
+  void processOnBind(int readerId, GlpRuntime rt) {
+    final queue = _queues[readerId];
+    if (queue == null) return;
+
+    for (final note in queue) {
+      note.hanger.fire(rt, note.goalId, note.kappa);  // Single-shot reactivation
     }
-    suspendedGoals.clear();
+    queue.clear();
   }
 }
 ```
+
+**SRSW Enforcement**: The current implementation does NOT enforce SRSW at runtime - this is expected to be enforced by the compiler. The runtime trusts that bytecode is well-formed.
 
 ### Execution Pipeline
 
@@ -132,16 +170,69 @@ enum ExecutionResult {
 The instruction dispatcher uses a jump table indexed by opcode for efficient dispatch. Operands are decoded based on instruction type, with register references, constants, and labels extracted as needed.
 
 #### Goal Reduction Cycle
-Each active goal executes in a microtask that runs until it suspends, fails, or completes. The basic execution cycle fetches the instruction at the program counter, decodes and validates operands, executes the instruction handler, and processes the result. On CONTINUE, execution proceeds to the next instruction. On SUSPEND, the goal is moved to the suspension table with its suspension set recorded. On FAIL, backtracking is triggered if choice points exist, otherwise the goal terminates. On SUCCEED, the goal completes successfully and is removed from scheduling.
+Each active goal executes in a microtask that runs until it suspends, fails, or completes. The basic execution cycle (in `BytecodeRunner.runWithStatus()`):
+
+1. **Fetch**: Load instruction at PC from bytecode program
+2. **Decode**: Extract operands based on instruction type
+3. **Execute**: Run instruction handler, updating context
+4. **Branch**: Based on result:
+   - **CONTINUE**: Increment PC and continue loop
+   - **SUSPENDED**: Goal suspended on unbound readers in U, create suspension notes in ROQ
+   - **TERMINATED**: Goal completed (success via `proceed` or failure via `no_more_clauses`)
+   - **OUT_OF_REDUCTIONS**: Reduction budget exhausted (for testing)
+
+**No backtracking**: GLP uses committed-choice semantics - once a clause commits via `commit`, there is no going back. Failed clauses simply try the next clause via `clause_next`. No choice points or trail stack needed.
 
 #### Suspension and Reactivation
-When a goal encounters an unbound reader during unification, suspension occurs immediately. The suspension mechanism captures the complete goal state including program counter, registers, and environment. The goal is indexed in the suspension table by all readers in its suspension set. When a writer receives a value through successful unification, the runtime locates all goals suspended on the corresponding reader, removes them from the suspension table, and schedules them as microtasks for re-execution. This reactivation is atomic to prevent race conditions in concurrent execution.
+Suspension occurs when `no_more_clauses` instruction executes with non-empty U set:
+
+**Suspension Process** (`no_more_clauses` with U ≠ ∅):
+1. Runtime calls `suspendGoal(goalId, kappa, readers)` with U set
+2. For each reader ID in U, create a `SuspensionNote(goalId, kappa, hanger)`
+3. Add suspension note to reader's ROQ via `roq.addSuspension(readerId, note)`
+4. Goal returns `RunResult.suspended` and is removed from GQ
+
+**Reactivation Process** (during `commit` when writer binds):
+1. `CommitOps.applySigmaHat()` binds writer X on heap
+2. Calls `roq.processOnBind(readerId)` where readerId is X's paired reader
+3. For each suspension note in reader's queue:
+   - Check if `hanger.armed` is true
+   - If yes: set `armed = false` and enqueue `GoalRef(goalId, kappa)` to GQ
+   - If no: skip (already reactivated by another reader binding)
+4. Clear reader's suspension queue
+5. Reactivated goal resumes at PC = kappa (first clause), NOT at suspension point
+
+**Single-shot mechanism**: The `armed` flag prevents duplicate reactivation if a goal was suspended on multiple readers and more than one binds.
 
 ## Instruction Implementation
 
 ### Head Processing Instructions
 
-Head instructions perform writer MGU between clause heads and incoming goals. The `head_structure` instruction first dereferences its argument to handle variable chains. If it finds a matching structure, it enters READ mode for traversal. If it finds a writer variable, it enters WRITE mode to build the structure. If it finds a reader variable, it suspends the goal. The subsequent `head_writer` and `head_reader` instructions operate based on the current mode, either extracting values in READ mode or creating new variables in WRITE mode.
+Head instructions perform **tentative writer MGU**, building σ̂w without heap mutation:
+
+**`head_constant value argSlot`**: Unify argument with constant
+- If arg is WriterTerm: add `σ̂w[writerId] = value`, continue
+- If arg is ReaderTerm: add readerId to Si, continue (may match later)
+- If arg is ConstTerm: check `arg.value == value`, fail if mismatch
+- Does NOT mutate heap - only builds σ̂w
+
+**`head_structure functor arity argSlot`**: Match structure and set traversal mode
+- If arg is WriterTerm: set mode=WRITE, create structure in σ̂w, set S=0
+- If arg is StructTerm with matching functor/arity: set mode=READ, set S=0
+- If arg is ReaderTerm: add to Si, continue (suspension, not failure)
+- If arg is StructTerm with wrong functor/arity: soft-fail to next clause
+
+**`head_writer varIndex`**: Process writer at position S within structure
+- If mode=READ: unify structure arg at S with clause var, update σ̂w
+- If mode=WRITE: add WriterTerm to structure being built
+- Increment S
+
+**`head_reader varIndex`**: Process reader at position S within structure
+- If mode=READ: check if structure arg matches reader's writer, add to Si if unbound
+- If mode=WRITE: add ReaderTerm to structure being built
+- Increment S
+
+All head instructions are **pure** - they never mutate the heap, only extend σ̂w and Si.
 
 ### Body Construction Instructions  
 
@@ -155,9 +246,32 @@ The `requeue` instruction implements tail recursion optimization with bounded it
 
 The `proceed` instruction completes the current procedure and returns control to the continuation point saved by the previous `spawn` instruction. This allows the spawning process to continue with its next instruction after the spawned goal completes.
 
-### Suspension Management
+### Control Flow: Clause Selection and Suspension
 
-The `suspend` instruction is typically not explicit in bytecode but triggered by unification failure on readers. When suspension occurs, the runtime captures the goal's complete state and indexes it by suspension variables. The `reactivate` instruction (usually implicit when writers are bound) locates suspended goals and reschedules them. The `abandon` instruction marks variables as permanently unbound, causing suspended goals to fail when reactivated.
+**`clause_try`**: Mark start of new clause
+- Clear Si (clause-local suspension set)
+- Save restore point for σ̂w (in case clause fails)
+
+**`clause_next label`**: Move to next clause after failure or suspension
+- If Si non-empty: union Si into U (`U := U ∪ Si`)
+- Discard σ̂w (abandon tentative bindings)
+- Clear Si
+- Jump to label
+
+**`commit`**: Commit to current clause
+- Apply σ̂w to heap atomically (bind all writers)
+- For each newly bound writer, call `roq.processOnBind(readerId)` to reactivate suspended goals
+- Clear σ̂w and Si
+- Set `inBody = true` (enable heap mutations)
+
+**`no_more_clauses`**: All clauses exhausted
+- If U non-empty: suspend goal via `suspendGoal(goalId, kappa, U)`, return SUSPENDED
+- If U empty: definitive failure, return TERMINATED
+
+**`proceed`**: Successful completion
+- Return TERMINATED (success)
+
+There are NO explicit `suspend`, `reactivate`, or `abandon` bytecode instructions. These are runtime operations triggered automatically by control flow instructions.
 
 ## Integration with Dart
 
@@ -198,10 +312,19 @@ The runtime provides comprehensive debugging facilities. Execution tracing shows
 ## Performance Characteristics
 
 ### Time Complexity
-Instruction dispatch is O(1) using jump tables. Writer MGU is O(n) in structure size without deep recursion. Suspension table operations are O(log n) using balanced trees. Reactivation is O(k) for k suspended goals on a variable.
+**Instruction dispatch**: O(1) via Dart's type-based dispatch (if-else chain on instruction types)
+**Writer MGU**: O(n) in structure size (linear traversal, no deep recursion needed)
+**ROQ operations**: O(1) amortized for queue operations (Map lookup + Queue add/remove)
+**Reactivation**: O(k) for k suspended goals on a reader (linear scan of suspension notes)
+**Hanger check**: O(1) for single-shot armed flag check
 
-### Space Complexity  
-Each goal requires O(1) base overhead plus O(v) for v permanent variables. Heap growth is O(t) for t total terms created. The suspension table is O(s) for s suspended goals. No trail stack is needed due to the absence of backtracking in concurrent execution.
+Note: Current implementation uses if-else dispatch, not jump tables. Dart's branch prediction makes this efficient for moderate instruction counts.
+
+### Space Complexity
+**Per goal**: O(1) base overhead (`RunnerContext`) plus O(v) for v clause variables in `clauseVars`
+**Heap**: O(t) for t total terms created (cells + bindings in `writerValue` map)
+**ROQ**: O(s) for s suspension notes across all readers
+**No trail stack**: Committed-choice semantics eliminate backtracking, so no trail needed
 
 ### Comparison with FCP
 This runtime is simpler than FCP's abstract machine by delegating to Dart for memory management, process scheduling, and garbage collection. Performance is comparable for most workloads, with overhead from Dart's abstractions offset by elimination of manual memory management. The design prioritizes maintainability and integration with the Dart ecosystem over maximum theoretical performance.
