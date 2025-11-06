@@ -38,6 +38,25 @@ class BC {
   static Spawn spawn(String label, int arity) => Spawn(label, arity);
   static Requeue requeue(String label, int arity) => Requeue(label, arity);
 
+  // Guard instructions
+  static Guard guard(String label, int arity) => Guard(label, arity);
+  static Ground ground(int varIndex) => Ground(varIndex);
+  static Known known(int varIndex) => Known(varIndex);
+
+  // List-specific instructions
+  static HeadNil headNil(int argSlot) => HeadNil(argSlot);
+  static HeadList headList(int argSlot) => HeadList(argSlot);
+  static PutNil putNil(int argSlot) => PutNil(argSlot);
+  static PutList putList(int argSlot) => PutList(argSlot);
+
+  // Environment frame instructions
+  static Allocate allocate(int slots) => Allocate(slots);
+  static Deallocate deallocate() => Deallocate();
+
+  // Utility instructions
+  static Nop nop() => Nop();
+  static Halt halt() => Halt();
+
   // UPPERCASE aliases
   static Label L(String name) => l(name);
   static ClauseTry TRY() => try_();

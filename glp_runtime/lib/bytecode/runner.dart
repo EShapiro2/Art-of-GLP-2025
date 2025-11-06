@@ -1512,6 +1512,227 @@ class BytecodeRunner {
         return RunResult.terminated;
       }
 
+      // ===== GUARD INSTRUCTIONS =====
+      if (op is Guard) {
+        // Call guard predicate - not yet implemented
+        // For now, soft-fail to next clause
+        print('[WARN] Guard instruction not fully implemented - failing');
+        _softFailToNextClause(cx, pc);
+        pc = _findNextClauseTry(pc);
+        continue;
+      }
+
+      if (op is Ground) {
+        // Test if variable is ground (contains no unbound variables)
+        final value = cx.clauseVars[op.varIndex];
+        if (value == null) {
+          // Unbound variable - soft-fail to next clause
+          _softFailToNextClause(cx, pc);
+          pc = _findNextClauseTry(pc);
+          continue;
+        }
+        // Check if value contains any unbound variables
+        bool isGround(Object? term) {
+          if (term is WriterTerm) {
+            final wid = term.writerId;
+            if (!cx.rt.heap.isWriterBound(wid)) return false;
+            return isGround(cx.rt.heap.valueOfWriter(wid));
+          } else if (term is ReaderTerm) {
+            final wid = cx.rt.heap.writerIdForReader(term.readerId);
+            if (wid == null || !cx.rt.heap.isWriterBound(wid)) return false;
+            return isGround(cx.rt.heap.valueOfWriter(wid));
+          } else if (term is StructTerm) {
+            return term.args.every(isGround);
+          } else {
+            return true; // constants are ground
+          }
+        }
+        if (!isGround(value)) {
+          _softFailToNextClause(cx, pc);
+          pc = _findNextClauseTry(pc);
+          continue;
+        }
+        pc++;
+        continue;
+      }
+
+      if (op is Known) {
+        // Test if variable is not an unbound variable
+        final value = cx.clauseVars[op.varIndex];
+        if (value == null) {
+          // Unbound variable - soft-fail to next clause
+          _softFailToNextClause(cx, pc);
+          pc = _findNextClauseTry(pc);
+          continue;
+        }
+        if (value is WriterTerm) {
+          final wid = value.writerId;
+          if (!cx.rt.heap.isWriterBound(wid)) {
+            _softFailToNextClause(cx, pc);
+            pc = _findNextClauseTry(pc);
+            continue;
+          }
+        } else if (value is ReaderTerm) {
+          final wid = cx.rt.heap.writerIdForReader(value.readerId);
+          if (wid == null || !cx.rt.heap.isWriterBound(wid)) {
+            _softFailToNextClause(cx, pc);
+            pc = _findNextClauseTry(pc);
+            continue;
+          }
+        }
+        // Value is known (bound or constant)
+        pc++;
+        continue;
+      }
+
+      // ===== LIST-SPECIFIC HEAD INSTRUCTIONS =====
+      if (op is HeadNil) {
+        // Match empty list [] with argument
+        // Equivalent to HeadConstant('[]', op.argSlot)
+        final arg = _getArg(cx, op.argSlot);
+        if (arg == null) { pc++; continue; } // No argument at this slot
+
+        if (arg.isWriter) {
+          // Writer: check if already bound, else record tentative binding in σ̂w
+          if (cx.rt.heap.isWriterBound(arg.writerId!)) {
+            // Already bound - check if value matches []
+            final value = cx.rt.heap.valueOfWriter(arg.writerId!);
+            if (value is ConstTerm && value.value != '[]') {
+              _softFailToNextClause(cx, pc);
+              pc = _findNextClauseTry(pc);
+              continue;
+            } else if (value is StructTerm) {
+              _softFailToNextClause(cx, pc);
+              pc = _findNextClauseTry(pc);
+              continue;
+            }
+          } else {
+            // Unbound writer - record tentative binding in σ̂w
+            cx.sigmaHat[arg.writerId!] = ConstTerm('[]');
+          }
+        } else if (arg.isReader) {
+          // Reader: check if bound, else add to Si
+          final wid = cx.rt.heap.writerIdForReader(arg.readerId!);
+          if (wid == null || !cx.rt.heap.isWriterBound(wid)) {
+            cx.si.add(arg.readerId!);
+          } else {
+            // Bound reader - check if value matches []
+            final value = cx.rt.heap.valueOfWriter(wid);
+            if (value is ConstTerm && value.value != '[]') {
+              _softFailToNextClause(cx, pc);
+              pc = _findNextClauseTry(pc);
+              continue;
+            } else if (value is StructTerm) {
+              _softFailToNextClause(cx, pc);
+              pc = _findNextClauseTry(pc);
+              continue;
+            }
+          }
+        }
+        pc++;
+        continue;
+      }
+
+      if (op is HeadList) {
+        // Match list structure [H|T] with argument
+        // Equivalent to HeadStructure('[|]', 2, op.argSlot)
+        final arg = _getArg(cx, op.argSlot);
+        if (arg == null) { pc++; continue; } // No argument at this slot
+
+        if (arg.isWriter) {
+          // Writer: create tentative structure in σ̂w
+          if (cx.rt.heap.isWriterBound(arg.writerId!)) {
+            // Already bound - check if it's a list structure
+            final value = cx.rt.heap.valueOfWriter(arg.writerId!);
+            if (value is StructTerm && value.functor == '[|]' && value.args.length == 2) {
+              cx.currentStructure = value;
+              cx.S = 0;
+              cx.mode = UnifyMode.read;
+            } else {
+              _softFailToNextClause(cx, pc);
+              pc = _findNextClauseTry(pc);
+              continue;
+            }
+          } else {
+            // Unbound writer - create tentative structure
+            final struct = StructTerm('[|]', []);
+            cx.sigmaHat[arg.writerId!] = struct;
+            cx.currentStructure = struct;
+            cx.S = 0;
+            cx.mode = UnifyMode.write;
+          }
+        } else if (arg.isReader) {
+          // Reader: check if bound, else add to Si
+          final wid = cx.rt.heap.writerIdForReader(arg.readerId!);
+          if (wid == null || !cx.rt.heap.isWriterBound(wid)) {
+            cx.si.add(arg.readerId!);
+          } else {
+            // Bound reader - check if it's a list structure
+            final value = cx.rt.heap.valueOfWriter(wid);
+            if (value is StructTerm && value.functor == '[|]' && value.args.length == 2) {
+              cx.currentStructure = value;
+              cx.S = 0;
+              cx.mode = UnifyMode.read;
+            } else {
+              _softFailToNextClause(cx, pc);
+              pc = _findNextClauseTry(pc);
+              continue;
+            }
+          }
+        }
+        pc++;
+        continue;
+      }
+
+      // ===== LIST-SPECIFIC BODY INSTRUCTIONS =====
+      if (op is PutNil) {
+        // Place empty list [] in argument register
+        // Equivalent to PutConstant('[]', op.argSlot)
+        cx.bodyArgs[op.argSlot] = ConstTerm('[]');
+        pc++;
+        continue;
+      }
+
+      if (op is PutList) {
+        // Begin list construction in argument register
+        // Equivalent to PutStructure('[|]', 2, op.argSlot)
+        final struct = StructTerm('[|]', []);
+        cx.bodyArgs[op.argSlot] = struct;
+        cx.currentStructure = struct;
+        cx.S = 0;
+        cx.mode = UnifyMode.write;
+        pc++;
+        continue;
+      }
+
+      // ===== ENVIRONMENT FRAME INSTRUCTIONS =====
+      if (op is Allocate) {
+        // Create environment frame - not yet implemented
+        // GLP uses committed-choice semantics, so environment frames rarely needed
+        print('[WARN] Allocate instruction not implemented - no-op');
+        pc++;
+        continue;
+      }
+
+      if (op is Deallocate) {
+        // Remove environment frame - not yet implemented
+        print('[WARN] Deallocate instruction not implemented - no-op');
+        pc++;
+        continue;
+      }
+
+      // ===== UTILITY INSTRUCTIONS =====
+      if (op is Nop) {
+        // No operation - just advance PC
+        pc++;
+        continue;
+      }
+
+      if (op is Halt) {
+        // Terminate execution
+        return RunResult.terminated;
+      }
+
       if (op is Proceed) {
         // Complete current procedure - terminate execution
         return RunResult.terminated;

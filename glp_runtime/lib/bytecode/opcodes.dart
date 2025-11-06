@@ -88,6 +88,20 @@ class SetConstant implements Op {
   SetConstant(this.value);
 }
 
+/// Place empty list [] in argument register (optimized put_constant)
+/// Special case of put_constant for empty list
+class PutNil implements Op {
+  final int argSlot;
+  PutNil(this.argSlot);
+}
+
+/// Begin list construction in argument register (optimized put_structure)
+/// Equivalent to put_structure './2' or '[|]/2' depending on list functor
+class PutList implements Op {
+  final int argSlot;
+  PutList(this.argSlot);
+}
+
 // ===== v2.16 HEAD instructions (encode clause patterns) =====
 /// Match constant c with argument at argSlot
 /// Behavior: Writer(w) → σ̂w[w]=c; Reader(r) → Si+={r}; Ground(t) → check t==c
@@ -125,6 +139,20 @@ class HeadReader implements Op {
 class UnifyConstant implements Op {
   final Object? value;
   UnifyConstant(this.value);
+}
+
+/// Match empty list [] with argument (optimized head_constant)
+/// Same unification semantics as head_constant with '[]' value
+class HeadNil implements Op {
+  final int argSlot;
+  HeadNil(this.argSlot);
+}
+
+/// Match list structure [H|T] with argument (optimized head_structure)
+/// Equivalent to head_structure './2' or '[|]/2' depending on list functor
+class HeadList implements Op {
+  final int argSlot;
+  HeadList(this.argSlot);
 }
 
 /// Match void (anonymous variable) at current S position
@@ -169,6 +197,28 @@ class GetValue implements Op {
 /// Checks if Si is empty when executed - if so, all previous clauses definitely failed
 /// If Si is non-empty, previous clauses suspended, so this fails
 class Otherwise implements Op {}
+
+/// Guard predicate call: execute guard without side effects
+/// If succeeds: continue; If fails: try next clause; If suspends: suspend entire goal
+class Guard implements Op {
+  final LabelName procedureLabel;  // guard predicate entry
+  final int arity;                  // number of arguments
+  Guard(this.procedureLabel, this.arity);
+}
+
+/// Ground test: test if variable contains no unbound variables
+/// Succeed if X is ground, fail otherwise. Pure test, no side effects.
+class Ground implements Op {
+  final int varIndex;  // clause variable index to test
+  Ground(this.varIndex);
+}
+
+/// Known test: test if variable is not an unbound variable
+/// Succeed if X is not a variable, fail otherwise. Pure test operation.
+class Known implements Op {
+  final int varIndex;  // clause variable index to test
+  Known(this.varIndex);
+}
 
 // Legacy opcodes (for backward compatibility with existing tests)
 class HeadBindWriter implements Op {
@@ -226,3 +276,21 @@ class Requeue implements Op {
   final int arity;                  // number of arguments
   Requeue(this.procedureLabel, this.arity);
 }
+
+/// Create environment frame with n permanent variables
+/// Push new frame on local stack, save E and CP in frame, update E to point to new frame
+class Allocate implements Op {
+  final int slots;  // number of permanent variable slots (Y1-Yn)
+  Allocate(this.slots);
+}
+
+/// Remove current environment frame
+/// Restore previous E and CP from frame, pop frame from stack
+class Deallocate implements Op {}
+
+/// No operation - advance PC without other effects
+/// Used for alignment or patching
+class Nop implements Op {}
+
+/// Terminate execution - mark goal as completed, return control to scheduler
+class Halt implements Op {}
