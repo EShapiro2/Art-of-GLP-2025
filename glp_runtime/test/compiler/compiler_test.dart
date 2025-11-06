@@ -92,9 +92,12 @@ void main() {
       final clauseTries = program.instructions.where((op) => op is bc.ClauseTry).length;
       expect(clauseTries, 2);
 
-      // Should have ClauseNext between clauses
-      final hasClauseNext = program.instructions.any((op) => op is bc.ClauseNext);
-      expect(hasClauseNext, isTrue);
+      // Should have 2 Commit instructions (one per clause)
+      final commits = program.instructions.where((op) => op is bc.Commit).length;
+      expect(commits, 2);
+
+      // Should have labels for second clause and end
+      expect(program.labels, contains('p/1_c1'));
     });
 
     test('compiles merge/3 example', () {
@@ -139,7 +142,7 @@ void main() {
 
     test('compiles spawn for non-tail goals', () {
       final compiler = GlpCompiler();
-      final source = 'p(X) :- q(X?), r(X?).';
+      final source = 'p(X, Y) :- q(X?), r(Y?).';  // Use different variables to avoid SRSW violation
 
       final program = compiler.compile(source);
 
@@ -148,7 +151,7 @@ void main() {
       final requeues = program.instructions.where((op) => op is bc.Requeue).length;
 
       expect(spawns, 1);      // q(X?)
-      expect(requeues, 1);    // r(X?) in tail position
+      expect(requeues, 1);    // r(Y?) in tail position
     });
 
     test('generates correct labels', () {
@@ -171,7 +174,7 @@ void main() {
 
     test('compiles otherwise guard', () {
       final compiler = GlpCompiler();
-      final source = 'p(X) :- otherwise | q(X).';
+      final source = 'p(X) :- otherwise | q(X?).';  // Use reader to avoid SRSW violation
 
       final program = compiler.compile(source);
 
@@ -181,7 +184,7 @@ void main() {
 
     test('compiles known guard', () {
       final compiler = GlpCompiler();
-      final source = 'p(X) :- known(X?) | q(X?).';
+      final source = 'p(X, Y) :- known(X?) | q(Y?).';  // Use different variables
 
       final program = compiler.compile(source);
 

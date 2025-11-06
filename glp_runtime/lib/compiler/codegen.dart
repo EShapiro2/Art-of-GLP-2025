@@ -121,30 +121,19 @@ class CodeGenerator {
       }
     }
 
-    // COMMIT or CLAUSE_NEXT
-    if (isLastClause) {
-      // Last clause: commit and execute body
-      ctx.emit(bc.Commit());  // Apply σ̂w, enter BODY phase
+    // COMMIT: If we reach this point, Si must be empty, so commit
+    ctx.emit(bc.Commit());  // Apply σ̂w, enter BODY phase
 
-      // BODY PHASE
-      ctx.inHead = false;
-      ctx.inGuard = false;
-      ctx.inBody = true;
+    // BODY PHASE
+    ctx.inHead = false;
+    ctx.inGuard = false;
+    ctx.inBody = true;
 
-      if (clause.hasBody && clause.ast.body != null) {
-        _generateBody(clause.ast.body!, clause.varTable, ctx);
-      } else {
-        // Empty body: just proceed
-        ctx.emit(bc.Proceed());
-      }
-
-      // Label for clause end (before no_more_clauses)
-      ctx.emitLabel('${ctx.currentProcedure}_c${ctx.currentClauseIndex}_end');
-
+    if (clause.hasBody && clause.ast.body != null) {
+      _generateBody(clause.ast.body!, clause.varTable, ctx);
     } else {
-      // Not last clause: clause_next to try next clause
-      ctx.emitLabel('${ctx.currentProcedure}_c${ctx.currentClauseIndex}_end');
-      ctx.emit(bc.ClauseNext(nextLabel));
+      // Empty body: just proceed
+      ctx.emit(bc.Proceed());
     }
   }
 
