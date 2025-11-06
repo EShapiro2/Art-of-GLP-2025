@@ -323,12 +323,13 @@ class CodeGenerator {
       }
 
       // Spawn or Requeue
+      final procedureLabel = '${goal.functor}/${goal.arity}';  // Full signature
       if (isTailPosition) {
         // Tail call: requeue
-        ctx.emit(bc.Requeue(goal.functor, goal.arity));
+        ctx.emit(bc.Requeue(procedureLabel, goal.arity));
       } else {
         // Non-tail: spawn
-        ctx.emit(bc.Spawn(goal.functor, goal.arity));
+        ctx.emit(bc.Spawn(procedureLabel, goal.arity));
       }
     }
 
