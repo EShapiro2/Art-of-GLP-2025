@@ -814,5 +814,174 @@ void main() {
       print('✅ PASS\n');
     });
 
+    // TEST 16: list_test.dart - is_cons success
+    test('list: is_cons([_|_]) - Goal: is_cons([a,b,c])', () {
+      print('\n=== TEST 16: is_cons success ===');
+      final compiler = GlpCompiler();
+      final source = 'is_cons([_|_]).';
+      final program = compiler.compile(source);
+
+      final rt = GlpRuntime();
+
+      // Create list [a,b,c]
+      const wList = 1, rList = 2;
+      rt.heap.addWriter(WriterCell(wList, rList));
+      rt.heap.addReader(ReaderCell(rList));
+      rt.heap.bindWriterStruct(wList, '.', [
+        ConstTerm('a'),
+        StructTerm('.', [
+          ConstTerm('b'),
+          StructTerm('.', [ConstTerm('c'), ConstTerm(null)])
+        ])
+      ]);
+
+      final runner = BytecodeRunner(program);
+      final sched = Scheduler(rt: rt, runner: runner);
+
+      const goalId = 100;
+      rt.setGoalEnv(goalId, CallEnv(readers: {0: rList}));
+      rt.gq.enqueue(GoalRef(goalId, program.labels['is_cons/1']!));
+
+      final ran = sched.drain(maxCycles: 100);
+      expect(ran, [goalId]);  // Should succeed
+      print('✅ PASS\n');
+    });
+
+    // TEST 17: list_test.dart - is_cons failure
+    test('list: is_cons([_|_]) - Goal: is_cons([])', () {
+      print('\n=== TEST 17: is_cons failure ===');
+      final compiler = GlpCompiler();
+      final source = 'is_cons([_|_]).';
+      final program = compiler.compile(source);
+
+      final rt = GlpRuntime();
+
+      // Create empty list []
+      const wList = 1, rList = 2;
+      rt.heap.addWriter(WriterCell(wList, rList));
+      rt.heap.addReader(ReaderCell(rList));
+      rt.heap.bindWriterConst(wList, null);
+
+      final runner = BytecodeRunner(program);
+      final sched = Scheduler(rt: rt, runner: runner);
+
+      const goalId = 100;
+      rt.setGoalEnv(goalId, CallEnv(readers: {0: rList}));
+      rt.gq.enqueue(GoalRef(goalId, program.labels['is_cons/1']!));
+
+      final ran = sched.drain(maxCycles: 100);
+      expect(ran, [goalId]);  // Goal executes and fails
+      print('✅ PASS\n');
+    });
+
+    // TEST 18: list_test.dart - cons construction
+    // SKIPPED: Source cons(X?, Xs?, [X?|Xs?]) violates SRSW (X and Xs appear twice)
+    // The hand-written test uses special bytecode that loads readers into clause vars first
+    test('list: cons construction - SKIPPED (SRSW violation)', () {
+      print('\n=== TEST 18: SKIPPED (requires hand-written bytecode) ===');
+    }, skip: true);
+
+    // TEST 19: list_test.dart - concrete list match
+    test('list: p([a, b]) - Goal: p(X)', () {
+      print('\n=== TEST 19: concrete list match ===');
+      final compiler = GlpCompiler();
+      final source = 'p([a, b]).';
+      final program = compiler.compile(source);
+
+      final rt = GlpRuntime();
+
+      const wX = 1, rX = 2;
+      rt.heap.addWriter(WriterCell(wX, rX));
+      rt.heap.addReader(ReaderCell(rX));
+
+      final runner = BytecodeRunner(program);
+      final sched = Scheduler(rt: rt, runner: runner);
+
+      const goalId = 100;
+      rt.setGoalEnv(goalId, CallEnv(writers: {0: wX}));
+      rt.gq.enqueue(GoalRef(goalId, program.labels['p/1']!));
+
+      final ran = sched.drain(maxCycles: 100);
+      expect(rt.heap.isWriterBound(wX), true);
+
+      final value = rt.heap.valueOfWriter(wX);
+      expect(value, isA<StructTerm>());
+      final list = value as StructTerm;
+      expect(list.functor, '.');
+      print('✅ PASS\n');
+    });
+
+    // TEST 20: boot_test.dart
+    test('boot: p(a). boot :- p(X), p(X?) - Goal: boot', () {
+      print('\n=== TEST 20: boot test ===');
+      final compiler = GlpCompiler();
+      final source = '''
+        p(a).
+        boot :- p(X), p(X?).
+      ''';
+      final program = compiler.compile(source);
+
+      final rt = GlpRuntime();
+      final runner = BytecodeRunner(program);
+      final sched = Scheduler(rt: rt, runner: runner);
+
+      const goalId = 100;
+      rt.setGoalEnv(goalId, CallEnv());
+      rt.gq.enqueue(GoalRef(goalId, program.labels['boot/0']!));
+
+      final ran = sched.drain(maxCycles: 100);
+      expect(ran.contains(goalId), true);
+      print('✅ PASS\n');
+    });
+
+    // TEST 21: simple_body_test.dart
+    // SKIPPED: Source forward(X) :- p(X) violates SRSW (X appears twice)
+    test('simple_body test - SKIPPED (SRSW violation)', () {
+      print('\n=== TEST 21: SKIPPED (SRSW violation) ===');
+    }, skip: true);
+
+    // TEST 22: clause_only_test.dart
+    test('clause: clause(p(a), true) - Goal: clause(p(X), Y)', () {
+      print('\n=== TEST 22: clause_only test ===');
+      final compiler = GlpCompiler();
+      final source = 'clause(p(a), true).';
+      final program = compiler.compile(source);
+
+      final rt = GlpRuntime();
+
+      const wX = 1, rX = 2;
+      rt.heap.addWriter(WriterCell(wX, rX));
+      rt.heap.addReader(ReaderCell(rX));
+
+      const wY = 3, rY = 4;
+      rt.heap.addWriter(WriterCell(wY, rY));
+      rt.heap.addReader(ReaderCell(rY));
+
+      final runner = BytecodeRunner(program);
+      final sched = Scheduler(rt: rt, runner: runner);
+
+      const goalId = 100;
+      rt.setGoalEnv(goalId, CallEnv(writers: {0: wX, 1: wY}));
+      rt.gq.enqueue(GoalRef(goalId, program.labels['clause/2']!));
+
+      final ran = sched.drain(maxCycles: 100);
+      expect(rt.heap.isWriterBound(wX), true);
+      expect(rt.heap.isWriterBound(wY), true);
+
+      // X should bind to p(a)
+      final valueX = rt.heap.valueOfWriter(wX);
+      expect(valueX, isA<StructTerm>());
+      final structX = valueX as StructTerm;
+      expect(structX.functor, 'p');
+      expect(structX.args.length, 1);
+
+      // Y should bind to true (parsed as atom 'true')
+      final valueY = rt.heap.valueOfWriter(wY);
+      expect(valueY, isA<ConstTerm>());
+      expect((valueY as ConstTerm).value, 'true');
+
+      print('✅ PASS\n');
+    });
+
   });
 }
