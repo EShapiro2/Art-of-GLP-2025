@@ -786,5 +786,33 @@ void main() {
       print('✅ PASS\n');
     });
 
+    // TEST 15: playground_test.dart
+    test('playground: p(a) - Goal: p(X)', () {
+      print('\n=== TEST 15: playground simple fact ===');
+      final compiler = GlpCompiler();
+      final source = 'p(a).';
+      final program = compiler.compile(source);
+
+      final rt = GlpRuntime();
+      const wX = 1, rX = 2;
+      rt.heap.addWriter(WriterCell(wX, rX));
+      rt.heap.addReader(ReaderCell(rX));
+
+      final runner = BytecodeRunner(program);
+      final sched = Scheduler(rt: rt, runner: runner);
+
+      const goalId = 100;
+      rt.setGoalEnv(goalId, CallEnv(writers: {0: wX}));
+      rt.gq.enqueue(GoalRef(goalId, program.labels['p/1']!));
+
+      final ran = sched.drain(maxCycles: 100);
+      expect(rt.heap.isWriterBound(wX), true);
+
+      final value = rt.heap.valueOfWriter(wX);
+      expect(value, isA<ConstTerm>());
+      expect((value as ConstTerm).value, 'a');
+      print('✅ PASS\n');
+    });
+
   });
 }
