@@ -251,6 +251,14 @@ class Execute implements Op {
   Execute(this.predicateName, this.argSlots);
 }
 
+/// SetClauseVar: Directly set a clause variable to a term value
+/// Used for setting up constants/terms before Execute calls
+class SetClauseVar implements Op {
+  final int slot;      // clause variable index
+  final Object? value; // Term or primitive value to set
+  SetClauseVar(this.slot, this.value);
+}
+
 // Legacy opcodes (for backward compatibility with existing tests)
 class HeadBindWriter implements Op {
   final int writerId;

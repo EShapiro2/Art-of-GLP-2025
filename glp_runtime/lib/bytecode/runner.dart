@@ -1727,6 +1727,14 @@ class BytecodeRunner {
         }
       }
 
+      // ===== SET CLAUSE VARIABLE =====
+      if (op is SetClauseVar) {
+        // Set a clause variable directly to a value
+        cx.clauseVars[op.slot] = op.value;
+        pc++;
+        continue;
+      }
+
       // ===== SYSTEM PREDICATE EXECUTION =====
       if (op is Execute) {
         // Execute system predicate: call registered Dart function
