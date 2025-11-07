@@ -522,3 +522,111 @@ The heap manages writer and reader cells:
 - Reactivation is NEVER executed inline - always via scheduler
 - FIFO ordering ensures fairness across concurrent goals
 - Tail-recursion budget (`requeue` instruction) prevents starvation
+
+## 18. System Predicates (Execute Mechanism)
+
+**Status**: FULLY IMPLEMENTED
+
+System predicates are external Dart functions callable from GLP bytecode via the `execute` instruction. They follow three-valued semantics (success/suspend/failure) and properly handle unbound readers.
+
+### 18.1 execute Predicate, Args
+**Operation**: Call external system predicate
+**Behavior**:
+- Look up predicate by name in SystemPredicateRegistry
+- Pass arguments as list of Terms
+- Return SystemResult: success, suspend, or failure
+- If suspend: adds unbound readers to Si (clause-local suspension set)
+
+**Phase**: Can be used in guards (Phase 1) or body (Phase 3)
+- In guards: pure test, no heap mutation allowed
+- In body: may mutate heap after commit
+
+### 18.2 Implemented System Predicates
+
+**Arithmetic**:
+- `evaluate(Expression, Result)` - Arithmetic evaluation with operators: +, -, *, /, mod
+  - Suspends on unbound readers in expression
+  - Binds or verifies result
+  - Fails on division by zero or type errors
+
+**Utilities**:
+- `current_time(Time)` - Binds Time to current milliseconds since epoch
+- `unique_id(ID)` - Generates unique sequential integer IDs
+- `variable_name(Var, Name)` - Returns string name for writer/reader (e.g., "W123", "R456")
+- `copy_term(Term, Copy)` - Deep copy of term (suspends on unbound readers)
+
+**File I/O - Simple**:
+- `file_read(Path, Contents)` - Read entire file as string
+- `file_write(Path, Contents)` - Write string to file (overwrites)
+- `file_exists(Path)` - Test if file exists
+
+**File I/O - Handle-Based**:
+- `file_open(Path, Mode, Handle)` - Open file, return handle
+  - Modes: 'read', 'write', 'append', 'read_write'
+  - Handle is integer ID managed by runtime
+- `file_close(Handle)` - Close file handle
+- `file_read_handle(Handle, Contents)` - Read remaining contents from open file
+- `file_write_handle(Handle, Contents)` - Write to open file
+
+**Directory Operations**:
+- `directory_list(Path, Entries)` - List directory contents as list of filenames
+
+**Terminal I/O**:
+- `write(Term)` - Write term to stdout
+- `nl()` - Write newline to stdout
+- `read(Term)` - Read line from stdin (blocks until input available)
+
+**Module Loading**:
+- `link(ModulePath, Handle)` - Load dynamic library via FFI, return handle
+  - Path can be string or list of strings
+  - Uses dart:ffi DynamicLibrary.open()
+- `load_module(FileName, Module)` - Load GLP bytecode module from file
+  - Returns module as Map with metadata
+  - TODO: Bytecode deserialization format specification
+
+### 18.3 Suspension Semantics
+
+All system predicates follow consistent suspension rules:
+1. Extract arguments, checking term types
+2. If argument is ReaderTerm, check if paired writer is bound
+3. If writer unbound, add reader to `call.suspendedReaders` and return SystemResult.suspend
+4. If all inputs ground, execute predicate logic
+5. Bind output variables or verify against existing bindings
+
+**Example execution flow**:
+```
+execute('evaluate', [+(ReaderTerm(r5), ConstTerm(10)), WriterTerm(w1)])
+
+1. Check r5's paired writer (w5)
+2. If w5 unbound → return suspend with suspendedReaders = {r5}
+3. If w5 bound to ConstTerm(7) → compute 7 + 10 = 17
+4. Bind w1 to ConstTerm(17)
+5. Return success
+```
+
+### 18.4 Registry and Extension
+
+System predicates registered in `lib/runtime/system_predicates_impl.dart`:
+
+```dart
+void registerStandardPredicates(SystemPredicateRegistry registry) {
+  registry.register('evaluate', evaluatePredicate);
+  registry.register('current_time', currentTimePredicate);
+  // ... 21 total predicates
+}
+```
+
+**Adding new predicates**:
+1. Implement predicate function: `SystemResult myPredicate(GlpRuntime rt, SystemCall call)`
+2. Handle argument extraction with suspension on unbound readers
+3. Return SystemResult.success/failure/suspend
+4. Register in `registerStandardPredicates()`
+
+### 18.5 Deferred Predicates
+
+**Channel primitives** (deferred for future implementation):
+- `create_merger(InputList, Output)` - N-to-1 stream merger
+- `distribute_stream(Input, OutputList)` - 1-to-N stream distributor
+- `copy_term(Term, Copy1, Copy2)` - Multi-output deep copy
+
+These require additional runtime support for stream merging and multi-reader coordination.
