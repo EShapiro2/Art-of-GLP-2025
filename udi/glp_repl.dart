@@ -22,8 +22,8 @@ void main() {
   print('Source files: glp/*.glp');
   print('Compiled files: bin/*.glpc');
   print('');
-  print('Type GLP goals and press Enter.');
-  print('Commands: :load <file>, :compile <file>, :quit, :help');
+  print('Input: filename.glp to load, or goal. to execute');
+  print('Commands: :quit, :help');
   print('');
 
   final compiler = GlpCompiler();
@@ -60,33 +60,13 @@ void main() {
       continue;
     }
 
-    if (trimmed.startsWith(':load ')) {
-      final filename = trimmed.substring(6).trim();
+    // Check if input is a .glp file to load
+    if (trimmed.endsWith('.glp') && !trimmed.contains(' ')) {
+      final filename = trimmed;
       if (!loadProgram(filename, compiler, loadedPrograms)) {
         continue;
       }
       print('✓ Loaded: $filename');
-      continue;
-    }
-
-    if (trimmed.startsWith(':compile ')) {
-      final filename = trimmed.substring(9).trim();
-      if (!compileProgram(filename, compiler)) {
-        continue;
-      }
-      print('✓ Compiled: glp/$filename → bin/${filename}c');
-      continue;
-    }
-
-    if (trimmed.startsWith(':list')) {
-      if (loadedPrograms.isEmpty) {
-        print('No programs loaded.');
-      } else {
-        print('Loaded programs:');
-        for (final name in loadedPrograms.keys) {
-          print('  - $name');
-        }
-      }
       continue;
     }
 
@@ -166,49 +146,24 @@ bool loadProgram(String filename, GlpCompiler compiler, Map<String, BytecodeProg
   }
 }
 
-bool compileProgram(String filename, GlpCompiler compiler) {
-  try {
-    // Load source from glp/
-    final sourceFile = File('glp/$filename');
-
-    if (!sourceFile.existsSync()) {
-      print('Error: File not found: glp/$filename');
-      return false;
-    }
-
-    final source = sourceFile.readAsStringSync();
-    compiler.compile(source);  // Validate compilation
-
-    // TODO: When bytecode serialization is implemented, write to bin/
-    // For now, just validate it compiles
-    print('Note: Bytecode serialization not yet implemented');
-    print('      Program compiled successfully but not saved to bin/');
-
-    return true;
-  } catch (e) {
-    print('Error compiling $filename: $e');
-    return false;
-  }
-}
 
 void printHelp() {
   print('');
-  print('GLP REPL Commands:');
+  print('GLP REPL Usage:');
+  print('  filename.glp           Load and compile glp/<filename>');
+  print('  goal.                  Execute a goal (must end with .)');
   print('  :help, :h              Show this help');
   print('  :quit, :q              Exit REPL');
-  print('  :load <file>           Load and compile glp/<file>');
-  print('  :compile <file>        Compile glp/<file> to bin/<file>c');
-  print('  :list                  List loaded programs');
   print('');
   print('File Organization:');
   print('  glp/           GLP source files (.glp)');
   print('  bin/           Compiled bytecode files (.glpc)');
   print('');
   print('Examples:');
-  print('  GLP> :load hello.glp');
-  print('  GLP> :compile hello.glp');
-  print("  GLP> execute('write', ['Hello World']).");
-  print('  GLP> merge([a,b], [c,d], X).');
+  print('  GLP> hello.glp                        # Load program');
+  print('  GLP> hello.                           # Execute goal');
+  print("  GLP> execute('write', ['Hello']).");
+  print('  GLP> merge([1,2,3], [a,b], Xs).');
   print('');
 }
 
