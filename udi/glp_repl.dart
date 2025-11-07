@@ -77,7 +77,54 @@ void main() {
 
     // Compile and run the goal
     try {
-      // Parse the query goal to extract functor, arguments, and variables
+      // Check if this is a conjunction (contains comma outside of argument lists)
+      // For conjunctions, wrap in a helper clause and compile it
+      if (_isConjunction(trimmed)) {
+        // Create wrapper: query__goal() :- <conjunction>.
+        final wrappedQuery = 'query__goal() :- $trimmed';
+        final program = compiler.compile(wrappedQuery);
+
+        // Combine with loaded programs
+        final allOps = <Op>[];
+        for (final loaded in loadedPrograms.values) {
+          allOps.addAll(loaded.ops);
+        }
+        allOps.addAll(program.ops);
+        final combinedProgram = BytecodeProgram(allOps);
+
+        // Find entry point
+        final entryPC = combinedProgram.labels['query__goal/0'];
+        if (entryPC == null) {
+          print('Error: Could not find query entry point');
+          continue;
+        }
+
+        // Execute with empty environment (zero-arity wrapper)
+        final env = CallEnv();
+        rt.setGoalEnv(goalId, env);
+        rt.setGoalProgram(goalId, 'main');
+
+        final runner = BytecodeRunner(combinedProgram);
+        final scheduler = Scheduler(rt: rt, runners: {'main': runner});
+
+        rt.gq.enqueue(GoalRef(goalId, entryPC));
+        goalId++;
+
+        final ran = scheduler.drain(maxCycles: 10000);
+        print('→ Executed ${ran.length} goals');
+
+        // For conjunctions, extract variables from the original query
+        final result = compiler.compileWithMetadata(wrappedQuery);
+        if (result.variableMap.isNotEmpty) {
+          print('');
+          print('Variables bound during execution:');
+          // TODO: Track writers created during execution
+          print('  (Conjunction variable tracking not yet implemented)');
+        }
+        continue;
+      }
+
+      // Single goal - parse directly
       final lexer = Lexer(trimmed);
       final tokens = lexer.tokenize();
       final parser = Parser(tokens);
@@ -209,6 +256,23 @@ void printHelp() {
   print('');
 }
 
+// Check if query contains conjunction (comma outside of argument lists/structures)
+bool _isConjunction(String query) {
+  int depth = 0;  // Track parentheses/bracket depth
+  for (int i = 0; i < query.length; i++) {
+    final char = query[i];
+    if (char == '(' || char == '[') {
+      depth++;
+    } else if (char == ')' || char == ']') {
+      depth--;
+    } else if (char == ',' && depth == 0) {
+      // Comma at top level - this is a conjunction
+      return true;
+    }
+  }
+  return false;
+}
+
 // Set up heap cells for a query argument
 // Returns (readerId, writerId) for the argument slot
 (int, int) _setupArgument(
@@ -260,9 +324,49 @@ void printHelp() {
 
     readers[argSlot] = readerId;
     return (readerId, writerId);
+  } else if (arg is StructTerm) {
+    // Structure: create and bind it
+    final (writerId, readerId) = runtime.heap.allocateFreshPair();
+    runtime.heap.addWriter(WriterCell(writerId, readerId));
+    runtime.heap.addReader(ReaderCell(readerId));
+
+    // Build structure term recursively
+    final structValue = _buildStructTerm(runtime, arg, queryVarWriters);
+    runtime.heap.writerValue[writerId] = structValue;
+
+    readers[argSlot] = readerId;
+    return (readerId, writerId);
   } else {
     throw Exception('Unsupported argument type: ${arg.runtimeType}');
   }
+}
+
+// Build a structure term recursively
+rt.Term _buildStructTerm(GlpRuntime runtime, StructTerm struct, Map<String, int> queryVarWriters) {
+  final argTerms = <rt.Term>[];
+
+  for (final arg in struct.args) {
+    if (arg is ConstTerm) {
+      argTerms.add(rt.ConstTerm(arg.value));
+    } else if (arg is VarTerm) {
+      // Variable in structure - create writer/reader
+      final (writerId, readerId) = runtime.heap.allocateFreshPair();
+      runtime.heap.addWriter(WriterCell(writerId, readerId));
+      runtime.heap.addReader(ReaderCell(readerId));
+      if (!arg.isReader) {
+        queryVarWriters[arg.name] = writerId;
+      }
+      argTerms.add(arg.isReader ? rt.ReaderTerm(readerId) : rt.WriterTerm(writerId));
+    } else if (arg is ListTerm) {
+      argTerms.add(_buildListTerm(runtime, arg, queryVarWriters));
+    } else if (arg is StructTerm) {
+      argTerms.add(_buildStructTerm(runtime, arg, queryVarWriters));
+    } else {
+      throw Exception('Unsupported struct argument type: ${arg.runtimeType}');
+    }
+  }
+
+  return rt.StructTerm(struct.functor, argTerms);
 }
 
 // Build a list term recursively
