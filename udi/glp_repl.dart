@@ -118,8 +118,12 @@ void main() {
       rt.setGoalEnv(goalId, env);
       rt.setGoalProgram(goalId, 'main');
 
+      // Track heap size before execution
+      final heapBefore = rt.heap.writerValue.length;
+
       // Enqueue the goal at PC 0
       rt.gq.enqueue(GoalRef(goalId, 0));
+      final currentGoalId = goalId;
       goalId++;
 
       // Run scheduler
@@ -127,6 +131,12 @@ void main() {
 
       // Report result
       print('→ Executed ${ran.length} goals');
+
+      // Show any new bindings created during execution
+      final finalEnv = rt.getGoalEnv(currentGoalId);
+      if (finalEnv != null) {
+        _displayBindings(rt, heapBefore, currentGoalId, finalEnv);
+      }
 
     } catch (e) {
       print('Error: $e');
@@ -201,4 +211,44 @@ void printHelp() {
   print("  GLP> execute('write', ['Hello World']).");
   print('  GLP> merge([a,b], [c,d], X).');
   print('');
+}
+
+void _displayBindings(GlpRuntime rt, int heapBefore, int goalId, CallEnv env) {
+  // Display bindings for argument registers
+  // Arguments are stored in env.writerBySlot
+  if (env.writerBySlot.isNotEmpty) {
+    for (final entry in env.writerBySlot.entries) {
+      final argSlot = entry.key;
+      final writerId = entry.value;
+      if (rt.heap.writerValue.containsKey(writerId)) {
+        final value = rt.heap.writerValue[writerId];
+        print('  Arg[$argSlot] = ${_formatValue(value)}');
+      }
+    }
+  }
+
+  // Also show any writers bound during execution (heuristic)
+  // This catches output variables
+  final boundWriters = <int, Object?>{};
+  for (final entry in rt.heap.writerValue.entries) {
+    final writerId = entry.key;
+    final value = entry.value;
+    // Track all bound writers
+    boundWriters[writerId] = value;
+  }
+
+  if (boundWriters.length > 3) {  // More than just a few bindings
+    print('  (${boundWriters.length} total bindings)');
+  }
+}
+
+String _formatValue(Object? value) {
+  if (value == null) return '[]';
+  if (value is List) {
+    if (value.isEmpty) return '[]';
+    final items = value.map(_formatValue).join(', ');
+    return '[$items]';
+  }
+  if (value is String) return value;
+  return value.toString();
 }
