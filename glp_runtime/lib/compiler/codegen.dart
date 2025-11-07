@@ -5,6 +5,7 @@ import '../runtime/terms.dart' as rt;
 import 'ast.dart';
 import 'analyzer.dart';
 import 'error.dart';
+import 'result.dart';
 
 /// Code generation context
 class CodeGenContext {
@@ -55,16 +56,36 @@ class CodeGenContext {
 /// Code generator - transforms annotated AST to bytecode
 class CodeGenerator {
   BytecodeProgram generate(AnnotatedProgram program) {
+    final result = generateWithMetadata(program);
+    return result.program;
+  }
+
+  CompilationResult generateWithMetadata(AnnotatedProgram program) {
     final ctx = CodeGenContext();
+    final variableMap = <String, int>{};
 
     // Generate code for each procedure
     for (final proc in program.procedures) {
       _generateProcedure(proc, ctx);
+
+      // Collect variable mappings from the first procedure (for goals)
+      // This captures variables used in queries like "merge([1,2,3], [a,b], Xs)."
+      if (proc == program.procedures.first) {
+        for (final clause in proc.clauses) {
+          for (final varInfo in clause.varTable.getAllVars()) {
+            if (varInfo.registerIndex != null) {
+              variableMap[varInfo.name] = varInfo.registerIndex!;
+            }
+          }
+        }
+      }
     }
 
     // Build final bytecode program using runner's BytecodeProgram
     // It will auto-index labels from Label instructions
-    return BytecodeProgram(ctx.instructions);
+    final bytecode = BytecodeProgram(ctx.instructions);
+
+    return CompilationResult(bytecode, variableMap);
   }
 
   void _generateProcedure(AnnotatedProcedure proc, CodeGenContext ctx) {

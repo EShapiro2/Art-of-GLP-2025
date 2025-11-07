@@ -92,8 +92,10 @@ void main() {
 
     // Compile and run the goal
     try {
-      // Compile the input as a goal
-      final goalProgram = compiler.compile(trimmed);
+      // Compile the input as a goal with metadata
+      final goalResult = compiler.compileWithMetadata(trimmed);
+      final goalProgram = goalResult.program;
+      final variableMap = goalResult.variableMap;
 
       // Combine loaded programs with the goal
       final allOps = <Op>[];
@@ -118,9 +120,6 @@ void main() {
       rt.setGoalEnv(goalId, env);
       rt.setGoalProgram(goalId, 'main');
 
-      // Track heap size before execution
-      final heapBefore = rt.heap.writerValue.length;
-
       // Enqueue the goal at PC 0
       rt.gq.enqueue(GoalRef(goalId, 0));
       final currentGoalId = goalId;
@@ -134,8 +133,8 @@ void main() {
 
       // Show any new bindings created during execution
       final finalEnv = rt.getGoalEnv(currentGoalId);
-      if (finalEnv != null) {
-        _displayBindings(rt, heapBefore, currentGoalId, finalEnv);
+      if (finalEnv != null && variableMap.isNotEmpty) {
+        _displayBindings(rt, finalEnv, variableMap);
       }
 
     } catch (e) {
@@ -178,7 +177,7 @@ bool compileProgram(String filename, GlpCompiler compiler) {
     }
 
     final source = sourceFile.readAsStringSync();
-    final _program = compiler.compile(source);
+    compiler.compile(source);  // Validate compilation
 
     // TODO: When bytecode serialization is implemented, write to bin/
     // For now, just validate it compiles
@@ -213,42 +212,46 @@ void printHelp() {
   print('');
 }
 
-void _displayBindings(GlpRuntime rt, int heapBefore, int goalId, CallEnv env) {
-  // Display bindings for argument registers
-  // Arguments are stored in env.writerBySlot
-  if (env.writerBySlot.isNotEmpty) {
-    for (final entry in env.writerBySlot.entries) {
-      final argSlot = entry.key;
-      final writerId = entry.value;
-      if (rt.heap.writerValue.containsKey(writerId)) {
-        final value = rt.heap.writerValue[writerId];
-        print('  Arg[$argSlot] = ${_formatValue(value)}');
-      }
+void _displayBindings(GlpRuntime rt, CallEnv env, Map<String, int> variableMap) {
+  // Display bindings for all variables in the query
+  print('');
+
+  for (final entry in variableMap.entries) {
+    final varName = entry.key;
+    final registerIndex = entry.value;
+
+    // Check both writerBySlot and readerBySlot
+    int? writerId;
+
+    if (env.writerBySlot.containsKey(registerIndex)) {
+      writerId = env.writerBySlot[registerIndex]!;
+    } else if (env.readerBySlot.containsKey(registerIndex)) {
+      // This is a reader - we need to find its paired writer
+      // For now, search through all writers to find the one bound to a value
+      // that corresponds to this variable
+      //
+      // Fallback: just show that the variable is present but untrackable
+      print('  $varName = <unable to track reader variable>');
+      continue;
+    } else {
+      print('  $varName = <not found in environment>');
+      continue;
     }
-  }
 
-  // Also show any writers bound during execution (heuristic)
-  // This catches output variables
-  final boundWriters = <int, Object?>{};
-  for (final entry in rt.heap.writerValue.entries) {
-    final writerId = entry.key;
-    final value = entry.value;
-    // Track all bound writers
-    boundWriters[writerId] = value;
-  }
-
-  if (boundWriters.length > 3) {  // More than just a few bindings
-    print('  (${boundWriters.length} total bindings)');
+    // Check if this writer is bound
+    if (rt.heap.writerValue.containsKey(writerId)) {
+      final value = rt.heap.writerValue[writerId];
+      print('  $varName = ${_formatTerm(value)}');
+    } else {
+      print('  $varName = <unbound>');
+    }
   }
 }
 
-String _formatValue(Object? value) {
-  if (value == null) return '[]';
-  if (value is List) {
-    if (value.isEmpty) return '[]';
-    final items = value.map(_formatValue).join(', ');
-    return '[$items]';
-  }
-  if (value is String) return value;
-  return value.toString();
+String _formatTerm(Object? term) {
+  if (term == null) return '[]';
+
+  // Use the term's built-in toString()
+  // This will properly format ConstTerm, WriterTerm, ReaderTerm, StructTerm, etc.
+  return term.toString();
 }

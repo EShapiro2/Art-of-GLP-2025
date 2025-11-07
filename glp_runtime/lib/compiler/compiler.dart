@@ -4,10 +4,12 @@ import 'analyzer.dart';
 import 'codegen.dart';
 import 'error.dart';
 import 'token.dart';
+import 'result.dart';
 import '../bytecode/runner.dart' show BytecodeProgram;
 
-// Re-export BytecodeProgram for users of this module
+// Re-export for users of this module
 export '../bytecode/runner.dart' show BytecodeProgram;
+export 'result.dart' show CompilationResult;
 
 /// Main GLP compiler
 class GlpCompiler {
@@ -28,6 +30,12 @@ class GlpCompiler {
 
   /// Compile GLP source to bytecode program
   BytecodeProgram compile(String source) {
+    final result = compileWithMetadata(source);
+    return result.program;
+  }
+
+  /// Compile GLP source to bytecode program with variable metadata
+  CompilationResult compileWithMetadata(String source) {
     try {
       // Phase 1: Lexical analysis
       final lexer = _createLexer(source);
@@ -43,9 +51,9 @@ class GlpCompiler {
 
       // Phase 4: Code generation
       final codegen = _createCodegen();
-      final bytecode = codegen.generate(annotatedAst);
+      final result = codegen.generateWithMetadata(annotatedAst);
 
-      return bytecode;
+      return result;
     } on CompileError catch (e) {
       // Rethrow with source context
       throw CompileError(e.message, e.line, e.column, source: source, phase: e.category?.toString().split('.').last);
