@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'machine_state.dart';
 import 'heap.dart';
 import 'roq.dart';
@@ -18,6 +20,10 @@ class GlpRuntime {
   final Map<GoalId, int> _budgets = <GoalId, int>{};
   final Map<GoalId, CallEnv> _goalEnvs = <GoalId, CallEnv>{};
   final Map<GoalId, Object?> _goalPrograms = <GoalId, Object?>{};
+
+  // File handle management
+  final Map<int, RandomAccessFile> _fileHandles = <int, RandomAccessFile>{};
+  int _nextFileHandle = 1;
 
   // Goal ID counter for spawn
   int nextGoalId = 10000;  // Start at 10000 to avoid collisions with test goal IDs
@@ -91,5 +97,44 @@ class GlpRuntime {
     for (final a in acts) {
       gq.enqueue(a);
     }
+  }
+
+  // File handle management methods
+
+  /// Allocate a new file handle and register the file
+  int allocateFileHandle(RandomAccessFile file) {
+    final handle = _nextFileHandle++;
+    _fileHandles[handle] = file;
+    return handle;
+  }
+
+  /// Get file by handle
+  RandomAccessFile? getFile(int handle) => _fileHandles[handle];
+
+  /// Check if handle is valid
+  bool isValidHandle(int handle) => _fileHandles.containsKey(handle);
+
+  /// Close and remove file handle
+  void closeFileHandle(int handle) {
+    final file = _fileHandles.remove(handle);
+    if (file != null) {
+      try {
+        file.closeSync();
+      } catch (e) {
+        // Ignore close errors
+      }
+    }
+  }
+
+  /// Close all open file handles (cleanup)
+  void closeAllFiles() {
+    for (final file in _fileHandles.values) {
+      try {
+        file.closeSync();
+      } catch (e) {
+        // Ignore close errors
+      }
+    }
+    _fileHandles.clear();
   }
 }

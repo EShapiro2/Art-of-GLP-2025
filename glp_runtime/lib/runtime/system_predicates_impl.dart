@@ -29,6 +29,8 @@ void registerStandardPredicates(SystemPredicateRegistry registry) {
   registry.register('file_exists', fileExistsPredicate);
   registry.register('file_open', fileOpenPredicate);
   registry.register('file_close', fileClosePredicate);
+  registry.register('file_read_handle', fileReadHandlePredicate);
+  registry.register('file_write_handle', fileWriteHandlePredicate);
 
   // Directory operations
   registry.register('directory_list', directoryListPredicate);
@@ -802,35 +804,163 @@ SystemResult fileExistsPredicate(GlpRuntime rt, SystemCall call) {
   }
 }
 
-/// file_open/3: Open file handle (placeholder)
+/// file_open/3: Open file handle
 ///
 /// Usage: execute('file_open', [Path, Mode, Handle])
 ///
-/// Opens a file and returns a handle. Currently a placeholder.
+/// Opens a file and returns a handle ID.
 ///
 /// Behavior:
-/// - Not yet implemented - returns FAILURE
+/// - Path must be ground string
+/// - Mode must be 'read', 'write', 'append', or 'read_write'
+/// - If Path/Mode is unbound reader → SUSPEND
+/// - Handle is unbound writer → bind to handle ID → SUCCESS
+/// - If file can't be opened → FAILURE
 ///
 /// Example:
-///   file_open('/path/to/file.txt', 'read', H)
+///   file_open('/path/to/file.txt', 'read', H)  % H = 1
 SystemResult fileOpenPredicate(GlpRuntime rt, SystemCall call) {
   if (call.args.length != 3) {
     print('[ERROR] file_open/3 requires exactly 3 arguments, got ${call.args.length}');
     return SystemResult.failure;
   }
 
-  print('[WARN] file_open/3: Not yet implemented (file handles require state management)');
-  return SystemResult.failure;
+  final pathTerm = call.args[0];
+  final modeTerm = call.args[1];
+  final handleTerm = call.args[2];
+
+  // Extract path
+  String? path;
+  if (pathTerm is ConstTerm && pathTerm.value is String) {
+    path = pathTerm.value as String;
+  } else if (pathTerm is WriterTerm) {
+    final wid = pathTerm.writerId;
+    if (!rt.heap.isWriterBound(wid)) {
+      return SystemResult.failure;
+    }
+    final value = rt.heap.writerValue[wid];
+    if (value is ConstTerm && value.value is String) {
+      path = value.value as String;
+    }
+  } else if (pathTerm is ReaderTerm) {
+    final rid = pathTerm.readerId;
+    final wid = rt.heap.writerIdForReader(rid);
+    if (wid == null || !rt.heap.isWriterBound(wid)) {
+      call.suspendedReaders.add(rid);
+      return SystemResult.suspend;
+    }
+    final value = rt.heap.writerValue[wid];
+    if (value is ConstTerm && value.value is String) {
+      path = value.value as String;
+    }
+  }
+
+  if (path == null) {
+    print('[ERROR] file_open/3: path must be a string');
+    return SystemResult.failure;
+  }
+
+  // Extract mode
+  String? mode;
+  if (modeTerm is ConstTerm && modeTerm.value is String) {
+    mode = modeTerm.value as String;
+  } else if (modeTerm is WriterTerm) {
+    final wid = modeTerm.writerId;
+    if (!rt.heap.isWriterBound(wid)) {
+      return SystemResult.failure;
+    }
+    final value = rt.heap.writerValue[wid];
+    if (value is ConstTerm && value.value is String) {
+      mode = value.value as String;
+    }
+  } else if (modeTerm is ReaderTerm) {
+    final rid = modeTerm.readerId;
+    final wid = rt.heap.writerIdForReader(rid);
+    if (wid == null || !rt.heap.isWriterBound(wid)) {
+      call.suspendedReaders.add(rid);
+      return SystemResult.suspend;
+    }
+    final value = rt.heap.writerValue[wid];
+    if (value is ConstTerm && value.value is String) {
+      mode = value.value as String;
+    }
+  }
+
+  if (mode == null) {
+    print('[ERROR] file_open/3: mode must be a string');
+    return SystemResult.failure;
+  }
+
+  // Open file based on mode
+  RandomAccessFile? file;
+  try {
+    final fileObj = File(path);
+
+    switch (mode) {
+      case 'read':
+        file = fileObj.openSync(mode: FileMode.read);
+        break;
+      case 'write':
+        file = fileObj.openSync(mode: FileMode.write);
+        break;
+      case 'append':
+        file = fileObj.openSync(mode: FileMode.append);
+        break;
+      case 'read_write':
+        file = fileObj.openSync(mode: FileMode.writeOnly);
+        break;
+      default:
+        print('[ERROR] file_open/3: invalid mode: $mode (must be read/write/append/read_write)');
+        return SystemResult.failure;
+    }
+  } catch (e) {
+    print('[ERROR] file_open/3: Failed to open file $path: $e');
+    return SystemResult.failure;
+  }
+
+  // Allocate handle
+  final handle = rt.allocateFileHandle(file);
+
+  // Bind or verify handle
+  if (handleTerm is WriterTerm) {
+    final wid = handleTerm.writerId;
+    if (rt.heap.isWriterBound(wid)) {
+      // Verify
+      final existingValue = rt.heap.writerValue[wid];
+      bool matches = false;
+      if (existingValue is ConstTerm && existingValue.value == handle) {
+        matches = true;
+      } else if (existingValue == handle) {
+        matches = true;
+      }
+      if (!matches) {
+        // Close the file we just opened since verification failed
+        rt.closeFileHandle(handle);
+        return SystemResult.failure;
+      }
+    } else {
+      // Bind to handle
+      rt.heap.bindWriterConst(wid, handle);
+    }
+    return SystemResult.success;
+  } else {
+    // Close the file since we can't return the handle
+    rt.closeFileHandle(handle);
+    return SystemResult.failure;
+  }
 }
 
-/// file_close/1: Close file handle (placeholder)
+/// file_close/1: Close file handle
 ///
 /// Usage: execute('file_close', [Handle])
 ///
-/// Closes a file handle. Currently a placeholder.
+/// Closes an open file handle.
 ///
 /// Behavior:
-/// - Not yet implemented - returns FAILURE
+/// - Handle must be ground integer
+/// - If Handle is unbound reader → SUSPEND
+/// - If handle is valid → close file → SUCCESS
+/// - If handle is invalid → FAILURE
 ///
 /// Example:
 ///   file_close(H)
@@ -840,8 +970,252 @@ SystemResult fileClosePredicate(GlpRuntime rt, SystemCall call) {
     return SystemResult.failure;
   }
 
-  print('[WARN] file_close/1: Not yet implemented (file handles require state management)');
-  return SystemResult.failure;
+  final handleTerm = call.args[0];
+
+  // Extract handle
+  int? handle;
+  if (handleTerm is ConstTerm && handleTerm.value is int) {
+    handle = handleTerm.value as int;
+  } else if (handleTerm is WriterTerm) {
+    final wid = handleTerm.writerId;
+    if (!rt.heap.isWriterBound(wid)) {
+      return SystemResult.failure;
+    }
+    final value = rt.heap.writerValue[wid];
+    if (value is ConstTerm && value.value is int) {
+      handle = value.value as int;
+    }
+  } else if (handleTerm is ReaderTerm) {
+    final rid = handleTerm.readerId;
+    final wid = rt.heap.writerIdForReader(rid);
+    if (wid == null || !rt.heap.isWriterBound(wid)) {
+      call.suspendedReaders.add(rid);
+      return SystemResult.suspend;
+    }
+    final value = rt.heap.writerValue[wid];
+    if (value is ConstTerm && value.value is int) {
+      handle = value.value as int;
+    }
+  }
+
+  if (handle == null) {
+    print('[ERROR] file_close/1: handle must be an integer');
+    return SystemResult.failure;
+  }
+
+  // Close the file
+  if (rt.isValidHandle(handle)) {
+    rt.closeFileHandle(handle);
+    return SystemResult.success;
+  } else {
+    print('[ERROR] file_close/1: invalid file handle: $handle');
+    return SystemResult.failure;
+  }
+}
+
+/// file_read_handle/2: Read from file handle
+///
+/// Usage: execute('file_read_handle', [Handle, Contents])
+///
+/// Reads remaining contents from an open file handle as a string.
+///
+/// Behavior:
+/// - Handle must be ground integer
+/// - If Handle is unbound reader → SUSPEND
+/// - Contents is unbound writer → bind to file contents → SUCCESS
+/// - If handle invalid or read fails → FAILURE
+///
+/// Example:
+///   file_read_handle(H, Data)
+SystemResult fileReadHandlePredicate(GlpRuntime rt, SystemCall call) {
+  if (call.args.length != 2) {
+    print('[ERROR] file_read_handle/2 requires exactly 2 arguments, got ${call.args.length}');
+    return SystemResult.failure;
+  }
+
+  final handleTerm = call.args[0];
+  final contentsTerm = call.args[1];
+
+  // Extract handle
+  int? handle;
+  if (handleTerm is ConstTerm && handleTerm.value is int) {
+    handle = handleTerm.value as int;
+  } else if (handleTerm is WriterTerm) {
+    final wid = handleTerm.writerId;
+    if (!rt.heap.isWriterBound(wid)) {
+      return SystemResult.failure;
+    }
+    final value = rt.heap.writerValue[wid];
+    if (value is ConstTerm && value.value is int) {
+      handle = value.value as int;
+    }
+  } else if (handleTerm is ReaderTerm) {
+    final rid = handleTerm.readerId;
+    final wid = rt.heap.writerIdForReader(rid);
+    if (wid == null || !rt.heap.isWriterBound(wid)) {
+      call.suspendedReaders.add(rid);
+      return SystemResult.suspend;
+    }
+    final value = rt.heap.writerValue[wid];
+    if (value is ConstTerm && value.value is int) {
+      handle = value.value as int;
+    }
+  }
+
+  if (handle == null) {
+    print('[ERROR] file_read_handle/2: handle must be an integer');
+    return SystemResult.failure;
+  }
+
+  // Get file
+  final file = rt.getFile(handle);
+  if (file == null) {
+    print('[ERROR] file_read_handle/2: invalid file handle: $handle');
+    return SystemResult.failure;
+  }
+
+  // Read contents
+  String contents;
+  try {
+    final length = file.lengthSync();
+    final position = file.positionSync();
+    final remaining = length - position;
+
+    if (remaining <= 0) {
+      contents = '';
+    } else {
+      final bytes = file.readSync(remaining);
+      contents = String.fromCharCodes(bytes);
+    }
+  } catch (e) {
+    print('[ERROR] file_read_handle/2: Failed to read from handle $handle: $e');
+    return SystemResult.failure;
+  }
+
+  // Bind or verify contents
+  if (contentsTerm is WriterTerm) {
+    final wid = contentsTerm.writerId;
+    if (rt.heap.isWriterBound(wid)) {
+      // Verify
+      final existingValue = rt.heap.writerValue[wid];
+      bool matches = false;
+      if (existingValue is ConstTerm && existingValue.value == contents) {
+        matches = true;
+      } else if (existingValue == contents) {
+        matches = true;
+      }
+      return matches ? SystemResult.success : SystemResult.failure;
+    } else {
+      // Bind
+      rt.heap.bindWriterConst(wid, contents);
+      return SystemResult.success;
+    }
+  } else {
+    return SystemResult.failure;
+  }
+}
+
+/// file_write_handle/2: Write to file handle
+///
+/// Usage: execute('file_write_handle', [Handle, Contents])
+///
+/// Writes string contents to an open file handle.
+///
+/// Behavior:
+/// - Handle must be ground integer
+/// - Contents must be ground string
+/// - If either is unbound reader → SUSPEND
+/// - On success → SUCCESS
+/// - If handle invalid or write fails → FAILURE
+///
+/// Example:
+///   file_write_handle(H, 'Hello')
+SystemResult fileWriteHandlePredicate(GlpRuntime rt, SystemCall call) {
+  if (call.args.length != 2) {
+    print('[ERROR] file_write_handle/2 requires exactly 2 arguments, got ${call.args.length}');
+    return SystemResult.failure;
+  }
+
+  final handleTerm = call.args[0];
+  final contentsTerm = call.args[1];
+
+  // Extract handle
+  int? handle;
+  if (handleTerm is ConstTerm && handleTerm.value is int) {
+    handle = handleTerm.value as int;
+  } else if (handleTerm is WriterTerm) {
+    final wid = handleTerm.writerId;
+    if (!rt.heap.isWriterBound(wid)) {
+      return SystemResult.failure;
+    }
+    final value = rt.heap.writerValue[wid];
+    if (value is ConstTerm && value.value is int) {
+      handle = value.value as int;
+    }
+  } else if (handleTerm is ReaderTerm) {
+    final rid = handleTerm.readerId;
+    final wid = rt.heap.writerIdForReader(rid);
+    if (wid == null || !rt.heap.isWriterBound(wid)) {
+      call.suspendedReaders.add(rid);
+      return SystemResult.suspend;
+    }
+    final value = rt.heap.writerValue[wid];
+    if (value is ConstTerm && value.value is int) {
+      handle = value.value as int;
+    }
+  }
+
+  if (handle == null) {
+    print('[ERROR] file_write_handle/2: handle must be an integer');
+    return SystemResult.failure;
+  }
+
+  // Extract contents
+  String? contents;
+  if (contentsTerm is ConstTerm && contentsTerm.value is String) {
+    contents = contentsTerm.value as String;
+  } else if (contentsTerm is WriterTerm) {
+    final wid = contentsTerm.writerId;
+    if (!rt.heap.isWriterBound(wid)) {
+      return SystemResult.failure;
+    }
+    final value = rt.heap.writerValue[wid];
+    if (value is ConstTerm && value.value is String) {
+      contents = value.value as String;
+    }
+  } else if (contentsTerm is ReaderTerm) {
+    final rid = contentsTerm.readerId;
+    final wid = rt.heap.writerIdForReader(rid);
+    if (wid == null || !rt.heap.isWriterBound(wid)) {
+      call.suspendedReaders.add(rid);
+      return SystemResult.suspend;
+    }
+    final value = rt.heap.writerValue[wid];
+    if (value is ConstTerm && value.value is String) {
+      contents = value.value as String;
+    }
+  }
+
+  if (contents == null) {
+    print('[ERROR] file_write_handle/2: contents must be a string');
+    return SystemResult.failure;
+  }
+
+  // Get file
+  final file = rt.getFile(handle);
+  if (file == null) {
+    print('[ERROR] file_write_handle/2: invalid file handle: $handle');
+    return SystemResult.failure;
+  }
+
+  // Write contents
+  try {
+    file.writeStringSync(contents);
+    return SystemResult.success;
+  } catch (e) {
+    print('[ERROR] file_write_handle/2: Failed to write to handle $handle: $e');
+    return SystemResult.failure;
+  }
 }
 
 // ============================================================================
