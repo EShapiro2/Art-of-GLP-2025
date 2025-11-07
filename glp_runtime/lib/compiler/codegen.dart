@@ -1,6 +1,7 @@
 import '../bytecode/opcodes.dart' as bc;
 import '../bytecode/asm.dart';
 import '../bytecode/runner.dart' show BytecodeProgram;
+import '../runtime/terms.dart' as rt;
 import 'ast.dart';
 import 'analyzer.dart';
 import 'error.dart';
@@ -371,6 +372,12 @@ class CodeGenerator {
       final goal = goals[i];
       final isTailPosition = (i == goals.length - 1);
 
+      // Special handling for execute/2 system predicate
+      if (goal.functor == 'execute' && goal.arity == 2) {
+        _generateExecuteCall(goal, varTable, ctx);
+        continue;
+      }
+
       // Setup arguments in A registers
       for (int j = 0; j < goal.args.length; j++) {
         _generatePutArgument(goal.args[j], j, varTable, ctx);
@@ -390,6 +397,101 @@ class CodeGenerator {
     // If no goals (empty body), emit proceed
     if (goals.isEmpty) {
       ctx.emit(bc.Proceed());
+    }
+  }
+
+  void _generateExecuteCall(Goal goal, VariableTable varTable, CodeGenContext ctx) {
+    // execute('pred_name', [arg1, arg2, ...])
+    // Args: goal.args[0] = predicate name (const string), goal.args[1] = argument list
+
+    // Extract predicate name from first argument
+    if (goal.args[0] is! ConstTerm) {
+      throw CompileError('execute/2 first argument must be a constant string', goal.line, goal.column, phase: 'codegen');
+    }
+    final predicateName = (goal.args[0] as ConstTerm).value as String;
+
+    // Extract argument list from second argument
+    if (goal.args[1] is! ListTerm) {
+      throw CompileError('execute/2 second argument must be a list', goal.line, goal.column, phase: 'codegen');
+    }
+    final argList = goal.args[1] as ListTerm;
+
+    // Collect argument terms
+    final argTerms = <Term>[];
+    var current = argList;
+    while (!current.isNil) {
+      if (current.head != null) {
+        argTerms.add(current.head!);
+      }
+      if (current.tail is ListTerm) {
+        current = current.tail as ListTerm;
+      } else {
+        break;
+      }
+    }
+
+    // Generate SetClauseVar for each argument
+    for (int i = 0; i < argTerms.length; i++) {
+      final term = argTerms[i];
+      final value = _termToValue(term, varTable, ctx);
+      ctx.emit(bc.SetClauseVar(i, value));
+    }
+
+    // Generate Execute instruction
+    final argSlots = List.generate(argTerms.length, (i) => i);
+    ctx.emit(bc.Execute(predicateName, argSlots));
+  }
+
+  Object? _termToValue(Term term, VariableTable varTable, CodeGenContext ctx) {
+    if (term is ConstTerm) {
+      // For execute(), return the raw value, not wrapped in ConstTerm
+      return term.value;
+    } else if (term is VarTerm) {
+      final varInfo = varTable.getVar(term.name);
+      if (varInfo == null) {
+        throw CompileError('Undefined variable: ${term.name}', term.line, term.column, phase: 'codegen');
+      }
+      if (term.isReader) {
+        // Return reader term - but we need the writer ID to get the reader
+        // This is tricky - for now, just note this limitation
+        throw CompileError('Reader variables in execute() not yet supported: ${term.name}?', term.line, term.column, phase: 'codegen');
+      } else {
+        // Writer variable - return writer term
+        return rt.WriterTerm(varInfo.registerIndex!);
+      }
+    } else if (term is ListTerm) {
+      if (term.isNil) {
+        return [];  // Empty list as Dart list
+      }
+      // Build Dart list recursively (for execute() arguments)
+      final elements = <Object?>[];
+      var current = term;
+      while (!current.isNil) {
+        if (current.head != null) {
+          elements.add(_termToValue(current.head!, varTable, ctx));
+        }
+        if (current.tail is ListTerm) {
+          current = current.tail as ListTerm;
+        } else {
+          break;
+        }
+      }
+      return elements;
+    } else if (term is StructTerm) {
+      // For structures, we do need to build Term objects
+      final argTerms = <rt.Term>[];
+      for (final arg in term.args) {
+        final value = _termToValue(arg, varTable, ctx);
+        if (value is rt.Term) {
+          argTerms.add(value);
+        } else {
+          // Wrap primitive values in ConstTerm
+          argTerms.add(rt.ConstTerm(value));
+        }
+      }
+      return rt.StructTerm(term.functor, argTerms);
+    } else {
+      throw CompileError('Unsupported term type in execute(): $term', term.line, term.column, phase: 'codegen');
     }
   }
 
