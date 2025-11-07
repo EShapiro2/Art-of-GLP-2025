@@ -221,6 +221,25 @@ runner.runWithStatus(cx);
 - The runtime models concurrent execution with fairness (tail-recursion budgets) and single-shot reactivation (armed hangers)
 - Writer variables bind at commit; reader variables may cause suspension until bound
 
+### System Predicates Implementation Status
+
+**Fully Implemented** (all non-channel predicates for Logix support):
+- ✅ **Arithmetic**: `evaluate/2` - Full arithmetic expression evaluation (+, -, *, /, mod)
+- ✅ **Utilities**: `current_time/1`, `unique_id/1`, `variable_name/2`, `copy_term/2`
+- ✅ **File I/O**:
+  - Simple: `file_read/2`, `file_write/2`, `file_exists/1`
+  - Handle-based: `file_open/3`, `file_close/1`, `file_read_handle/2`, `file_write_handle/2`
+- ✅ **Directory**: `directory_list/2`
+- ✅ **Terminal I/O**: `write/1`, `nl/0`, `read/1`
+- ✅ **Module Loading**:
+  - `link/2` - FFI/dynamic library loading via dart:ffi
+  - `load_module/2` - Bytecode module loading (basic implementation, needs serialization format)
+
+**Deferred**:
+- ⏸️ **Channel Primitives**: `create_merger/2`, `distribute_stream/2`, `copy_term/3` (multi-arg version)
+
+All system predicates follow three-valued semantics (success/suspend/failure) and properly handle unbound readers.
+
 ### Modules and Process Activation (from FCP)
 
 **CRITICAL DISTINCTION** (from FCP Section 3.5):
