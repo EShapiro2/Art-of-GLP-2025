@@ -1,6 +1,19 @@
-% circular_merge.glp - Circular dependency demonstration
+% circular_merge.glp - Circular dependency example
 %
-% Note: Full circular merge requires manual bytecode construction
-% This is just a placeholder
+% Two merge goals that create circular streams
+% From merge_circular_pure_trace.dart
+%
+% Goal setup (done in bytecode):
+%   merge(Xs?, [a], Ys)
+%   merge(Ys?, [b], Xs)
+%
+% This creates an infinite ping-pong pattern:
+%   Xs = [a, b, a, b, a, b, ...]
+%   Ys = [b, a, b, a, b, a, ...]
+%
+% WARNING: Creates infinite stream - use with reduction budget!
 
-merge([], Ys?, Ys).
+% Standard merge clauses
+merge([X|Xs], Ys, [X?|Zs?]) :- merge(Ys?, Xs?, Zs).
+merge(Xs, [Y|Ys], [Y?|Zs?]) :- merge(Xs?, Ys?, Zs).
+merge([], [], []).

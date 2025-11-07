@@ -1,10 +1,15 @@
 % list_ops.glp - List operations
 %
 % Common list manipulation predicates
-% Note: Simplified versions due to compiler limitations
 
-% Append two lists (base case only)
-append([], Ys?, Ys).
+% Append two lists
+append([], Ys, Ys).
+append([X|Xs], Ys, [X?|Zs?]) :- append(Xs?, Ys?, Zs).
 
-% Member check (base case only)
-member(X?, [X?|Tail]).
+% List member check
+member(X, [X?|_]).
+member(X, [_|Xs]) :- member(X?, Xs?).
+
+% List length
+length([], zero).
+length([_|Xs], succ(N?)) :- length(Xs?, N).
