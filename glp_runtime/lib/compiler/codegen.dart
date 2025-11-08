@@ -311,17 +311,19 @@ class CodeGenerator {
           if (term.tail != null) _generateStructureElement(term.tail!, varTable, ctx, inHead: inHead);
         }
       } else {
-        // WRITE mode: build nested structure first
+        // WRITE mode (BODY): building nested structure within argument structure
+        // For [], just emit UnifyConstant(null) to represent empty list
+        // For [H|T], we need to build a nested structure inline
         if (term.isNil) {
-          ctx.emit(bc.PutNil(tempReg));
+          ctx.emit(bc.UnifyConstant(null));  // Empty list as null
         } else {
+          // For non-empty list, we need nested structure building
+          // This is complex - for now use temp approach but fix it
           ctx.emit(bc.PutStructure('.', 2, tempReg));
           if (term.head != null) _generateStructureElement(term.head!, varTable, ctx, inHead: inHead);
           if (term.tail != null) _generateStructureElement(term.tail!, varTable, ctx, inHead: inHead);
+          ctx.emit(bc.UnifyWriter(tempReg));
         }
-
-        // Then write temp to current S position
-        ctx.emit(bc.UnifyWriter(tempReg));
       }
 
     } else if (term is StructTerm) {

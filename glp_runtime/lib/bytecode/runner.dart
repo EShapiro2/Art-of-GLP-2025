@@ -734,6 +734,27 @@ class BytecodeRunner {
                 cx.clauseVars.remove(-1);
               }
             }
+          } else if (cx.currentStructure is StructTerm) {
+            // BODY phase structure building
+            final struct = cx.currentStructure as StructTerm;
+            struct.args[cx.S] = ConstTerm(op.value);
+            cx.S++; // Advance to next arg
+
+            // Check if structure is complete
+            if (cx.S >= struct.args.length) {
+              // Structure complete - bind the target writer (stored at clauseVars[-1])
+              final targetWriterId = cx.clauseVars[-1];
+              if (targetWriterId is int) {
+                // Bind the writer to the completed structure
+                cx.rt.heap.bindWriterStruct(targetWriterId, struct.functor, struct.args);
+
+                // Reset structure building state
+                cx.currentStructure = null;
+                cx.mode = UnifyMode.read;
+                cx.S = 0;
+                cx.clauseVars.remove(-1);
+              }
+            }
           }
         } else {
           // READ mode: Verify value at S position matches constant
@@ -856,6 +877,37 @@ class BytecodeRunner {
               struct.args[cx.S] = _ClauseVar(op.varIndex, isWriter: true);
             }
             cx.S++;
+          } else if (cx.currentStructure is StructTerm) {
+            // BODY phase structure building
+            final struct = cx.currentStructure as StructTerm;
+            final value = cx.clauseVars[op.varIndex];
+            if (value is int) {
+              // It's a writer ID - add WriterTerm
+              struct.args[cx.S] = WriterTerm(value);
+            } else if (value is Term) {
+              // Ground term (ConstTerm or StructTerm) - use directly
+              struct.args[cx.S] = value;
+            } else if (value == null) {
+              // Create fresh writer/reader pair
+              final (freshWriterId, freshReaderId) = cx.rt.heap.allocateFreshPair();
+              cx.rt.heap.addWriter(WriterCell(freshWriterId, freshReaderId));
+              cx.rt.heap.addReader(ReaderCell(freshReaderId));
+              cx.clauseVars[op.varIndex] = freshWriterId;
+              struct.args[cx.S] = WriterTerm(freshWriterId);
+            }
+            cx.S++;
+
+            // Check if structure is complete
+            if (cx.S >= struct.args.length) {
+              final targetWriterId = cx.clauseVars[-1];
+              if (targetWriterId is int) {
+                cx.rt.heap.bindWriterStruct(targetWriterId, struct.functor, struct.args);
+                cx.currentStructure = null;
+                cx.mode = UnifyMode.read;
+                cx.S = 0;
+                cx.clauseVars.remove(-1);
+              }
+            }
           }
         } else {
           // READ mode: Unify with writer at S position
@@ -937,6 +989,40 @@ class BytecodeRunner {
               struct.args[cx.S] = ReaderTerm(freshReaderId);
             }
             cx.S++;
+          } else if (cx.currentStructure is StructTerm) {
+            // BODY phase structure building
+            final struct = cx.currentStructure as StructTerm;
+            final clauseVarValue = cx.clauseVars[op.varIndex];
+            if (clauseVarValue is int) {
+              // It's a writer ID - get the reader for this writer
+              final wc = cx.rt.heap.writer(clauseVarValue);
+              if (wc != null) {
+                struct.args[cx.S] = ReaderTerm(wc.readerId);
+              }
+            } else if (clauseVarValue is ReaderTerm) {
+              // Already a reader term - use directly
+              struct.args[cx.S] = clauseVarValue;
+            } else if (clauseVarValue == null) {
+              // First occurrence as reader - create pair
+              final (freshWriterId, freshReaderId) = cx.rt.heap.allocateFreshPair();
+              cx.rt.heap.addWriter(WriterCell(freshWriterId, freshReaderId));
+              cx.rt.heap.addReader(ReaderCell(freshReaderId));
+              cx.clauseVars[op.varIndex] = freshWriterId;
+              struct.args[cx.S] = ReaderTerm(freshReaderId);
+            }
+            cx.S++;
+
+            // Check if structure is complete
+            if (cx.S >= struct.args.length) {
+              final targetWriterId = cx.clauseVars[-1];
+              if (targetWriterId is int) {
+                cx.rt.heap.bindWriterStruct(targetWriterId, struct.functor, struct.args);
+                cx.currentStructure = null;
+                cx.mode = UnifyMode.read;
+                cx.S = 0;
+                cx.clauseVars.remove(-1);
+              }
+            }
           }
         } else {
           // READ mode: Unify with reader at S position
