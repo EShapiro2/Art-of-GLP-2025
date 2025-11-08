@@ -709,6 +709,31 @@ class BytecodeRunner {
             final struct = cx.currentStructure as _TentativeStruct;
             struct.args[cx.S] = op.value;
             cx.S++; // Advance to next arg
+
+            // Check if structure is complete
+            if (cx.S >= struct.args.length) {
+              // Structure complete - bind the target writer (stored at clauseVars[-1])
+              final targetWriterId = cx.clauseVars[-1];
+              if (targetWriterId is int) {
+                // Convert args to Terms
+                final termArgs = <Term>[];
+                for (final arg in struct.args) {
+                  if (arg is Term) {
+                    termArgs.add(arg);
+                  } else {
+                    termArgs.add(ConstTerm(arg));
+                  }
+                }
+                // Bind the writer to the completed structure
+                cx.rt.heap.bindWriterStruct(targetWriterId, struct.functor, termArgs);
+
+                // Reset structure building state
+                cx.currentStructure = null;
+                cx.mode = UnifyMode.read;
+                cx.S = 0;
+                cx.clauseVars.remove(-1);
+              }
+            }
           }
         } else {
           // READ mode: Verify value at S position matches constant
@@ -1295,18 +1320,18 @@ class BytecodeRunner {
       if (op is PutStructure) {
         if (cx.inBody) {
           // WAM semantics: HEAP[H] ← <STR, H+1>; HEAP[H+1] ← F/n; Ai ← HEAP[H]; H ← H+2; mode ← WRITE
-          // In GLP: We'll bind the writer at argSlot after the structure is complete
-          // For now, create temporary structure and enter WRITE mode
+          // In GLP: Create fresh writer/reader pair for argument passing
 
-          // Store target writer ID from environment
-          final targetWriterId = cx.env.w(op.argSlot);
-          if (targetWriterId == null) {
-            print('WARNING: PutStructure argSlot ${op.argSlot} has no writer in environment');
-            pc++; continue;
-          }
+          // Create fresh writer/reader pair for this structure
+          final (freshWriterId, freshReaderId) = cx.rt.heap.allocateFreshPair();
+          cx.rt.heap.addWriter(WriterCell(freshWriterId, freshReaderId));
+          cx.rt.heap.addReader(ReaderCell(freshReaderId));
 
           // Store the writer ID in context for later binding
-          cx.clauseVars[-1] = targetWriterId; // Use -1 as special marker for structure binding
+          cx.clauseVars[-1] = freshWriterId; // Use -1 as special marker for structure binding
+
+          // Also store in argReaders so the argument gets passed
+          cx.argReaders[op.argSlot] = freshReaderId;
 
           // Create structure with placeholder args (will be filled by subsequent Set* instructions)
           // Use ConstTerm(null) as placeholder, will be replaced
