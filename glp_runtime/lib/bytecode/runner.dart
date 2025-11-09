@@ -5,6 +5,7 @@ import 'package:glp_runtime/runtime/commit.dart';
 import 'package:glp_runtime/runtime/cells.dart';
 import 'package:glp_runtime/runtime/system_predicates.dart';
 import 'opcodes.dart';
+import 'opcodes_v2.dart' as opv2;
 
 enum RunResult { terminated, suspended, yielded, outOfReductions }
 
@@ -14,10 +15,10 @@ enum UnifyMode { read, write }
 typedef LabelName = String;
 
 class BytecodeProgram {
-  final List<Op> ops;
+  final List<dynamic> ops;  // Can hold both v1 (Op) and v2 (OpV2) instructions
   final Map<LabelName, int> labels;
   BytecodeProgram(this.ops) : labels = _indexLabels(ops);
-  static Map<LabelName, int> _indexLabels(List<Op> ops) {
+  static Map<LabelName, int> _indexLabels(List<dynamic> ops) {
     final m = <LabelName,int>{};
     for (var i = 0; i < ops.length; i++) {
       final op = ops[i];
@@ -86,9 +87,6 @@ class RunnerContext {
   final Map<int, int> argWriters = {};  // argSlot → writer ID
   final Map<int, int> argReaders = {};  // argSlot → reader ID
 
-  // BODY argument registers for spawn/requeue
-  final Map<int, Object?> bodyArgs = {};  // argSlot → value (int for writer/reader ID, or ConstTerm)
-
   // Reduction budget (null = unlimited)
   int? reductionBudget;
   int reductionsUsed = 0;
@@ -102,6 +100,10 @@ class RunnerContext {
   // Track spawned goals for display
   final List<String> spawnedGoals = [];
 
+  // Track reduction for trace output
+  String? goalHead;  // Formatted head goal for trace (mutable for tail calls)
+  final void Function(int goalId, String head, String body)? onReduction;
+
   RunnerContext({
     required this.rt,
     required this.goalId,
@@ -109,6 +111,8 @@ class RunnerContext {
     CallEnv? env,
     this.onActivation,
     this.reductionBudget,
+    this.goalHead,
+    this.onReduction,
   }) : env = env ?? CallEnv();
 
   void clearClause() {
@@ -249,6 +253,34 @@ class BytecodeRunner {
         }
       }
 
+      // ===== v2 UNIFIED INSTRUCTIONS =====
+
+      // IfVariable: unified writer/reader type guard
+      if (op is opv2.IfVariable) {
+        final term = cx.clauseVars[op.varIndex];
+        if (op.isReader) {
+          // Check if it's a reader
+          if (term is ReaderTerm) {
+            pc++;
+            continue;
+          } else {
+            _softFailToNextClause(cx, pc);
+            pc = _findNextClauseTry(pc);
+            continue;
+          }
+        } else {
+          // Check if it's a writer
+          if (term is WriterTerm) {
+            pc++;
+            continue;
+          } else {
+            _softFailToNextClause(cx, pc);
+            pc = _findNextClauseTry(pc);
+            continue;
+          }
+        }
+      }
+
       // Mode selection (Arg)
       if (op is RequireWriterArg) {
         final wid = cx.env.w(op.slot);
@@ -282,7 +314,8 @@ class BytecodeRunner {
             }
           } else {
             // Unbound writer - record tentative binding in σ̂w
-            cx.sigmaHat[arg.writerId!] = op.value;
+            // Wrap in ConstTerm so it's properly handled during Commit
+            cx.sigmaHat[arg.writerId!] = ConstTerm(op.value);
           }
         } else if (arg.isReader) {
           // Reader: check if bound, else add to Si
@@ -770,7 +803,9 @@ class BytecodeRunner {
           } else if (cx.currentStructure is StructTerm) {
             // BODY phase structure building
             final struct = cx.currentStructure as StructTerm;
-            struct.args[cx.S] = ConstTerm(op.value);
+            // If value is already a Term (e.g., StructTerm), use it directly
+            // Otherwise wrap in ConstTerm
+            struct.args[cx.S] = op.value is Term ? op.value as Term : ConstTerm(op.value);
             cx.S++; // Advance to next arg
 
             // Check if structure is complete
@@ -1091,6 +1126,19 @@ class BytecodeRunner {
           }
         }
         pc++; continue;
+      }
+
+      // UnifyVariable: unified writer/reader structure traversal
+      if (op is opv2.UnifyVariable) {
+        // Transform to v1 instruction based on isReader flag and re-execute
+        final v1Op = op.isReader
+            ? UnifyReader(op.varIndex)
+            : UnifyWriter(op.varIndex);
+
+        // Replace current instruction with v1 equivalent and re-execute
+        // This is safe because we're just dispatching based on the flag
+        prog.ops[pc] = v1Op;
+        continue; // Re-execute at same PC with v1 instruction
       }
 
       // Legacy HEAD opcodes (for backward compatibility)
@@ -1420,6 +1468,14 @@ class BytecodeRunner {
           } else if (value is ReaderTerm) {
             // It's already a reader - use its ID directly
             cx.argReaders[op.argSlot] = value.readerId;
+          } else if (value == null) {
+            // First occurrence of this variable - create fresh unbound pair
+            final (freshWriterId, freshReaderId) = cx.rt.heap.allocateFreshPair();
+            cx.rt.heap.addWriter(WriterCell(freshWriterId, freshReaderId));
+            cx.rt.heap.addReader(ReaderCell(freshReaderId));
+            cx.clauseVars[op.varIndex] = freshWriterId;  // Remember writer ID
+            cx.argReaders[op.argSlot] = freshReaderId;
+            if (debug) print('  [G${cx.goalId}] PutReader: created fresh unbound pair W$freshWriterId/R$freshReaderId for first occurrence');
           } else {
             // Unknown - skip
             print('WARNING: PutReader got unexpected value: $value');
@@ -1427,6 +1483,18 @@ class BytecodeRunner {
         }
         if (debug) print('  [G${cx.goalId}] PutReader: continuing to PC ${pc+1}');
         pc++; continue;
+      }
+
+      // PutVariable: unified writer/reader argument placement
+      if (op is opv2.PutVariable) {
+        // Transform to v1 instruction based on isReader flag and re-execute
+        final v1Op = op.isReader
+            ? PutReader(op.varIndex, op.argSlot)
+            : PutWriter(op.varIndex, op.argSlot);
+
+        // Replace current instruction with v1 equivalent and re-execute
+        prog.ops[pc] = v1Op;
+        continue; // Re-execute at same PC with v1 instruction
       }
 
       if (op is PutConstant) {
@@ -1455,8 +1523,15 @@ class BytecodeRunner {
           // Store the writer ID in context for later binding
           cx.clauseVars[-1] = freshWriterId; // Use -1 as special marker for structure binding
 
-          // Also store in argReaders so the argument gets passed
-          cx.argReaders[op.argSlot] = freshReaderId;
+          // Only store in argReaders if this is a valid argument slot (0-9)
+          // Temp registers (10+) should store in clauseVars instead
+          if (op.argSlot < 10) {
+            // This is an argument slot - store the reader for passing to spawned goal
+            cx.argReaders[op.argSlot] = freshReaderId;
+          } else {
+            // This is a temp register - store writer in clauseVars for later reference
+            cx.clauseVars[op.argSlot] = freshWriterId;
+          }
 
           // Create structure with placeholder args (will be filled by subsequent Set* instructions)
           // Use ConstTerm(null) as placeholder, will be replaced
@@ -1682,8 +1757,15 @@ class BytecodeRunner {
               break;
             }
           }
-          final goalStr = args.isEmpty ? op.procedureLabel : '${op.procedureLabel}(${args.join(', ')})';
-          cx.spawnedGoals.add(goalStr);
+          final newHeadGoalStr = args.isEmpty ? op.procedureLabel : '${op.procedureLabel}(${args.join(', ')})';
+          cx.spawnedGoals.add(newHeadGoalStr);
+
+          // Print reduction trace before tail call
+          // The current head reduces to the body (which includes this requeued goal)
+          if (cx.onReduction != null && cx.goalHead != null) {
+            final body = cx.spawnedGoals.join(', ');
+            cx.onReduction!(cx.goalId, cx.goalHead!, body);
+          }
 
           // Update environment with new arguments
           cx.env.update(Map.from(cx.argWriters), Map.from(cx.argReaders));
@@ -1691,6 +1773,10 @@ class BytecodeRunner {
           // Clear argument registers
           cx.argWriters.clear();
           cx.argReaders.clear();
+
+          // Clear spawned goals and update head for next reduction
+          cx.spawnedGoals.clear();
+          cx.goalHead = newHeadGoalStr;  // New head for next iteration
 
           // Reset clause state for new procedure
           cx.sigmaHat.clear();
@@ -1735,50 +1821,14 @@ class BytecodeRunner {
       // ===== BODY INSTRUCTIONS =====
       // These execute after COMMIT
 
-      if (op is PutWriter) {
-        print('[DEBUG PutWriter] varIndex=${op.varIndex}, argSlot=${op.argSlot}');
-        // Place writer variable in argument slot
-        // If variable doesn't exist, create a fresh writer/reader pair
-        var writerId = cx.clauseVars[op.varIndex];
-        if (writerId == null) {
-          // Create fresh writer/reader pair
-          final (newWriterId, newReaderId) = cx.rt.heap.allocateFreshPair();
-          print('[DEBUG PutWriter] Created fresh: writer=$newWriterId, reader=$newReaderId');
-          cx.rt.heap.addWriter(WriterCell(newWriterId, newReaderId));
-          cx.rt.heap.addReader(ReaderCell(newReaderId));
-          cx.clauseVars[op.varIndex] = newWriterId;
-          writerId = newWriterId;
-        } else {
-          print('[DEBUG PutWriter] Using existing writer: $writerId');
-        }
-        cx.bodyArgs[op.argSlot] = writerId;
-        print('[DEBUG PutWriter] bodyArgs now: ${cx.bodyArgs}');
-        pc++; continue;
-      }
+      // REMOVED: Duplicate incorrect PutWriter implementation (was lines 1826-1844)
+      // The correct PutWriter handler is at line 1396 and writes to cx.argWriters
 
-      if (op is PutReader) {
-        // Place reader (of writer variable) in argument slot
-        final writerId = cx.clauseVars[op.varIndex];
-        if (writerId == null) {
-          throw StateError('PutReader: variable ${op.varIndex} not found in clauseVars');
-        }
-        if (writerId is! int) {
-          throw StateError('PutReader: writerId must be int, got ${writerId.runtimeType}');
-        }
-        // Get the paired reader ID for this writer
-        final writer = cx.rt.heap.writer(writerId as int);
-        if (writer == null) {
-          throw StateError('PutReader: writer $writerId not found in heap');
-        }
-        cx.bodyArgs[op.argSlot] = writer.readerId;
-        pc++; continue;
-      }
+      // REMOVED: Duplicate dead code PutReader implementation (was lines 1847-1863)
+      // The actual PutReader handler is at line 1434 and always executes first
 
-      if (op is PutConstant) {
-        // Place constant value in argument slot
-        cx.bodyArgs[op.argSlot] = ConstTerm(op.value);
-        pc++; continue;
-      }
+      // REMOVED: Duplicate incorrect PutConstant implementation (was lines 1850-1853)  
+      // The correct PutConstant handler is at line 1502 and writes to cx.argReaders
 
       // Note: PutStructure, Spawn, and Requeue handlers are earlier in the file (lines 1162, 1324, 1303)
       // Removed duplicate dead code that was unreachable
@@ -2033,7 +2083,7 @@ class BytecodeRunner {
 
           // Check if the value is [] (empty list)
           if (clauseVarValue is ConstTerm) {
-            if (clauseVarValue.value == '[]' || clauseVarValue.value == null) {
+            if (clauseVarValue.value == 'nil') {
               // Match!
               if (debug && cx.goalId >= 4000) print('  HeadNil: clause var ${op.argSlot} = $clauseVarValue, MATCH');
               pc++;
@@ -2068,8 +2118,8 @@ class BytecodeRunner {
               }
             } else {
               // Unbound writer - enter WRITE mode to bind to []
-              cx.sigmaHat[wid] = ConstTerm('[]');
-              if (debug && cx.goalId >= 4000) print('  HeadNil: clause var ${op.argSlot} = W$wid (unbound), binding to []');
+              cx.sigmaHat[wid] = ConstTerm('nil');
+              if (debug && cx.goalId >= 4000) print('  HeadNil: clause var ${op.argSlot} = W$wid (unbound), binding to nil');
               pc++;
               continue;
             }
@@ -2091,8 +2141,8 @@ class BytecodeRunner {
             // Already bound - check if value matches []
             final value = cx.rt.heap.valueOfWriter(arg.writerId!);
             if (debug && (cx.goalId >= 4000 || cx.goalId == 100)) print('  HeadNil: writer ${arg.writerId} value = $value');
-            if (value is ConstTerm && value.value != '[]') {
-              if (debug && (cx.goalId >= 4000 || cx.goalId == 100)) print('  HeadNil: value does not match [], failing');
+            if (value is ConstTerm && value.value != 'nil') {
+              if (debug && (cx.goalId >= 4000 || cx.goalId == 100)) print('  HeadNil: value does not match nil, failing');
               _softFailToNextClause(cx, pc);
               pc = _findNextClauseTry(pc);
               continue;
@@ -2104,7 +2154,7 @@ class BytecodeRunner {
             }
           } else {
             // Unbound writer - record tentative binding in σ̂w
-            cx.sigmaHat[arg.writerId!] = ConstTerm('[]');
+            cx.sigmaHat[arg.writerId!] = ConstTerm('nil');
           }
         } else if (arg.isReader) {
           if (debug && (cx.goalId >= 4000 || cx.goalId == 100)) print('  HeadNil: arg is reader ${arg.readerId}');
@@ -2118,9 +2168,9 @@ class BytecodeRunner {
             // Bound reader - check if value matches []
             final value = cx.rt.heap.valueOfWriter(wid);
             if (debug && (cx.goalId >= 4000 || cx.goalId == 100)) print('  HeadNil: writer $wid value = $value');
-            if (value is ConstTerm && (value.value == '[]' || value.value == null)) {
+            if (value is ConstTerm && value.value == 'nil') {
               // Match! Empty list
-              if (debug && (cx.goalId >= 4000 || cx.goalId == 100)) print('  HeadNil: MATCH! value is []');
+              if (debug && (cx.goalId >= 4000 || cx.goalId == 100)) print('  HeadNil: MATCH! value is nil (empty list)');
             } else if (value is StructTerm) {
               // Structure doesn't match []
               if (debug && (cx.goalId >= 4000 || cx.goalId == 100)) print('  HeadNil: value is struct, failing');
@@ -2193,9 +2243,15 @@ class BytecodeRunner {
 
       // ===== LIST-SPECIFIC BODY INSTRUCTIONS =====
       if (op is PutNil) {
-        // Place empty list [] in argument register
-        // Equivalent to PutConstant('[]', op.argSlot)
-        cx.bodyArgs[op.argSlot] = ConstTerm('[]');
+        if (cx.inBody) {
+          // Place empty list [] in argument register
+          // Create a fresh writer/reader pair bound to [] (same as PutConstant)
+          final (freshWriterId, freshReaderId) = cx.rt.heap.allocateFreshPair();
+          cx.rt.heap.addWriter(WriterCell(freshWriterId, freshReaderId));
+          cx.rt.heap.addReader(ReaderCell(freshReaderId));
+          cx.rt.heap.bindWriterConst(freshWriterId, 'nil'); // [] represented as 'nil'
+          cx.argReaders[op.argSlot] = freshReaderId;
+        }
         pc++;
         continue;
       }
@@ -2285,6 +2341,11 @@ class BytecodeRunner {
       }
 
       if (op is Proceed) {
+        // Call reduction callback if trace is on
+        if (cx.onReduction != null && cx.goalHead != null) {
+          final body = cx.spawnedGoals.isEmpty ? 'true' : cx.spawnedGoals.join(', ');
+          cx.onReduction!(cx.goalId, cx.goalHead!, body);
+        }
         // Complete current procedure - terminate execution
         return RunResult.terminated;
       }

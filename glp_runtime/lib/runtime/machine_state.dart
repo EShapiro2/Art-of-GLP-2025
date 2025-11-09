@@ -51,4 +51,5 @@ class GoalQueue {
   int get length => _q.length;
   void enqueue(GoalRef r) => _q.add(r);
   GoalRef? dequeue() => _q.isEmpty ? null : _q.removeFirst();
+  Iterable<GoalRef> get items => _q;
 }

@@ -34,11 +34,13 @@ void main() {
       // Should have GetVariable for X in head, PutReader for X? in body
       final hasGetVariable = program.ops.any((op) => op is bc.GetVariable);
       final hasPutReader = program.ops.any((op) => op is bc.PutReader);
-      final hasRequeue = program.ops.any((op) => op is bc.Requeue);
+      final hasSpawn = program.ops.any((op) => op is bc.Spawn);
+      final hasProceed = program.ops.any((op) => op is bc.Proceed);
 
       expect(hasGetVariable, isTrue);
       expect(hasPutReader, isTrue);
-      expect(hasRequeue, isTrue);  // Tail call
+      expect(hasSpawn, isTrue);    // All goals spawned
+      expect(hasProceed, isTrue);  // Parent terminates
     });
 
     test('compiles clause with guards', () {
@@ -120,13 +122,28 @@ void main() {
       final headStructs = program.ops.where((op) => op is bc.HeadStructure).length;
       expect(headStructs, greaterThan(0));
 
-      // Should have Reader instructions
-      final readers = program.ops.where((op) => op is bc.UnifyReader).length;
-      expect(readers, greaterThan(0));
+      // Should have Reader instructions (v1 UnifyReader or v2 UnifyVariable with isReader=true)
+      final readersV1 = program.ops.where((op) => op is bc.UnifyReader).length;
+      final readersV2 = program.ops.where((op) {
+        // Check if it's a UnifyVariable with isReader=true
+        if (op.runtimeType.toString() == 'UnifyVariable') {
+          try {
+            // Use dynamic access to check isReader field
+            final dynamic dynOp = op;
+            return dynOp.isReader == true;
+          } catch (e) {
+            return false;
+          }
+        }
+        return false;
+      }).length;
+      expect(readersV1 + readersV2, greaterThan(0));
 
-      // Should have Requeue for tail calls
-      final requeues = program.ops.where((op) => op is bc.Requeue).length;
-      expect(requeues, 2);  // First two clauses have body
+      // Should have Spawn for all goals (tail recursion removed)
+      final spawns = program.ops.where((op) => op is bc.Spawn).length;
+      final proceeds = program.ops.where((op) => op is bc.Proceed).length;
+      expect(spawns, 2);     // First two clauses each spawn one goal
+      expect(proceeds, 3);   // All three clauses proceed (third has empty body)
     });
 
     test('compiles structure matching', () {
@@ -140,18 +157,20 @@ void main() {
       expect(hasHeadStruct, isTrue);
     });
 
-    test('compiles spawn for non-tail goals', () {
+    test('compiles spawn for all goals (tail recursion removed)', () {
       final compiler = GlpCompiler();
       final source = 'p(X, Y) :- q(X?), r(Y?).';  // Use different variables to avoid SRSW violation
 
       final program = compiler.compile(source);
 
-      // First goal should use Spawn, second should use Requeue
+      // ALL goals should use Spawn (tail recursion removed)
       final spawns = program.ops.where((op) => op is bc.Spawn).length;
       final requeues = program.ops.where((op) => op is bc.Requeue).length;
+      final proceeds = program.ops.where((op) => op is bc.Proceed).length;
 
-      expect(spawns, 1);      // q(X?)
-      expect(requeues, 1);    // r(Y?) in tail position
+      expect(spawns, 2);      // q(X?) and r(Y?)
+      expect(requeues, 0);    // No tail calls
+      expect(proceeds, 1);    // Parent terminates after spawning
     });
 
     test('generates correct labels', () {

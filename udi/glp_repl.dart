@@ -97,9 +97,9 @@ void main() async {
         // Combine with loaded programs
         final allOps = <Op>[];
         for (final loaded in loadedPrograms.values) {
-          allOps.addAll(loaded.ops);
+          allOps.addAll(loaded.ops.cast<Op>());
         }
-        allOps.addAll(program.ops);
+        allOps.addAll(program.ops.cast<Op>());
         final combinedProgram = BytecodeProgram(allOps);
 
         // Find entry point
@@ -162,7 +162,7 @@ void main() async {
       // Combine all loaded programs
       final allOps = <Op>[];
       for (final loaded in loadedPrograms.values) {
-        allOps.addAll(loaded.ops);
+        allOps.addAll(loaded.ops.cast<Op>());
       }
       final combinedProgram = BytecodeProgram(allOps);
 

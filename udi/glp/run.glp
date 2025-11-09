@@ -10,6 +10,7 @@ run(true).
 run((A, B)) :- run(A?), run(B?).
 
 % Default: look up clause and run body
+% B is written by clause/2, then read by run/1
 run(A) :- otherwise | clause(A?, B), run(B?).
 
 % Test clause to isolate reader variable bug

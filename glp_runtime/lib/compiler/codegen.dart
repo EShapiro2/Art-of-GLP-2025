@@ -1,4 +1,5 @@
 import '../bytecode/opcodes.dart' as bc;
+import '../bytecode/opcodes_v2.dart' as bcv2;
 import '../bytecode/asm.dart';
 import '../bytecode/runner.dart' show BytecodeProgram;
 import '../runtime/terms.dart' as rt;
@@ -9,8 +10,8 @@ import 'result.dart';
 
 /// Code generation context
 class CodeGenContext {
-  // Bytecode accumulator
-  final List<bc.Op> instructions = [];
+  // Bytecode accumulator - can hold both v1 (Op) and v2 (OpV2) instructions
+  final List<dynamic> instructions = [];
 
   // Label management
   final Map<String, int> labels = {};
@@ -34,7 +35,7 @@ class CodeGenContext {
 
   int get currentPC => instructions.length;
 
-  void emit(bc.Op instruction) {
+  void emit(dynamic instruction) {
     instructions.add(instruction);
   }
 
@@ -227,12 +228,12 @@ class CodeGenerator {
         if (subArg is ListTerm && !subArg.isNil) {
           // Nested list: extract to temp, defer processing
           final tempReg = ctx.allocateTemp();
-          ctx.emit(bc.UnifyWriter(tempReg));
+          ctx.emit(bcv2.UnifyVariable(tempReg, isReader: false));
           nestedStructures[tempReg] = subArg;
         } else if (subArg is StructTerm) {
           // Nested structure: extract to temp, defer processing
           final tempReg = ctx.allocateTemp();
-          ctx.emit(bc.UnifyWriter(tempReg));
+          ctx.emit(bcv2.UnifyVariable(tempReg, isReader: false));
           nestedStructures[tempReg] = subArg;
         } else {
           // Simple term: process inline
@@ -282,13 +283,8 @@ class CodeGenerator {
         ctx.seenHeadVars.add(baseVarName);
       }
 
-      if (term.isReader) {
-        // Reader at position S
-        ctx.emit(bc.UnifyReader(regIndex));
-      } else {
-        // Writer at position S
-        ctx.emit(bc.UnifyWriter(regIndex));
-      }
+      // Use v2 unified instruction
+      ctx.emit(bcv2.UnifyVariable(regIndex, isReader: term.isReader));
 
     } else if (term is ConstTerm) {
       // Constant at position S
@@ -300,7 +296,7 @@ class CodeGenerator {
 
       if (inHead) {
         // READ mode: extract value at S into temp
-        ctx.emit(bc.UnifyWriter(tempReg));  // Extract into temp (uses Writer instruction)
+        ctx.emit(bcv2.UnifyVariable(tempReg, isReader: false));  // Extract into temp
 
         // Then match temp against nested structure
         if (term.isNil) {
@@ -315,14 +311,14 @@ class CodeGenerator {
         // For [], just emit UnifyConstant(null) to represent empty list
         // For [H|T], we need to build a nested structure inline
         if (term.isNil) {
-          ctx.emit(bc.UnifyConstant(null));  // Empty list as null
+          ctx.emit(bc.UnifyConstant('nil'));  // Empty list as 'nil'
         } else {
           // For non-empty list, we need nested structure building
           // This is complex - for now use temp approach but fix it
           ctx.emit(bc.PutStructure('.', 2, tempReg));
           if (term.head != null) _generateStructureElement(term.head!, varTable, ctx, inHead: inHead);
           if (term.tail != null) _generateStructureElement(term.tail!, varTable, ctx, inHead: inHead);
-          ctx.emit(bc.UnifyWriter(tempReg));
+          ctx.emit(bcv2.UnifyVariable(tempReg, isReader: false));
         }
       }
 
@@ -332,7 +328,7 @@ class CodeGenerator {
 
       if (inHead) {
         // READ mode
-        ctx.emit(bc.UnifyWriter(tempReg));  // Extract into temp
+        ctx.emit(bcv2.UnifyVariable(tempReg, isReader: false));  // Extract into temp
         ctx.emit(bc.HeadStructure(term.functor, term.arity, tempReg));
         for (final subArg in term.args) {
           _generateStructureElement(subArg, varTable, ctx, inHead: inHead);
@@ -343,7 +339,7 @@ class CodeGenerator {
         for (final subArg in term.args) {
           _generateStructureElement(subArg, varTable, ctx, inHead: inHead);
         }
-        ctx.emit(bc.UnifyWriter(tempReg));
+        ctx.emit(bcv2.UnifyVariable(tempReg, isReader: false));
       }
 
     } else if (term is UnderscoreTerm) {
@@ -393,7 +389,6 @@ class CodeGenerator {
   void _generateBody(List<Goal> goals, VariableTable varTable, CodeGenContext ctx) {
     for (int i = 0; i < goals.length; i++) {
       final goal = goals[i];
-      final isTailPosition = (i == goals.length - 1);
 
       // Special handling for execute/2 system predicate
       if (goal.functor == 'execute' && goal.arity == 2) {
@@ -406,21 +401,13 @@ class CodeGenerator {
         _generatePutArgument(goal.args[j], j, varTable, ctx);
       }
 
-      // Spawn or Requeue
+      // ALWAYS spawn (tail recursion removed - all goals spawned)
       final procedureLabel = '${goal.functor}/${goal.arity}';  // Full signature
-      if (isTailPosition) {
-        // Tail call: requeue
-        ctx.emit(bc.Requeue(procedureLabel, goal.arity));
-      } else {
-        // Non-tail: spawn
-        ctx.emit(bc.Spawn(procedureLabel, goal.arity));
-      }
+      ctx.emit(bc.Spawn(procedureLabel, goal.arity));
     }
 
-    // If no goals (empty body), emit proceed
-    if (goals.isEmpty) {
-      ctx.emit(bc.Proceed());
-    }
+    // After spawning all goals, emit proceed to terminate parent
+    ctx.emit(bc.Proceed());
   }
 
   void _generateExecuteCall(Goal goal, VariableTable varTable, CodeGenContext ctx) {
@@ -527,13 +514,8 @@ class CodeGenerator {
 
       final regIndex = varInfo.registerIndex!;
 
-      if (term.isReader) {
-        // Reader: put_reader
-        ctx.emit(bc.PutReader(regIndex, argSlot));
-      } else {
-        // Writer: put_writer
-        ctx.emit(bc.PutWriter(regIndex, argSlot));
-      }
+      // Use v2 unified instruction
+      ctx.emit(bcv2.PutVariable(regIndex, argSlot, isReader: term.isReader));
 
     } else if (term is ConstTerm) {
       // Constant: put_constant
@@ -545,21 +527,128 @@ class CodeGenerator {
       } else {
         // Build list structure as '.'(H, T)
         ctx.emit(bc.PutStructure('.', 2, argSlot));
-        if (term.head != null) _generateStructureElement(term.head!, varTable, ctx, inHead: false);
-        if (term.tail != null) _generateStructureElement(term.tail!, varTable, ctx, inHead: false);
+        if (term.head != null) _generateArgumentStructureElement(term.head!, varTable, ctx);
+        if (term.tail != null) _generateArgumentStructureElement(term.tail!, varTable, ctx);
       }
 
     } else if (term is StructTerm) {
       // Build structure
       ctx.emit(bc.PutStructure(term.functor, term.arity, argSlot));
       for (final arg in term.args) {
-        _generateStructureElement(arg, varTable, ctx, inHead: false);
+        _generateArgumentStructureElement(arg, varTable, ctx);
       }
 
     } else if (term is UnderscoreTerm) {
       // Anonymous variable: create fresh unbound writer
       final tempReg = ctx.allocateTemp();
       ctx.emit(bc.PutWriter(tempReg, argSlot));
+    }
+  }
+
+  // Check if a term is fully ground (contains no variables)
+  bool _isGroundTerm(Term term) {
+    if (term is VarTerm) return false;
+    if (term is ConstTerm) return true;
+    if (term is ListTerm) {
+      if (term.isNil) return true;
+      return (term.head == null || _isGroundTerm(term.head!)) &&
+             (term.tail == null || _isGroundTerm(term.tail!));
+    }
+    if (term is StructTerm) {
+      return term.args.every((arg) => _isGroundTerm(arg));
+    }
+    return false;
+  }
+
+  // Convert a ground term to a Dart value (for constants)
+  Object? _groundTermToValue(Term term) {
+    if (term is ConstTerm) return term.value;
+    if (term is ListTerm) {
+      if (term.isNil) return 'nil';  // Empty list as 'nil'
+      // Build list as nested cons cells: [H|T]
+      final head = term.head != null ? _groundTermToValue(term.head!) : null;
+      final tail = term.tail != null ? _groundTermToValue(term.tail!) : null;
+      return [head, tail];  // Represent as 2-element list for cons cell
+    }
+    if (term is StructTerm) {
+      // Return structure as map with functor and args
+      return {
+        'functor': term.functor,
+        'args': term.args.map((arg) => _groundTermToValue(arg)).toList(),
+      };
+    }
+    return null;
+  }
+
+  // Helper for building structure elements INSIDE argument structures
+  // This is different from _generateStructureElement which is for HEAD/GUARD unification
+  void _generateArgumentStructureElement(Term term, VariableTable varTable, CodeGenContext ctx) {
+    if (term is VarTerm) {
+      final varInfo = varTable.getVar(term.name);
+      if (varInfo == null) {
+        throw CompileError('Undefined variable: ${term.name}', term.line, term.column, phase: 'codegen');
+      }
+      final regIndex = varInfo.registerIndex!;
+      // Emit unify instruction to add variable to structure
+      ctx.emit(bcv2.UnifyVariable(regIndex, isReader: term.isReader));
+
+    } else if (term is ConstTerm) {
+      // Add constant to structure
+      ctx.emit(bc.UnifyConstant(term.value));
+
+    } else if (term is ListTerm) {
+      if (term.isNil) {
+        ctx.emit(bc.UnifyConstant(null));  // Empty list
+      } else {
+        // Non-empty list: convert to runtime StructTerm and emit as constant
+        // This prevents list flattening bug
+        rt.Term convertListToStructTerm(ListTerm l) {
+          if (l.isNil) return rt.ConstTerm('nil');
+
+          // Convert head
+          rt.Term convertTerm(Term t) {
+            if (t is ConstTerm) return rt.ConstTerm(t.value);
+            if (t is ListTerm) return convertListToStructTerm(t);
+            if (t is StructTerm) {
+              final rtArgs = t.args.map(convertTerm).toList();
+              return rt.StructTerm(t.functor, rtArgs);
+            }
+            // For VarTerms or other terms, return as const for now
+            // (This case shouldn't happen for ground lists)
+            return rt.ConstTerm(null);
+          }
+
+          final head = l.head != null ? convertTerm(l.head!) : rt.ConstTerm(null);
+          final tail = l.tail != null ? convertTerm(l.tail!) : rt.ConstTerm(null);
+          return rt.StructTerm('.', [head, tail]);
+        }
+        final listStructTerm = convertListToStructTerm(term);
+        ctx.emit(bc.UnifyConstant(listStructTerm));
+      }
+
+    } else if (term is StructTerm) {
+      // Nested structure: convert to runtime StructTerm and emit as constant
+      // This prevents temp register issues
+      rt.Term convertTerm(Term t) {
+        if (t is ConstTerm) return rt.ConstTerm(t.value);
+        if (t is ListTerm) {
+          if (t.isNil) return rt.ConstTerm('nil');
+          final head = t.head != null ? convertTerm(t.head!) : rt.ConstTerm(null);
+          final tail = t.tail != null ? convertTerm(t.tail!) : rt.ConstTerm(null);
+          return rt.StructTerm('.', [head, tail]);
+        }
+        if (t is StructTerm) {
+          final rtArgs = t.args.map(convertTerm).toList();
+          return rt.StructTerm(t.functor, rtArgs);
+        }
+        // For VarTerms, this is not a ground structure - shouldn't happen
+        return rt.ConstTerm(null);
+      }
+      final structTerm = convertTerm(term);
+      ctx.emit(bc.UnifyConstant(structTerm));
+
+    } else if (term is UnderscoreTerm) {
+      ctx.emit(bc.UnifyVoid(count: 1));
     }
   }
 }
