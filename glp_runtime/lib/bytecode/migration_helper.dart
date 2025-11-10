@@ -29,21 +29,21 @@ class MigrationHelper {
   }
 
   /// Check if term is a writer (any type)
-  static bool isWriter(Term t) {
+  static bool isWriter(Object? t) {
     if (t is WriterTerm) return true;
     if (t is VarRef && !t.isReader) return true;
     return false;
   }
 
   /// Check if term is a reader (any type)
-  static bool isReader(Term t) {
+  static bool isReader(Object? t) {
     if (t is ReaderTerm) return true;
     if (t is VarRef && t.isReader) return true;
     return false;
   }
 
   /// Get variable ID from any variable type
-  static int? getVarId(Term t) {
+  static int? getVarId(Object? t) {
     if (t is WriterTerm) return t.writerId;
     if (t is ReaderTerm) return t.readerId;
     if (t is VarRef) return t.varId;
