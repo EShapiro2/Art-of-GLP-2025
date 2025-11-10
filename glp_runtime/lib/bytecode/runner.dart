@@ -83,6 +83,12 @@ class RunnerContext {
   Object? currentStructure;           // Current structure being traversed
   final Map<int, Object?> clauseVars = {}; // Clause variable bindings (varIndex → value)
 
+  // Parent structure context for nested structure building (single level sufficient for GLP)
+  Object? parentStructure;
+  int parentS = 0;
+  UnifyMode parentMode = UnifyMode.read;
+  Object? parentWriterId;  // Save parent's writer ID when nesting
+
   // Argument registers for goal calls (A1, A2, ..., An)
   final Map<int, int> argWriters = {};  // argSlot → writer ID
   final Map<int, int> argReaders = {};  // argSlot → reader ID
@@ -1524,9 +1530,17 @@ class BytecodeRunner {
           // Store the writer ID in context for later binding
           cx.clauseVars[-1] = freshWriterId; // Use -1 as special marker for structure binding
 
-          // Only store in argReaders if this is a valid argument slot (0-9)
-          // Temp registers (10+) should store in clauseVars instead
-          if (op.argSlot < 10) {
+          // Handle different argSlot cases:
+          // -1 = nested structure being built inside parent (don't put in argReaders)
+          // 0-9 = argument slot (put reader in argReaders for goal passing)
+          // 10+ = temp register (store writer in clauseVars)
+          if (op.argSlot == -1) {
+            // Nested structure - save parent context before starting nested build
+            cx.parentStructure = cx.currentStructure;
+            cx.parentS = cx.S;
+            cx.parentMode = cx.mode;
+            cx.parentWriterId = cx.clauseVars[-1]; // Save parent's writer ID
+          } else if (op.argSlot < 10) {
             // This is an argument slot - store the reader for passing to spawned goal
             cx.argReaders[op.argSlot] = freshReaderId;
           } else {
@@ -1589,10 +1603,68 @@ class BytecodeRunner {
             }
 
             // Reset structure building state
-            cx.currentStructure = null;
-            cx.mode = UnifyMode.read;
-            cx.S = 0;
-            cx.clauseVars.remove(-1); // Clear the marker
+            // If there's a parent structure, restore it; otherwise clear completely
+            if (cx.parentStructure != null && targetWriterId is int) {
+              // We just completed a nested structure - add it to parent and restore context
+              final nestedWriterId = targetWriterId as int;
+
+              // Get the saved parent's writer ID
+              final parentWriterId = cx.parentWriterId;
+
+              // Add the completed nested structure to the parent BEFORE restoring context
+              if (cx.parentStructure is StructTerm) {
+                final parentStruct = cx.parentStructure as StructTerm;
+                final wc = cx.rt.heap.writer(nestedWriterId);
+                if (wc != null) {
+                  parentStruct.args[cx.parentS] = ReaderTerm(wc.readerId);
+                }
+              }
+
+              // Now restore parent context with incremented S
+              cx.currentStructure = cx.parentStructure;
+              cx.S = cx.parentS + 1; // Move to next position in parent
+              cx.mode = cx.parentMode;
+
+              // Clear parent context for next potential nesting
+              cx.parentStructure = null;
+              cx.parentS = 0;
+              cx.parentMode = UnifyMode.read;
+              cx.parentWriterId = null;
+
+              // Restore parent's writer ID to clauseVars[-1] for potential completion
+              cx.clauseVars[-1] = parentWriterId;
+
+              // Check if parent is now complete!
+              if (cx.currentStructure is StructTerm) {
+                final parentStruct = cx.currentStructure as StructTerm;
+                if (cx.S >= parentStruct.args.length && parentWriterId is int) {
+                  // Bind the parent structure
+                  cx.rt.heap.bindWriterStruct(parentWriterId as int, parentStruct.functor, parentStruct.args);
+
+                  // Activate suspended goals
+                  final w = cx.rt.heap.writer(parentWriterId as int);
+                  if (w != null) {
+                    final acts = cx.rt.roq.processOnBind(w.readerId);
+                    for (final a in acts) {
+                      cx.rt.gq.enqueue(a);
+                      if (cx.onActivation != null) cx.onActivation!(a);
+                    }
+                  }
+
+                  // Clear structure building state
+                  cx.currentStructure = null;
+                  cx.mode = UnifyMode.read;
+                  cx.S = 0;
+                  cx.clauseVars.remove(-1);
+                }
+              }
+            } else {
+              // Top-level structure complete - clear everything
+              cx.currentStructure = null;
+              cx.mode = UnifyMode.read;
+              cx.S = 0;
+              cx.clauseVars.remove(-1); // Clear the marker
+            }
           }
         }
         pc++; continue;
@@ -1646,10 +1718,68 @@ class BytecodeRunner {
               }
 
               // Reset structure building state
-              cx.currentStructure = null;
-              cx.mode = UnifyMode.read;
-              cx.S = 0;
-              cx.clauseVars.remove(-1); // Clear the marker
+              // If there's a parent structure, restore it; otherwise clear completely
+              if (cx.parentStructure != null && targetWriterId is int) {
+                // We just completed a nested structure - add it to parent and restore context
+                final nestedWriterId = targetWriterId as int;
+
+                // Get the saved parent's writer ID
+                final parentWriterId = cx.parentWriterId;
+
+                // Add the completed nested structure to the parent BEFORE restoring context
+                if (cx.parentStructure is StructTerm) {
+                  final parentStruct = cx.parentStructure as StructTerm;
+                  final wc = cx.rt.heap.writer(nestedWriterId);
+                  if (wc != null) {
+                    parentStruct.args[cx.parentS] = ReaderTerm(wc.readerId);
+                  }
+                }
+
+                // Now restore parent context with incremented S
+                cx.currentStructure = cx.parentStructure;
+                cx.S = cx.parentS + 1; // Move to next position in parent
+                cx.mode = cx.parentMode;
+
+                // Clear parent context for next potential nesting
+                cx.parentStructure = null;
+                cx.parentS = 0;
+                cx.parentMode = UnifyMode.read;
+                cx.parentWriterId = null;
+
+                // Restore parent's writer ID to clauseVars[-1] for potential completion
+                cx.clauseVars[-1] = parentWriterId;
+
+                // Check if parent is now complete!
+                if (cx.currentStructure is StructTerm) {
+                  final parentStruct = cx.currentStructure as StructTerm;
+                  if (cx.S >= parentStruct.args.length && parentWriterId is int) {
+                    // Bind the parent structure
+                    cx.rt.heap.bindWriterStruct(parentWriterId as int, parentStruct.functor, parentStruct.args);
+
+                    // Activate suspended goals
+                    final w = cx.rt.heap.writer(parentWriterId as int);
+                    if (w != null) {
+                      final acts = cx.rt.roq.processOnBind(w.readerId);
+                      for (final a in acts) {
+                        cx.rt.gq.enqueue(a);
+                        if (cx.onActivation != null) cx.onActivation!(a);
+                      }
+                    }
+
+                    // Clear structure building state
+                    cx.currentStructure = null;
+                    cx.mode = UnifyMode.read;
+                    cx.S = 0;
+                    cx.clauseVars.remove(-1);
+                  }
+                }
+              } else{
+                // Top-level structure complete - clear everything
+                cx.currentStructure = null;
+                cx.mode = UnifyMode.read;
+                cx.S = 0;
+                cx.clauseVars.remove(-1); // Clear the marker
+              }
             }
           }
         }

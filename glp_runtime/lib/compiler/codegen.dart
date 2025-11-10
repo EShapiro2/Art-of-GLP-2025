@@ -674,8 +674,13 @@ class CodeGenerator {
       }
 
     } else if (term is StructTerm) {
-      // Nested structure - requires pre-building
-      throw CompileError('Nested structures in BODY not yet supported', term.line, term.column, phase: 'codegen');
+      // Nested structure - build recursively
+      ctx.emit(bc.PutStructure(term.functor, term.arity, -1)); // -1 = building inside parent structure
+
+      // Process each argument recursively
+      for (final arg in term.args) {
+        _generateStructureElementInBody(arg, varTable, ctx);
+      }
 
     } else if (term is UnderscoreTerm) {
       // Anonymous variable in structure
