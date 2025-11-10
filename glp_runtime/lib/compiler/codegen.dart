@@ -116,6 +116,24 @@ class CodeGenerator {
     // End of procedure
     ctx.emitLabel('${entryLabel}_end');
     ctx.emit(bc.NoMoreClauses());  // Suspend if U non-empty, else fail
+
+    // DEBUG: Print bytecode for this procedure
+    if (proc.signature == 'foo/1') {
+      print('\n=== BYTECODE FOR ${proc.signature} ===');
+      for (int i = 0; i < ctx.instructions.length; i++) {
+        final instr = ctx.instructions[i];
+        String details = '';
+        if (instr is bc.HeadStructure) {
+          details = ' HeadStructure("${instr.functor}", ${instr.arity}, argSlot: ${instr.argSlot})';
+        } else if (instr is bc.UnifyConstant) {
+          details = ' UnifyConstant(${instr.value})';
+        } else if (instr is bc.PutStructure) {
+          details = ' PutStructure("${instr.functor}", ${instr.arity}, ${instr.argSlot})';
+        }
+        print('  $i: ${instr.runtimeType}$details');
+      }
+      print('=== END BYTECODE ===\n');
+    }
   }
 
   void _generateClause(AnnotatedClause clause, CodeGenContext ctx, String nextLabel, bool isLastClause) {

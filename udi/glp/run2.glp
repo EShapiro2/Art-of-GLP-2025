@@ -16,6 +16,10 @@ run(A) :- otherwise | clause(A?, B), run(B?).
 % Test clause to isolate reader variable bug
 run2(Ys?) :- run((merge([],[],Xs1), merge([],Xs1?,Ys))).
 
+run2a :- run((merge([],[],Xs1), merge([],Xs1?,Ys))), read(Ys?).
+
+read([]).
+
 run3(Ys?) :- run(merge([],[a],Ys)).
 
 run4(Ys?) :- run(merge([],[],Ys)).

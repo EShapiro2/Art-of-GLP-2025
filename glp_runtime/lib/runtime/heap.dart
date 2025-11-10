@@ -37,7 +37,19 @@ class Heap {
   }
 
   void bindWriterStruct(int writerId, String f, List<Term> args) {
-    writerValue[writerId] = StructTerm(f, args);
+    // Dereference any ReaderTerms in args before storing
+    final dereferencedArgs = args.map((arg) {
+      if (arg is ReaderTerm) {
+        // Dereference reader to get actual value
+        final wid = writerIdForReader(arg.readerId);
+        if (wid != null && isWriterBound(wid)) {
+          return writerValue[wid]!;
+        }
+      }
+      return arg;
+    }).toList();
+
+    writerValue[writerId] = StructTerm(f, dereferencedArgs);
   }
 
   // Helper: find the paired writerId for a given readerId (slow scan is fine for tests).
