@@ -148,14 +148,20 @@ class HeapV2Adapter extends Heap {
   @override
   void bindWriterStruct(int writerId, String f, List<Term> args) {
     // CRITICAL: Always update parent first for compatibility
+    // Parent will dereference any ReaderTerms in args
     super.bindWriterStruct(writerId, f, args);
 
     // Then update V2 if this writer is mapped
     final varId = _writerToVar[writerId];
     if (varId != null) {
-      // Convert args from old format to V2 format
-      final v2Args = args.map((arg) => _convertToV2(arg)).toList();
-      _v2.bindVariableStruct(varId, f, v2Args);
+      // CRITICAL FIX: Get the dereferenced version from parent
+      // The parent has already dereferenced ReaderTerms, so use that version
+      final dereferencedStruct = super.valueOfWriter(writerId);
+      if (dereferencedStruct is StructTerm) {
+        // Convert the DEREFERENCED args to V2 format
+        final v2Args = dereferencedStruct.args.map((arg) => _convertToV2(arg)).toList();
+        _v2.bindVariableStruct(varId, f, v2Args);
+      }
     }
   }
 
