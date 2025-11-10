@@ -2,13 +2,13 @@
 
 **Date:** November 11, 2025 (Updated)
 **Branch:** `single-id-migration`
-**Status:** In Progress - Group 2.3.1 Complete ✅
+**Status:** In Progress - Categories 1-2 Complete ✅, Ready for Step 2.4
 
 ---
 
 ## Progress Summary
 
-### ✅ Completed (Steps 2.0.1 - 2.0.3, Group 2.3.1)
+### ✅ Completed (Steps 2.0.1 - 2.0.3, Group 2.3.1, Categories 1-2)
 
 1. **Branch Created** - `single-id-migration` from commit 0af4d64
 2. **VarRef Moved to terms.dart** - Now first-class term type
@@ -16,6 +16,8 @@
 4. **Migration helpers created** - lib/bytecode/migration_helper.dart
 5. **Heap interface extended** - Added allocateFreshVar() and addVariable()
 6. **Group 2.3.1 Complete** - All 19 allocateFreshPair calls migrated ✅
+7. **Category 1 Complete** - All 22 type checks migrated to dual-type support ✅
+8. **Category 2 Complete** - Analyzed, no migration needed (0 refs) ✅
 
 ### 📊 Discovery: Scope Larger Than Expected
 
@@ -28,45 +30,41 @@
 
 ---
 
-## Groups 2.3.2+ Status: Architectural Decisions Required
+## Category-Based Migration Complete ✅
 
-### Remaining Work: 41 WriterTerm/ReaderTerm References
+### ✅ Category 1: Type Checks (22 references) - COMPLETE
 
-After completing Group 2.3.1, analysis revealed that the remaining 41 references involve **architectural decisions** rather than simple mechanical replacements.
+**Pattern migrated:** `if (term is WriterTerm/ReaderTerm)` → `if (MigrationHelper.isWriter/isReader(term))`
 
-**Category 1: Type checks** (~10 references)
-- Pattern: `if (term is WriterTerm)` or `if (term is ReaderTerm)`
-- Challenge: Need strategy for VarRef-aware type checking
-- Question: Add VarRef checks? Keep both during migration? Use helpers?
+**Locations migrated:**
+- Guard instructions: IfWriter, IfReader, IfVariable (lines 237, 252, 271, 281)
+- Format/debug: _formatTerm function (lines 168, 175)
+- Structure unification: HeadStructure, UnifyConstant, UnifyWriter/UnifyReader (lines 430, 731, 749, 863, 884, 1013, 1016, 1061, 1096, 1128, 1135, 1490)
+- Suspension: collectUnbound helper (lines 2046, 2053)
+- System predicates: variable_name/2 (lines 2155, 2157)
 
-**Category 2: Property access** (~5 references)
-- Pattern: `term.writerId` or `term.readerId`
-- Challenge: VarRef has `varId` instead
-- Question: Direct replacement or mapping through adapter?
+**Strategy:** Dual-type support using MigrationHelper - both WriterTerm/ReaderTerm AND VarRef work
 
-**Category 3: Compatibility code** (~15 references)
-- Pattern: `WriterTerm(id)` in formatters, debug output, etc.
-- Challenge: Determine temporary vs permanent compatibility
-- Question: Migrate now or keep for backward compatibility?
+**Commit:** 9209865 - "refactor: Category 1 - Migrate all type checks to dual-type support"
 
-**Category 4: Adapter bridging** (~11 references)
-- Pattern: References in/near HeapV2Adapter logic
-- Challenge: Understanding system boundary during migration
-- Question: What stays in adapter until Step 2.4?
+### ✅ Category 2: Property Access (0 references) - NO MIGRATION NEEDED
 
-### Key Architectural Questions for Next Session
+**Analysis:** All `.writerId` and `.readerId` accesses are on `arg` objects from `_getArg()`, NOT on WriterTerm/ReaderTerm types. These are part of the argument unification system and do not require migration.
 
-1. **Type System Strategy**
-   - How should VarRef coexist with WriterTerm/ReaderTerm during migration?
-   - Should we use interface implementation or migration helpers?
+### ⏸️ Category 3: Compatibility Code (14 references) - DEFER TO STEP 2.4
 
-2. **Compatibility Boundary**
-   - What conversions must stay in HeapV2Adapter until Step 2.4?
-   - Which references can safely migrate now in Groups 2.3.2+?
+**Pattern:** `WriterTerm(id)` and `ReaderTerm(id)` construction
 
-3. **Migration Sequence**
-   - Continue with Groups 2.3.2-2.3.7 after resolving design?
-   - Or skip to Step 2.4 (remove adapter) sooner?
+**Locations:**
+- Lines 625, 958, 978, 1059, 1093, 1228, 1230, 1637, 1717, 1753, 1883, 1885, 1928, 1930
+
+**Decision:** KEEP AS-IS during migration. These constructions maintain backward compatibility with the dual-heap system. Will migrate to VarRef construction in Step 2.4 when removing HeapV2Adapter.
+
+### ⏸️ Category 4: Adapter Bridging (~11 references) - PART OF STEP 2.4
+
+**Pattern:** Conversion logic in HeapV2Adapter (_convertToV2, _convertFromV2)
+
+**Decision:** KEEP AS-IS. These are the adapter's core functionality for bridging the two systems. Will be removed entirely in Step 2.4.
 
 ---
 
@@ -161,6 +159,7 @@ cx.rt.heap.addVariable(varId);
 6. `d42d4e9` - refactor: Add single-ID methods and migrate first 5 allocateFreshPair calls
 7. `d001bba` - refactor: Migrate next 7 allocateFreshPair calls (Group 2.3.1 continued)
 8. `f09f0db` - refactor: Complete Group 2.3.1 - all 19 allocateFreshPair calls migrated
+9. `9209865` - refactor: Category 1 - Migrate all type checks to dual-type support
 
 ---
 
@@ -176,16 +175,25 @@ dart test
 ```
 
 **Current State:**
-- ✅ All variable allocation uses single-ID
+- ✅ All variable allocation uses single-ID (Group 2.3.1)
+- ✅ All type checks use dual-type support (Category 1)
 - ✅ Zero allocateFreshPair calls in runner.dart
 - ✅ Tests stable (197 passing, 24 pre-existing failures)
-- ⏸️ 41 WriterTerm/ReaderTerm references require design decisions
+- ✅ Categories 1-2 complete
+- ⏸️ Categories 3-4 deferred to Step 2.4 (adapter removal)
 
 **Next Session Tasks:**
 
-1. **Resolve architectural questions** (see "Key Architectural Questions" above)
-2. **Design migration strategy** for the 4 categories of remaining references
-3. **Continue with Groups 2.3.2+** once strategy is clear
+**Option A: Continue to Step 2.4 (Remove Adapter)**
+- All runner.dart migrations complete
+- Ready to remove HeapV2Adapter
+- Switch Runtime to use HeapV2 directly
+- Migrate Category 3 construction sites during adapter removal
+
+**Option B: Additional Cleanup Before Step 2.4**
+- Review for any edge cases
+- Add more tests for VarRef/dual-type scenarios
+- Document the migration helpers
 
 ---
 
@@ -199,6 +207,6 @@ dart test
 
 ---
 
-**Status:** Group 2.3.1 Complete ✅ - Awaiting architectural decisions for Groups 2.3.2+
-**Blocker:** Need design strategy for remaining WriterTerm/ReaderTerm references
-**Next Action:** Consult on type system strategy and compatibility boundaries
+**Status:** Categories 1-2 Complete ✅ - Ready for Step 2.4 (Adapter Removal)
+**No Blockers:** Category 1 (type checks) fully migrated, Category 2 (none needed)
+**Next Action:** Decide between Option A (proceed to Step 2.4) or Option B (additional cleanup)
