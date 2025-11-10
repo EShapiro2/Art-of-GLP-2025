@@ -1472,12 +1472,11 @@ class BytecodeRunner {
               cx.argReaders[op.argSlot] = value;
             }
           } else if (value is StructTerm) {
-            // It's a structure - create fresh writer/reader and bind it (WAM-style)
-            final (freshWriterId, freshReaderId) = cx.rt.heap.allocateFreshPair();
-            cx.rt.heap.addWriter(WriterCell(freshWriterId, freshReaderId));
-            cx.rt.heap.addReader(ReaderCell(freshReaderId));
-            cx.rt.heap.bindWriterStruct(freshWriterId, value.functor, value.args);
-            cx.argReaders[op.argSlot] = freshReaderId;
+            // It's a structure - create fresh variable and bind it (WAM-style)
+            final varId = cx.rt.heap.allocateFreshVar();
+            cx.rt.heap.addVariable(varId);
+            cx.rt.heap.bindWriterStruct(varId, value.functor, value.args);
+            cx.argReaders[op.argSlot] = varId;
           } else if (value is ConstTerm) {
             // It's a ground constant - create fresh variable and bind it (WAM-style)
             if (debug) print('  [G${cx.goalId}] PutReader: creating fresh variable for ground constant ${value.value}');
@@ -1519,12 +1518,11 @@ class BytecodeRunner {
 
       if (op is PutConstant) {
         if (cx.inBody) {
-          // For constants, we create a fresh writer/reader pair and bind immediately (WAM-style)
-          final (freshWriterId, freshReaderId) = cx.rt.heap.allocateFreshPair();
-          cx.rt.heap.addWriter(WriterCell(freshWriterId, freshReaderId));
-          cx.rt.heap.addReader(ReaderCell(freshReaderId));
-          cx.rt.heap.bindWriterConst(freshWriterId, op.value);
-          cx.argReaders[op.argSlot] = freshReaderId;
+          // For constants, we create a fresh variable and bind immediately (WAM-style)
+          final varId = cx.rt.heap.allocateFreshVar();
+          cx.rt.heap.addVariable(varId);
+          cx.rt.heap.bindWriterConst(varId, op.value);
+          cx.argReaders[op.argSlot] = varId;
         }
         pc++; continue;
       }
@@ -1585,19 +1583,18 @@ class BytecodeRunner {
             // Use existing writer
             writerId = existingWriterId;
           } else {
-            // Allocate new writer/reader pair only if variable is uninitialized
-            final (freshWriterId, freshReaderId) = cx.rt.heap.allocateFreshPair();
-            cx.rt.heap.addWriter(WriterCell(freshWriterId, freshReaderId));
-            cx.rt.heap.addReader(ReaderCell(freshReaderId));
+            // Allocate new variable only if uninitialized
+            final varId = cx.rt.heap.allocateFreshVar();
+            cx.rt.heap.addVariable(varId);
 
-            // Store writer ID in clause variable
-            cx.clauseVars[op.varIndex] = freshWriterId;
-            writerId = freshWriterId;
+            // Store variable ID in clause variable
+            cx.clauseVars[op.varIndex] = varId;
+            writerId = varId;
           }
 
-          // Store WriterTerm in current structure at position S
+          // Store VarRef (writer mode) in current structure at position S
           final struct = cx.currentStructure as StructTerm;
-          struct.args[cx.S] = WriterTerm(writerId);
+          struct.args[cx.S] = VarRef(writerId, isReader: false);
           cx.S++; // Move to next position
 
           // Check if structure is complete (all arguments filled)
@@ -1701,20 +1698,19 @@ class BytecodeRunner {
             // Use existing writer
             writerId = existingWriterId;
           } else {
-            // Allocate new writer/reader pair only if variable is uninitialized
-            final (freshWriterId, freshReaderId) = cx.rt.heap.allocateFreshPair();
-            cx.rt.heap.addWriter(WriterCell(freshWriterId, freshReaderId));
-            cx.rt.heap.addReader(ReaderCell(freshReaderId));
+            // Allocate new variable only if uninitialized
+            final varId = cx.rt.heap.allocateFreshVar();
+            cx.rt.heap.addVariable(varId);
 
-            // Store writer ID in clause variable
-            cx.clauseVars[op.varIndex] = freshWriterId;
-            writerId = freshWriterId;
+            // Store variable ID in clause variable
+            cx.clauseVars[op.varIndex] = varId;
+            writerId = varId;
           }
 
           // Get the writer cell and extract reader ID
           final wc = cx.rt.heap.writer(writerId);
           if (wc != null) {
-            // Store ReaderTerm (paired reader) in current structure at position S
+            // Store VarRef (reader mode) in current structure at position S
             final struct = cx.currentStructure as StructTerm;
             struct.args[cx.S] = ReaderTerm(wc.readerId);
             cx.S++; // Move to next position
@@ -2422,37 +2418,34 @@ class BytecodeRunner {
       if (op is PutNil) {
         if (cx.inBody) {
           // Place empty list [] in argument register
-          // Create a fresh writer/reader pair bound to [] (same as PutConstant)
-          final (freshWriterId, freshReaderId) = cx.rt.heap.allocateFreshPair();
-          cx.rt.heap.addWriter(WriterCell(freshWriterId, freshReaderId));
-          cx.rt.heap.addReader(ReaderCell(freshReaderId));
-          cx.rt.heap.bindWriterConst(freshWriterId, 'nil'); // [] represented as 'nil'
-          cx.argReaders[op.argSlot] = freshReaderId;
+          // Create a fresh variable bound to [] (same as PutConstant)
+          final varId = cx.rt.heap.allocateFreshVar();
+          cx.rt.heap.addVariable(varId);
+          cx.rt.heap.bindWriterConst(varId, 'nil'); // [] represented as 'nil'
+          cx.argReaders[op.argSlot] = varId;
         }
         pc++;
         continue;
       }
 
       if (op is PutBoundConst) {
-        // Put a reader pointing to a writer bound to a constant value
+        // Put a variable bound to a constant value
         // Used for passing constants as arguments in queries
-        final (wid, rid) = cx.rt.heap.allocateFreshPair();
-        cx.rt.heap.addWriter(WriterCell(wid, rid));
-        cx.rt.heap.addReader(ReaderCell(rid));
-        cx.rt.heap.bindWriterConst(wid, op.value);
-        cx.argReaders[op.argSlot] = rid;
+        final varId = cx.rt.heap.allocateFreshVar();
+        cx.rt.heap.addVariable(varId);
+        cx.rt.heap.bindWriterConst(varId, op.value);
+        cx.argReaders[op.argSlot] = varId;
         pc++;
         continue;
       }
 
       if (op is PutBoundNil) {
-        // Put a reader pointing to a writer bound to 'nil'
+        // Put a variable bound to 'nil'
         // Used for passing empty lists as arguments in queries
-        final (wid, rid) = cx.rt.heap.allocateFreshPair();
-        cx.rt.heap.addWriter(WriterCell(wid, rid));
-        cx.rt.heap.addReader(ReaderCell(rid));
-        cx.rt.heap.bindWriterConst(wid, 'nil');
-        cx.argReaders[op.argSlot] = rid;
+        final varId = cx.rt.heap.allocateFreshVar();
+        cx.rt.heap.addVariable(varId);
+        cx.rt.heap.bindWriterConst(varId, 'nil');
+        cx.argReaders[op.argSlot] = varId;
         pc++;
         continue;
       }
