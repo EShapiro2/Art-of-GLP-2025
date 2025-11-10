@@ -155,7 +155,8 @@ class BytecodeRunner {
   /// Format a term for display
   static String _formatTerm(GlpRuntime rt, Term term, {bool markReaders = true}) {
     if (term is ConstTerm) {
-      if (term.value == null) return '[]';
+      if (term.value == 'nil') return '[]';
+      if (term.value == null) return '<null>';
       return term.value.toString();
     } else if (term is WriterTerm) {
       final wid = term.writerId;
@@ -2106,7 +2107,7 @@ class BytecodeRunner {
             final wid = clauseVarValue;
             if (cx.rt.heap.isWriterBound(wid)) {
               final value = cx.rt.heap.valueOfWriter(wid);
-              if (value is ConstTerm && (value.value == '[]' || value.value == null)) {
+              if (value is ConstTerm && value.value == 'nil') {
                 if (debug && cx.goalId >= 4000) print('  HeadNil: clause var ${op.argSlot} = W$wid = $value, MATCH');
                 pc++;
                 continue;
@@ -2252,6 +2253,30 @@ class BytecodeRunner {
           cx.rt.heap.bindWriterConst(freshWriterId, 'nil'); // [] represented as 'nil'
           cx.argReaders[op.argSlot] = freshReaderId;
         }
+        pc++;
+        continue;
+      }
+
+      if (op is PutBoundConst) {
+        // Put a reader pointing to a writer bound to a constant value
+        // Used for passing constants as arguments in queries
+        final (wid, rid) = cx.rt.heap.allocateFreshPair();
+        cx.rt.heap.addWriter(WriterCell(wid, rid));
+        cx.rt.heap.addReader(ReaderCell(rid));
+        cx.rt.heap.bindWriterConst(wid, op.value);
+        cx.argReaders[op.argSlot] = rid;
+        pc++;
+        continue;
+      }
+
+      if (op is PutBoundNil) {
+        // Put a reader pointing to a writer bound to 'nil'
+        // Used for passing empty lists as arguments in queries
+        final (wid, rid) = cx.rt.heap.allocateFreshPair();
+        cx.rt.heap.addWriter(WriterCell(wid, rid));
+        cx.rt.heap.addReader(ReaderCell(rid));
+        cx.rt.heap.bindWriterConst(wid, 'nil');
+        cx.argReaders[op.argSlot] = rid;
         pc++;
         continue;
       }

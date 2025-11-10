@@ -34,7 +34,7 @@ void main() async {
   print('Compiled files: bin/*.glpc');
   print('');
   print('Input: filename.glp to load, or goal to execute');
-  print('Commands: :quit, :help');
+  print('Commands: :quit, :help, :trace');
   print('');
 
   final compiler = GlpCompiler();
@@ -45,6 +45,7 @@ void main() async {
   final loadedPrograms = <String, BytecodeProgram>{};
 
   var goalId = 1;
+  var debugTrace = false; // Toggle with :trace command
 
   while (true) {
     stdout.write('GLP> ');
@@ -75,6 +76,12 @@ void main() async {
       continue;
     }
 
+    if (trimmed == ':trace' || trimmed == ':t') {
+      debugTrace = !debugTrace;
+      print('Trace ${debugTrace ? "enabled" : "disabled"}');
+      continue;
+    }
+
     // Check if input is a .glp file to load
     if (trimmed.endsWith('.glp') && !trimmed.contains(' ')) {
       final filename = trimmed;
@@ -95,11 +102,11 @@ void main() async {
         final program = compiler.compile(wrappedQuery);
 
         // Combine with loaded programs
-        final allOps = <Op>[];
+        final allOps = <dynamic>[];
         for (final loaded in loadedPrograms.values) {
-          allOps.addAll(loaded.ops.cast<Op>());
+          allOps.addAll(loaded.ops);
         }
-        allOps.addAll(program.ops.cast<Op>());
+        allOps.addAll(program.ops);
         final combinedProgram = BytecodeProgram(allOps);
 
         // Find entry point
@@ -120,7 +127,7 @@ void main() async {
         rt.gq.enqueue(GoalRef(goalId, entryPC));
         goalId++;
 
-        final ran = scheduler.drain(maxCycles: 10000);
+        final ran = scheduler.drain(maxCycles: 10000, debug: debugTrace);
         print('  → ${ran.length} goals');
 
         // For conjunctions, extract variables from the original query
@@ -160,9 +167,9 @@ void main() async {
       final args = goalAtom.args;
 
       // Combine all loaded programs
-      final allOps = <Op>[];
+      final allOps = <dynamic>[];
       for (final loaded in loadedPrograms.values) {
-        allOps.addAll(loaded.ops.cast<Op>());
+        allOps.addAll(loaded.ops);
       }
       final combinedProgram = BytecodeProgram(allOps);
 
@@ -198,7 +205,7 @@ void main() async {
       final currentGoalId = goalId;
       goalId++;
 
-      final ran = scheduler.drain(maxCycles: 10000);
+      final ran = scheduler.drain(maxCycles: 10000, debug: debugTrace);
 
       // Display variable bindings
       if (queryVarWriters.isNotEmpty) {
@@ -321,7 +328,11 @@ bool _isConjunction(String query) {
 
     // Build list structure recursively
     final listValue = _buildListTerm(runtime, arg, queryVarWriters);
-    runtime.heap.writerValue[writerId] = listValue;
+    if (listValue is rt.ConstTerm) {
+      runtime.heap.bindWriterConst(writerId, listValue.value);
+    } else if (listValue is rt.StructTerm) {
+      runtime.heap.bindWriterStruct(writerId, listValue.functor, listValue.args);
+    }
 
     // Always use reader for pre-bound values
     readers[argSlot] = readerId;
@@ -331,7 +342,7 @@ bool _isConjunction(String query) {
     final (writerId, readerId) = runtime.heap.allocateFreshPair();
     runtime.heap.addWriter(WriterCell(writerId, readerId));
     runtime.heap.addReader(ReaderCell(readerId));
-    runtime.heap.writerValue[writerId] = rt.ConstTerm(arg.value);
+    runtime.heap.bindWriterConst(writerId, arg.value);
 
     readers[argSlot] = readerId;
     return (readerId, writerId);
@@ -342,8 +353,8 @@ bool _isConjunction(String query) {
     runtime.heap.addReader(ReaderCell(readerId));
 
     // Build structure term recursively
-    final structValue = _buildStructTerm(runtime, arg, queryVarWriters);
-    runtime.heap.writerValue[writerId] = structValue;
+    final structValue = _buildStructTerm(runtime, arg, queryVarWriters) as rt.StructTerm;
+    runtime.heap.bindWriterStruct(writerId, structValue.functor, structValue.args);
 
     readers[argSlot] = readerId;
     return (readerId, writerId);
@@ -358,7 +369,12 @@ rt.Term _buildStructTerm(GlpRuntime runtime, StructTerm struct, Map<String, int>
 
   for (final arg in struct.args) {
     if (arg is ConstTerm) {
-      argTerms.add(rt.ConstTerm(arg.value));
+      // Constant in structure - create bound writer/reader
+      final (writerId, readerId) = runtime.heap.allocateFreshPair();
+      runtime.heap.addWriter(WriterCell(writerId, readerId));
+      runtime.heap.addReader(ReaderCell(readerId));
+      runtime.heap.bindWriterConst(writerId, arg.value);
+      argTerms.add(rt.ReaderTerm(readerId));
     } else if (arg is VarTerm) {
       // Variable in structure - check if already exists
       // Note: arg.name does NOT include the '?' suffix, so use it directly
@@ -387,9 +403,30 @@ rt.Term _buildStructTerm(GlpRuntime runtime, StructTerm struct, Map<String, int>
         argTerms.add(arg.isReader ? rt.ReaderTerm(readerId) : rt.WriterTerm(writerId));
       }
     } else if (arg is ListTerm) {
-      argTerms.add(_buildListTerm(runtime, arg, queryVarWriters));
+      if (arg.isNil) {
+        // Empty list in structure - create bound writer/reader for 'nil'
+        final (writerId, readerId) = runtime.heap.allocateFreshPair();
+        runtime.heap.addWriter(WriterCell(writerId, readerId));
+        runtime.heap.addReader(ReaderCell(readerId));
+        runtime.heap.bindWriterConst(writerId, 'nil');
+        argTerms.add(rt.ReaderTerm(readerId));
+      } else {
+        // Non-empty list - recursively build and create writer/reader
+        final (writerId, readerId) = runtime.heap.allocateFreshPair();
+        runtime.heap.addWriter(WriterCell(writerId, readerId));
+        runtime.heap.addReader(ReaderCell(readerId));
+        final listValue = _buildListTerm(runtime, arg, queryVarWriters) as rt.StructTerm;
+        runtime.heap.bindWriterStruct(writerId, listValue.functor, listValue.args);
+        argTerms.add(rt.ReaderTerm(readerId));
+      }
     } else if (arg is StructTerm) {
-      argTerms.add(_buildStructTerm(runtime, arg, queryVarWriters));
+      // Nested structure - create bound writer/reader
+      final (writerId, readerId) = runtime.heap.allocateFreshPair();
+      runtime.heap.addWriter(WriterCell(writerId, readerId));
+      runtime.heap.addReader(ReaderCell(readerId));
+      final structValue = _buildStructTerm(runtime, arg, queryVarWriters) as rt.StructTerm;
+      runtime.heap.bindWriterStruct(writerId, structValue.functor, structValue.args);
+      argTerms.add(rt.ReaderTerm(readerId));
     } else {
       throw Exception('Unsupported struct argument type: ${arg.runtimeType}');
     }
@@ -401,7 +438,7 @@ rt.Term _buildStructTerm(GlpRuntime runtime, StructTerm struct, Map<String, int>
 // Build a list term recursively
 rt.Term _buildListTerm(GlpRuntime runtime, ListTerm list, Map<String, int> queryVarWriters) {
   if (list.isNil) {
-    return rt.ConstTerm(null);  // Empty list
+    return rt.ConstTerm('nil');  // Empty list represented as 'nil'
   }
 
   final head = list.head;
@@ -442,7 +479,7 @@ String _formatTerm(rt.Term? term, [GlpRuntime? runtime, Set<int>? visited]) {
   visited ??= <int>{};
 
   if (term is rt.ConstTerm) {
-    if (term.value == null) return '[]';
+    if (term.value == null || term.value == 'nil') return '[]';
     return term.value.toString();
   }
 
@@ -514,6 +551,12 @@ String _formatTerm(rt.Term? term, [GlpRuntime? runtime, Set<int>? visited]) {
     }
 
     return '[${elements.join(', ')}]';
+  }
+
+  if (term is rt.StructTerm) {
+    // General structure - recursively format arguments
+    final formattedArgs = term.args.map((arg) => _formatTerm(arg, runtime, visited)).join(',');
+    return '${term.functor}($formattedArgs)';
   }
 
   return term.toString();

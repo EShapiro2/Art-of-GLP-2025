@@ -123,6 +123,21 @@ class PutList implements Op {
   PutList(this.argSlot);
 }
 
+/// Put a reader pointing to a writer bound to a constant value
+/// Used for passing constants as arguments in queries
+class PutBoundConst implements Op {
+  final Object? value;
+  final int argSlot;
+  PutBoundConst(this.value, this.argSlot);
+}
+
+/// Put a reader pointing to a writer bound to 'nil'
+/// Used for passing empty lists as arguments in queries
+class PutBoundNil implements Op {
+  final int argSlot;
+  PutBoundNil(this.argSlot);
+}
+
 // ===== v2.16 HEAD instructions (encode clause patterns) =====
 /// Match constant c with argument at argSlot
 /// Behavior: Writer(w) → σ̂w[w]=c; Reader(r) → Si+={r}; Ground(t) → check t==c

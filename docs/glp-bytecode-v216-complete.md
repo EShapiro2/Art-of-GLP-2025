@@ -251,10 +251,29 @@ headStruct('[|]', 2, 11)       // Match X11 against [|]/2
 **Rationale**: Follows Writer MGU semantics from GLP spec Definition 2.1. In READ mode, we perform writer unification: constants unify with unbound writers by binding them, and with readers by checking their paired writer's value.
 
 ### 8.4 void n
-**Operation**: Process n anonymous variables  
+**Operation**: Process n anonymous variables
 **Behavior**:
 - In READ mode: skip n positions (S += n)
 - In WRITE mode: create n unbound variables (H += n)
+
+### 8.5 Variables in Structures (Non-Ground Structures)
+
+When building structures in BODY mode that contain variables (non-ground structures), variables must retain their identity as variable references rather than being converted to constants.
+
+**Behavior for variables in structures**:
+- Writer variables: Use `set_writer Xi` instruction to place writer reference in structure
+- Reader variables: Use `set_reader Xi` instruction to place reader reference in structure
+- Fresh variables: Allocate new register with `set_writer Xi` in WRITE mode
+
+**Example**: Building `merge([],[],X)` where X is a writer in register 5:
+```
+put_structure 'merge', 3, A0    // Begin structure, enter WRITE mode
+  set_constant 'nil'             // First argument: []
+  set_constant 'nil'             // Second argument: []
+  set_writer 5                   // Third argument: variable X (not constant!)
+```
+
+**Note**: This is essential for metainterpreter patterns where goal terms contain unbound variables.
 
 ## 9. Control Flow Instructions
 

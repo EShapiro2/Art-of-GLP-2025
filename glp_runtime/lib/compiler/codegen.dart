@@ -471,7 +471,7 @@ class CodeGenerator {
       }
     } else if (term is ListTerm) {
       if (term.isNil) {
-        return [];  // Empty list as Dart list
+        return 'nil';  // Empty list represented as 'nil'
       }
       // Build Dart list recursively (for execute() arguments)
       final elements = <Object?>[];
@@ -518,12 +518,12 @@ class CodeGenerator {
       ctx.emit(bcv2.PutVariable(regIndex, argSlot, isReader: term.isReader));
 
     } else if (term is ConstTerm) {
-      // Constant: put_constant
-      ctx.emit(bc.PutConstant(term.value, argSlot));
+      // Constant: put bound writer with reader
+      ctx.emit(bc.PutBoundConst(term.value, argSlot));
 
     } else if (term is ListTerm) {
       if (term.isNil) {
-        ctx.emit(bc.PutNil(argSlot));
+        ctx.emit(bc.PutBoundNil(argSlot));
       } else {
         // Build list structure as '.'(H, T)
         ctx.emit(bc.PutStructure('.', 2, argSlot));
@@ -598,7 +598,7 @@ class CodeGenerator {
 
     } else if (term is ListTerm) {
       if (term.isNil) {
-        ctx.emit(bc.UnifyConstant(null));  // Empty list
+        ctx.emit(bc.UnifyConstant('nil'));  // Empty list
       } else {
         // Non-empty list: convert to runtime StructTerm and emit as constant
         // This prevents list flattening bug
@@ -613,13 +613,15 @@ class CodeGenerator {
               final rtArgs = t.args.map(convertTerm).toList();
               return rt.StructTerm(t.functor, rtArgs);
             }
-            // For VarTerms or other terms, return as const for now
-            // (This case shouldn't happen for ground lists)
-            return rt.ConstTerm(null);
+            // For VarTerms - non-ground lists not yet supported
+            if (t is VarTerm) {
+              throw CompileError('Non-ground lists not yet supported: variable ${t.name} in list', t.line, t.column, phase: 'codegen');
+            }
+            return rt.ConstTerm(null);  // Fallback for unexpected cases
           }
 
-          final head = l.head != null ? convertTerm(l.head!) : rt.ConstTerm(null);
-          final tail = l.tail != null ? convertTerm(l.tail!) : rt.ConstTerm(null);
+          final head = l.head != null ? convertTerm(l.head!) : rt.ConstTerm('nil');
+          final tail = l.tail != null ? convertTerm(l.tail!) : rt.ConstTerm('nil');
           return rt.StructTerm('.', [head, tail]);
         }
         final listStructTerm = convertListToStructTerm(term);
@@ -633,16 +635,19 @@ class CodeGenerator {
         if (t is ConstTerm) return rt.ConstTerm(t.value);
         if (t is ListTerm) {
           if (t.isNil) return rt.ConstTerm('nil');
-          final head = t.head != null ? convertTerm(t.head!) : rt.ConstTerm(null);
-          final tail = t.tail != null ? convertTerm(t.tail!) : rt.ConstTerm(null);
+          final head = t.head != null ? convertTerm(t.head!) : rt.ConstTerm('nil');
+          final tail = t.tail != null ? convertTerm(t.tail!) : rt.ConstTerm('nil');
           return rt.StructTerm('.', [head, tail]);
         }
         if (t is StructTerm) {
           final rtArgs = t.args.map(convertTerm).toList();
           return rt.StructTerm(t.functor, rtArgs);
         }
-        // For VarTerms, this is not a ground structure - shouldn't happen
-        return rt.ConstTerm(null);
+        // For VarTerms, this is not a ground structure - non-ground structures not yet supported
+        if (t is VarTerm) {
+          throw CompileError('Non-ground structures not yet supported: variable ${t.name} in nested structure', t.line, t.column, phase: 'codegen');
+        }
+        return rt.ConstTerm(null);  // Fallback for unexpected cases
       }
       final structTerm = convertTerm(term);
       ctx.emit(bc.UnifyConstant(structTerm));
