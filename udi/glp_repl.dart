@@ -496,8 +496,22 @@ String _formatTerm(rt.Term? term, [GlpRuntime? runtime, Set<int>? visited]) {
 
       // Format head element
       String headStr;
-      if (head is rt.ReaderTerm && runtime != null) {
-        // Dereference reader
+      if (head is rt.VarRef && runtime != null) {
+        // Dereference VarRef (single-ID system)
+        final varId = head.varId;
+        if (visited.contains(varId)) {
+          headStr = '<circular>';
+        } else {
+          visited.add(varId);
+          if (runtime.heap.isBound(varId)) {
+            final value = runtime.heap.getValue(varId);
+            headStr = _formatTerm(value, runtime, visited);
+          } else {
+            headStr = head.isReader ? 'R$varId?' : 'W$varId';
+          }
+        }
+      } else if (head is rt.ReaderTerm && runtime != null) {
+        // OLD: Dereference reader (for backward compatibility)
         final readerId = head.readerId;
         if (visited.contains(readerId)) {
           headStr = '<circular>';
@@ -518,7 +532,25 @@ String _formatTerm(rt.Term? term, [GlpRuntime? runtime, Set<int>? visited]) {
       elements.add(headStr);
 
       // Move to tail
-      if (tail is rt.ReaderTerm && runtime != null) {
+      if (tail is rt.VarRef && runtime != null) {
+        // Handle VarRef (single-ID system)
+        final varId = tail.varId;
+        if (visited.contains(varId)) {
+          // Circular reference in tail
+          final label = tail.isReader ? 'R$varId?' : 'W$varId';
+          return '[${elements.join(', ')} | <circular $label>]';
+        }
+        visited.add(varId);
+        if (runtime.heap.isBound(varId)) {
+          current = runtime.heap.getValue(varId);
+          if (current == null || current is! rt.StructTerm) break;
+        } else {
+          // Unbound variable in tail - show it
+          final label = tail.isReader ? 'R$varId?' : 'W$varId';
+          return '[${elements.join(', ')} | $label]';
+        }
+      } else if (tail is rt.ReaderTerm && runtime != null) {
+        // OLD: Handle ReaderTerm (backward compatibility)
         final readerId = tail.readerId;
         if (visited.contains(readerId)) {
           // Circular reference in tail
