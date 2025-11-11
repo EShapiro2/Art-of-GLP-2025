@@ -18,13 +18,21 @@ class CommitOps {
       final value = entry.value;
 
       // Apply binding to heap
+      // IMPORTANT: null means "writer marked as involved but not bound yet in HEAD"
+      // Don't bind to null - that would prevent BODY phase binding
+      if (value == null) {
+        // Writer was declared with W() but not bound in HEAD - skip binding
+        // BODY phase instructions (BCONST, etc.) will do the actual binding
+        continue;
+      }
+
       if (value is StructTerm) {
         // Structure binding
         heap.bindWriterStruct(writerId, value.functor, value.args);
       } else if (value is ConstTerm) {
         // ConstTerm - extract the actual value
         heap.bindWriterConst(writerId, value.value);
-      } else if (value is String || value is int || value is bool || value == null) {
+      } else if (value is String || value is int || value is bool) {
         // Primitive constant value
         heap.bindWriterConst(writerId, value);
       } else {
