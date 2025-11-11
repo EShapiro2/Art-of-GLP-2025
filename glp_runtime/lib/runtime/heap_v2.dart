@@ -3,10 +3,12 @@
 library;
 
 import 'terms.dart';
+import 'cells.dart';
+import 'heap.dart';
 
 /// Heap V2: Single ID per variable
 /// Replaces dual Writer/Reader ID system with unified approach
-class HeapV2 {
+class HeapV2 extends Heap {
   // Single ID for each variable
   final Map<int, VariableCell> _vars = {};
   int _nextId = 1000;
@@ -14,15 +16,9 @@ class HeapV2 {
   // ROQ: reader suspensions (varId -> Set<goalId>)
   final Map<int, Set<int>> _roq = {};
 
-  /// Allocate a fresh variable (returns single ID)
-  int allocateFreshVar() {
-    return _nextId++;
-  }
-
-  /// Add variable cell to heap
-  void addVariable(int varId) {
-    _vars[varId] = VariableCell(varId);
-  }
+  // Compatibility: Track writer->reader pairing from old two-ID system
+  // In single-ID, we treat the writer ID as the canonical variable ID
+  final Map<int, int> _readerToWriter = {};
 
   /// Get variable value (null if unbound)
   Term? getValue(int varId) {
@@ -155,6 +151,82 @@ class HeapV2 {
     _vars.clear();
     _roq.clear();
     _nextId = 1000;
+  }
+
+  // ===== COMPATIBILITY LAYER FOR MIGRATION =====
+  // These methods provide the old two-ID API during migration
+  // In single-ID system: writerId == readerId == varId
+
+  /// Compatibility: Check if writer is bound (writerID == varId)
+  @override
+  bool isWriterBound(int writerId) => isBound(writerId);
+
+  /// Compatibility: Get value of writer (writerId == varId)
+  @override
+  Term? valueOfWriter(int writerId) => getValue(writerId);
+
+  /// Compatibility: Bind writer to constant (writerId == varId)
+  @override
+  void bindWriterConst(int writerId, Object? v) => bindVariableConst(writerId, v);
+
+  /// Compatibility: Bind writer to structure (writerId == varId)
+  @override
+  void bindWriterStruct(int writerId, String f, List<Term> args) {
+    bindVariableStruct(writerId, f, args);
+  }
+
+  /// Compatibility: Get WriterCell for varId
+  /// In single-ID: readerId == writerId == varId
+  @override
+  WriterCell? writer(int varId) {
+    if (_vars.containsKey(varId)) {
+      return WriterCell(varId, varId); // Both IDs are the same!
+    }
+    return null;
+  }
+
+  /// Override allocateFreshVar from base Heap
+  @override
+  int allocateFreshVar() {
+    return _nextId++;
+  }
+
+  /// Override addVariable from base Heap
+  @override
+  void addVariable(int varId) {
+    _vars[varId] = VariableCell(varId);
+  }
+
+  /// Compatibility: addWriter from old two-ID system
+  /// In single-ID: just add the variable with the writer's ID
+  @override
+  void addWriter(WriterCell w) {
+    // Don't call super - we don't use the old writers map
+    addVariable(w.writerId);
+    // Track the pairing for writerIdForReader lookups
+    _readerToWriter[w.readerId] = w.writerId;
+  }
+
+  /// Compatibility: addReader from old two-ID system
+  /// In single-ID: reader and writer are the same variable
+  @override
+  void addReader(ReaderCell r) {
+    // Don't call super - we don't use the old readers map
+    // The pairing was established by addWriter
+    // This is a no-op in single-ID system
+  }
+
+  /// Compatibility: Get writer ID for reader ID
+  /// In single-ID from fresh allocation: they're the same
+  /// From old two-ID tests: use the pairing map
+  @override
+  int? writerIdForReader(int readerId) {
+    // Check if we have a pairing from old two-ID code
+    if (_readerToWriter.containsKey(readerId)) {
+      return _readerToWriter[readerId];
+    }
+    // Otherwise, in pure single-ID system, they're the same
+    return readerId;
   }
 }
 

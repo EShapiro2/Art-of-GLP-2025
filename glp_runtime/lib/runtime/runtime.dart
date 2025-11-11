@@ -3,7 +3,7 @@ import 'dart:ffi' as ffi;
 
 import 'machine_state.dart';
 import 'heap.dart';
-import 'heap_v2_adapter.dart';
+import 'heap_v2.dart';
 import 'roq.dart';
 import 'suspend_ops.dart';
 import 'commit.dart';
@@ -35,7 +35,7 @@ class GlpRuntime {
   int nextGoalId = 10000;  // Start at 10000 to avoid collisions with test goal IDs
 
   GlpRuntime({Heap? heap, ROQueues? roq, GoalQueue? gq, SystemPredicateRegistry? systemPredicates})
-      : heap = heap ?? HeapV2Adapter(),  // Using HeapV2Adapter with reader binding fix
+      : heap = heap ?? HeapV2(),  // Using HeapV2 directly with single-ID system
         roq = roq ?? ROQueues(),
         gq = gq ?? GoalQueue(),
         systemPredicates = systemPredicates ?? SystemPredicateRegistry();
