@@ -29,7 +29,7 @@ void main() {
     );
 
     expect(acts.map((a) => a.id).toList(), [100, 200]); // FIFO wake
-    expect(heap.writer(varId)!.abandoned, isTrue);
+    expect(heap.isAbandoned(varId), isTrue);
     expect(roq.isEmpty(varId), isTrue);
 
     // Subsequent abandon calls produce no extra activations (hanger single-reactivation)

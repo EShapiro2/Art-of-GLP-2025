@@ -192,6 +192,19 @@ class Heap {
     return null;
   }
 
+  /// Set abandoned flag for a variable
+  void setAbandoned(int varId, bool value) {
+    final cell = _vars[varId];
+    if (cell != null) {
+      cell.abandoned = value;
+    }
+  }
+
+  /// Check if variable is abandoned
+  bool isAbandoned(int varId) {
+    return _vars[varId]?.abandoned ?? false;
+  }
+
   /// Override allocateFreshVar from base Heap
   
   int allocateFreshVar() {
@@ -248,6 +261,7 @@ class VariableCell {
   final int varId;
   Term? value;
   Term? dereferencedCache; // Cache for dereferencing optimization
+  bool abandoned = false; // Track if writer was abandoned
 
   VariableCell(this.varId);
 }

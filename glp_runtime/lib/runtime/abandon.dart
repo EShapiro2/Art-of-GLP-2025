@@ -12,7 +12,10 @@ class AbandonOps {
   }) {
     final w = heap.writer(writerId);
     if (w == null) return const <GoalRef>[];
-    w.abandoned = true;
+
+    // Set abandoned flag on the actual VariableCell in the heap
+    heap.setAbandoned(writerId, true);
+
     final readerId = w.readerId;
     final acts = roq.processOnBind(readerId);
     return acts;
