@@ -167,9 +167,9 @@ void main() {
     rt.heap.addWriter(WriterCell(wMerge1, rMerge1));
     rt.heap.addReader(ReaderCell(rMerge1));
     rt.heap.bindWriterStruct(wMerge1, 'merge', [
-      ReaderTerm(rXs),
-      WriterTerm(wListA),
-      WriterTerm(wYs),
+      VarRef(rXs, isReader: true),
+      VarRef(wListA, isReader: false),
+      VarRef(wYs, isReader: false),
     ]);
 
     // Build merge(Ys?,[b],Xs)
@@ -178,9 +178,9 @@ void main() {
     rt.heap.addWriter(WriterCell(wMerge2, rMerge2));
     rt.heap.addReader(ReaderCell(rMerge2));
     rt.heap.bindWriterStruct(wMerge2, 'merge', [
-      ReaderTerm(rYs),
-      WriterTerm(wListB),
-      WriterTerm(wXs),
+      VarRef(rYs, isReader: true),
+      VarRef(wListB, isReader: false),
+      VarRef(wXs, isReader: false),
     ]);
 
     // Build conjunction (merge(Xs?,[a],Ys), merge(Ys?,[b],Xs))
@@ -188,7 +188,7 @@ void main() {
     const rConj = 19;
     rt.heap.addWriter(WriterCell(wConj, rConj));
     rt.heap.addReader(ReaderCell(rConj));
-    rt.heap.bindWriterStruct(wConj, ',', [WriterTerm(wMerge1), WriterTerm(wMerge2)]);
+    rt.heap.bindWriterStruct(wConj, ',', [VarRef(wMerge1, isReader: false), VarRef(wMerge2, isReader: false)]);
 
     print('STRUCTURES:');
     print('  [a] = writer $wListA bound to [|](a, [])');

@@ -106,14 +106,14 @@ void main() {
     const rPX = 11;
     rt.heap.addWriter(WriterCell(wPX, rPX));
     rt.heap.addReader(ReaderCell(rPX));
-    rt.heap.bindWriterStruct(wPX, 'p', [WriterTerm(wX)]);
+    rt.heap.bindWriterStruct(wPX, 'p', [VarRef(wX, isReader: false)]);
 
     // Build p(X?) structure
     const wPXr = 12;
     const rPXr = 13;
     rt.heap.addWriter(WriterCell(wPXr, rPXr));
     rt.heap.addReader(ReaderCell(rPXr));
-    rt.heap.bindWriterStruct(wPXr, 'p', [ReaderTerm(rX)]);
+    rt.heap.bindWriterStruct(wPXr, 'p', [VarRef(rX, isReader: true)]);
 
     print('STRUCTURES:');
     print('  p(X) = reader $rPX bound to p(W$wX)');

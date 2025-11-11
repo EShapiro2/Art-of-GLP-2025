@@ -68,8 +68,8 @@ void main() {
       BC.L('wait_then_echo'),
       BC.TRY(),
 
-      // Set clause var 0 to ReaderTerm(rLine) - this is the Input parameter
-      SetClauseVar(0, ReaderTerm(rLine)),
+      // Set clause var 0 to VarRef(rLine, isReader: true) - this is the Input parameter
+      SetClauseVar(0, VarRef(rLine, isReader: true)),
 
       // Guard: known(Input) - var 0 should be bound (it is, via rLine->wLine)
       BC.known(0),
@@ -80,7 +80,7 @@ void main() {
       SetClauseVar(1, ConstTerm('You entered: ')),
       Execute('write', [1]),
 
-      // Write Input (clause var 0 is ReaderTerm(rLine))
+      // Write Input (clause var 0 is VarRef(rLine, isReader: true))
       Execute('write', [0]),
 
       Execute('nl', []),

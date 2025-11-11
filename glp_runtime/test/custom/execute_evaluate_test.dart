@@ -36,7 +36,7 @@ void main() {
       rt.heap.addReader(ReaderCell(rR));
 
       // Call evaluate directly
-      final call = SystemCall('evaluate', [expr, WriterTerm(wR)]);
+      final call = SystemCall('evaluate', [expr, VarRef(wR, isReader: false)]);
       final result = evaluatePredicate(rt, call);
 
       // Should succeed
@@ -58,7 +58,7 @@ void main() {
       // Do NOT bind wX - leave it unbound
 
       // Create expression: +(X?, 5) where X? is a reader of unbound X
-      final expr = StructTerm('+', [ReaderTerm(rX), ConstTerm(5)]);
+      final expr = StructTerm('+', [VarRef(rX, isReader: true), ConstTerm(5)]);
 
       // Create writer for result
       const wR = 3;
@@ -67,7 +67,7 @@ void main() {
       rt.heap.addReader(ReaderCell(rR));
 
       // Call evaluate
-      final call = SystemCall('evaluate', [expr, WriterTerm(wR)]);
+      final call = SystemCall('evaluate', [expr, VarRef(wR, isReader: false)]);
       final result = evaluatePredicate(rt, call);
 
       // Should suspend because X is unbound reader
@@ -95,7 +95,7 @@ void main() {
       rt.heap.addReader(ReaderCell(rR));
 
       // Call evaluate directly
-      final call = SystemCall('evaluate', [outerExpr, WriterTerm(wR)]);
+      final call = SystemCall('evaluate', [outerExpr, VarRef(wR, isReader: false)]);
       final result = evaluatePredicate(rt, call);
 
       // Should succeed
@@ -119,7 +119,7 @@ void main() {
       rt.heap.addReader(ReaderCell(rR));
 
       // Call evaluate directly
-      final call = SystemCall('evaluate', [expr, WriterTerm(wR)]);
+      final call = SystemCall('evaluate', [expr, VarRef(wR, isReader: false)]);
       final result = evaluatePredicate(rt, call);
 
       // Should fail due to division by zero
@@ -148,7 +148,7 @@ void main() {
         rt.heap.addWriter(WriterCell(wR, rR));
         rt.heap.addReader(ReaderCell(rR));
 
-        final call = SystemCall('evaluate', [expr, WriterTerm(wR)]);
+        final call = SystemCall('evaluate', [expr, VarRef(wR, isReader: false)]);
         final result = evaluatePredicate(rt, call);
 
         expect(result, SystemResult.success);
@@ -172,7 +172,7 @@ void main() {
       rt.heap.bindWriterConst(wR, 5);
 
       // Call evaluate - should verify that result matches
-      final call = SystemCall('evaluate', [expr, WriterTerm(wR)]);
+      final call = SystemCall('evaluate', [expr, VarRef(wR, isReader: false)]);
       final result = evaluatePredicate(rt, call);
 
       // Should succeed because 2 + 3 = 5
@@ -196,7 +196,7 @@ void main() {
       rt.heap.bindWriterConst(wR, 6);
 
       // Call evaluate - should fail because 2 + 3 ≠ 6
-      final call = SystemCall('evaluate', [expr, WriterTerm(wR)]);
+      final call = SystemCall('evaluate', [expr, VarRef(wR, isReader: false)]);
       final result = evaluatePredicate(rt, call);
 
       // Should fail

@@ -14,24 +14,20 @@ class Scheduler {
       if (term.value == 'nil') return '[]';
       if (term.value == null) return '<null>';  // Distinguish from nil
       return term.value.toString();
-    } else if (term is WriterTerm) {
-      final wid = term.writerId;
-      if (rt.heap.isWriterBound(wid)) {
-        final value = rt.heap.valueOfWriter(wid);
-        if (value != null) return _formatTerm(value, markReaders: markReaders);
-      }
-      return 'W$wid';
-    } else if (term is ReaderTerm) {
-      final rid = term.readerId;
-      final wid = rt.heap.writerIdForReader(rid);
-      if (wid != null && rt.heap.isWriterBound(wid)) {
-        final value = rt.heap.valueOfWriter(wid);
+    } else if (term is VarRef) {
+      final varId = term.varId;
+      if (rt.heap.isBound(varId)) {
+        final value = rt.heap.getValue(varId);
         if (value != null) {
           final formatted = _formatTerm(value, markReaders: markReaders);
-          return markReaders ? '$formatted?' : formatted;
+          // Mark readers with ? suffix
+          return (term.isReader && markReaders) ? '$formatted?' : formatted;
         }
       }
-      return markReaders ? 'R$rid?' : 'R$rid';
+      // Unbound variable
+      return term.isReader
+          ? (markReaders ? 'R$varId?' : 'R$varId')
+          : 'W$varId';
     } else if (term is StructTerm) {
       final args = term.args.map((a) => _formatTerm(a, markReaders: markReaders)).join(',');
       return '${term.functor}($args)';
@@ -48,9 +44,9 @@ class Scheduler {
       final w = env.writerBySlot[i];
       final r = env.readerBySlot[i];
       if (w != null) {
-        args.add(_formatTerm(WriterTerm(w)));
+        args.add(_formatTerm(VarRef(w, isReader: false)));
       } else if (r != null) {
-        args.add(_formatTerm(ReaderTerm(r)));
+        args.add(_formatTerm(VarRef(r, isReader: true)));
       } else {
         break;
       }

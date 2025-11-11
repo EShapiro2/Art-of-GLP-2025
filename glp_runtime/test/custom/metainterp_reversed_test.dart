@@ -111,21 +111,21 @@ void main() {
     const rPXr = 11;
     rt.heap.addWriter(WriterCell(wPXr, rPXr));
     rt.heap.addReader(ReaderCell(rPXr));
-    rt.heap.bindWriterStruct(wPXr, 'p', [ReaderTerm(rX)]);
+    rt.heap.bindWriterStruct(wPXr, 'p', [VarRef(rX, isReader: true)]);
 
     // Then build p(X) - writer second!
     const wPX = 12;
     const rPX = 13;
     rt.heap.addWriter(WriterCell(wPX, rPX));
     rt.heap.addReader(ReaderCell(rPX));
-    rt.heap.bindWriterStruct(wPX, 'p', [WriterTerm(wX)]);
+    rt.heap.bindWriterStruct(wPX, 'p', [VarRef(wX, isReader: false)]);
 
     // Now build the conjunction (p(X?), p(X))
     const wConj = 14;
     const rConj = 15;
     rt.heap.addWriter(WriterCell(wConj, rConj));
     rt.heap.addReader(ReaderCell(rConj));
-    rt.heap.bindWriterStruct(wConj, ',', [WriterTerm(wPXr), WriterTerm(wPX)]);
+    rt.heap.bindWriterStruct(wConj, ',', [VarRef(wPXr, isReader: false), VarRef(wPX, isReader: false)]);
 
     print('STRUCTURES:');
     print('  p(X?) = writer $wPXr bound to p(R$rX)');

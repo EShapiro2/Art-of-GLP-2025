@@ -45,7 +45,7 @@ void main() {
       final call = SystemCall('file_open', [
         ConstTerm(testPath),
         ConstTerm('read'),
-        WriterTerm(wHandle),
+        VarRef(wHandle, isReader: false),
       ]);
       final result = fileOpenPredicate(rt, call);
 
@@ -75,7 +75,7 @@ void main() {
       final call = SystemCall('file_open', [
         ConstTerm(testPath),
         ConstTerm('write'),
-        WriterTerm(wHandle),
+        VarRef(wHandle, isReader: false),
       ]);
       final result = fileOpenPredicate(rt, call);
 
@@ -103,7 +103,7 @@ void main() {
       final call = SystemCall('file_open', [
         ConstTerm(testPath),
         ConstTerm('read'),
-        WriterTerm(wHandle),
+        VarRef(wHandle, isReader: false),
       ]);
       final result = fileOpenPredicate(rt, call);
 
@@ -126,7 +126,7 @@ void main() {
       fileOpenPredicate(rt, SystemCall('file_open', [
         ConstTerm(testPath),
         ConstTerm('read'),
-        WriterTerm(wHandle),
+        VarRef(wHandle, isReader: false),
       ]));
 
       final handleTerm = rt.heap.writerValue[wHandle];
@@ -169,7 +169,7 @@ void main() {
       fileOpenPredicate(rt, SystemCall('file_open', [
         ConstTerm(testPath),
         ConstTerm('read'),
-        WriterTerm(wHandle),
+        VarRef(wHandle, isReader: false),
       ]));
 
       final handleTerm = rt.heap.writerValue[wHandle];
@@ -183,7 +183,7 @@ void main() {
 
       final call = SystemCall('file_read_handle', [
         ConstTerm(handle),
-        WriterTerm(wContents),
+        VarRef(wContents, isReader: false),
       ]);
       final result = fileReadHandlePredicate(rt, call);
 
@@ -207,7 +207,7 @@ void main() {
 
       final call = SystemCall('file_read_handle', [
         ConstTerm(9999),
-        WriterTerm(wContents),
+        VarRef(wContents, isReader: false),
       ]);
       final result = fileReadHandlePredicate(rt, call);
 
@@ -229,7 +229,7 @@ void main() {
       fileOpenPredicate(rt, SystemCall('file_open', [
         ConstTerm(testPath),
         ConstTerm('write'),
-        WriterTerm(wHandle),
+        VarRef(wHandle, isReader: false),
       ]));
 
       final handleTerm = rt.heap.writerValue[wHandle];
@@ -285,7 +285,7 @@ void main() {
       fileOpenPredicate(rt, SystemCall('file_open', [
         ConstTerm(testPath),
         ConstTerm('write'),
-        WriterTerm(wHandle1),
+        VarRef(wHandle1, isReader: false),
       ]));
 
       final handleTerm1 = rt.heap.writerValue[wHandle1];
@@ -315,7 +315,7 @@ void main() {
       fileOpenPredicate(rt, SystemCall('file_open', [
         ConstTerm(testPath),
         ConstTerm('read'),
-        WriterTerm(wHandle2),
+        VarRef(wHandle2, isReader: false),
       ]));
 
       final handleTerm2 = rt.heap.writerValue[wHandle2];
@@ -331,7 +331,7 @@ void main() {
 
       fileReadHandlePredicate(rt, SystemCall('file_read_handle', [
         ConstTerm(handle2),
-        WriterTerm(wContents),
+        VarRef(wContents, isReader: false),
       ]));
 
       final contentsTerm = rt.heap.writerValue[wContents];
@@ -363,7 +363,7 @@ void main() {
       fileOpenPredicate(rt, SystemCall('file_open', [
         ConstTerm(path1),
         ConstTerm('read'),
-        WriterTerm(wHandle1),
+        VarRef(wHandle1, isReader: false),
       ]));
 
       final handle1 = (rt.heap.writerValue[wHandle1] as ConstTerm).value as int;
@@ -377,7 +377,7 @@ void main() {
       fileOpenPredicate(rt, SystemCall('file_open', [
         ConstTerm(path2),
         ConstTerm('read'),
-        WriterTerm(wHandle2),
+        VarRef(wHandle2, isReader: false),
       ]));
 
       final handle2 = (rt.heap.writerValue[wHandle2] as ConstTerm).value as int;
@@ -407,7 +407,7 @@ void main() {
       fileOpenPredicate(rt, SystemCall('file_open', [
         ConstTerm(testPath),
         ConstTerm('append'),
-        WriterTerm(wHandle),
+        VarRef(wHandle, isReader: false),
       ]));
 
       final handle = (rt.heap.writerValue[wHandle] as ConstTerm).value as int;

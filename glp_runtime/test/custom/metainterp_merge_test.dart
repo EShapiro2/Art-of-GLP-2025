@@ -166,9 +166,9 @@ void main() {
     rt.heap.addWriter(WriterCell(wMerge, rMerge));
     rt.heap.addReader(ReaderCell(rMerge));
     rt.heap.bindWriterStruct(wMerge, 'merge', [
-      WriterTerm(wListA),
-      WriterTerm(wListB),
-      WriterTerm(wZs),
+      VarRef(wListA, isReader: false),
+      VarRef(wListB, isReader: false),
+      VarRef(wZs, isReader: false),
     ]);
 
     print('STRUCTURES:');

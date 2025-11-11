@@ -108,21 +108,21 @@ void main() {
     const rListA = 11;
     rt.heap.addWriter(WriterCell(wListA, rListA));
     rt.heap.addReader(ReaderCell(rListA));
-    rt.heap.bindWriterStruct(wListA, '.', [ConstTerm('a'), ReaderTerm(rXs)]);
+    rt.heap.bindWriterStruct(wListA, '.', [ConstTerm('a'), VarRef(rXs, isReader: true)]);
 
     // Build [b|Ys?]
     const wListB = 12;
     const rListB = 13;
     rt.heap.addWriter(WriterCell(wListB, rListB));
     rt.heap.addReader(ReaderCell(rListB));
-    rt.heap.bindWriterStruct(wListB, '.', [ConstTerm('b'), ReaderTerm(rYs)]);
+    rt.heap.bindWriterStruct(wListB, '.', [ConstTerm('b'), VarRef(rYs, isReader: true)]);
 
     // Build [c|Zs?]
     const wListC = 14;
     const rListC = 15;
     rt.heap.addWriter(WriterCell(wListC, rListC));
     rt.heap.addReader(ReaderCell(rListC));
-    rt.heap.bindWriterStruct(wListC, '.', [ConstTerm('c'), ReaderTerm(rZs)]);
+    rt.heap.bindWriterStruct(wListC, '.', [ConstTerm('c'), VarRef(rZs, isReader: true)]);
 
     print('STRUCTURES:');
     print('  [a|Xs?] = writer $wListA');

@@ -139,7 +139,7 @@ void main() {
     rt.heap.bindWriterStruct(wTail, '[|]', [ConstTerm('b'), ConstTerm('[]')]);
 
     // Build full list [a|tail]
-    rt.heap.bindWriterStruct(wList, '[|]', [ConstTerm('a'), WriterTerm(wTail)]);
+    rt.heap.bindWriterStruct(wList, '[|]', [ConstTerm('a'), VarRef(wTail, isReader: false)]);
 
     // Call p([a, b])
     const goalId = 100;

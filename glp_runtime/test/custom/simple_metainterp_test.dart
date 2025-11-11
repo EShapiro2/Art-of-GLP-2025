@@ -85,7 +85,7 @@ void main() {
     const rPX = 11;
     rt.heap.addWriter(WriterCell(wPX, rPX));
     rt.heap.addReader(ReaderCell(rPX));
-    rt.heap.bindWriterStruct(wPX, 'p', [WriterTerm(wX)]);
+    rt.heap.bindWriterStruct(wPX, 'p', [VarRef(wX, isReader: false)]);
 
     // Goal: run(p(X))
     const goalId = 100;

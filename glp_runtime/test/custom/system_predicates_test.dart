@@ -29,7 +29,7 @@ void main() {
       rt.heap.addReader(ReaderCell(rT));
 
       // Call current_time
-      final call = SystemCall('current_time', [WriterTerm(wT)]);
+      final call = SystemCall('current_time', [VarRef(wT, isReader: false)]);
       final result = currentTimePredicate(rt, call);
 
       // Should succeed
@@ -58,7 +58,7 @@ void main() {
         rt.heap.addWriter(WriterCell(wId, rId));
         rt.heap.addReader(ReaderCell(rId));
 
-        final call = SystemCall('unique_id', [WriterTerm(wId)]);
+        final call = SystemCall('unique_id', [VarRef(wId, isReader: false)]);
         final result = uniqueIdPredicate(rt, call);
 
         expect(result, SystemResult.success);
@@ -128,7 +128,7 @@ void main() {
 
       final callRead = SystemCall('file_read', [
         ConstTerm(testPath),
-        WriterTerm(wContents),
+        VarRef(wContents, isReader: false),
       ]);
       final resultRead = fileReadPredicate(rt, callRead);
 
@@ -155,7 +155,7 @@ void main() {
 
       final call = SystemCall('file_read', [
         ConstTerm(nonExistentPath),
-        WriterTerm(wContents),
+        VarRef(wContents, isReader: false),
       ]);
       final result = fileReadPredicate(rt, call);
 
@@ -180,8 +180,8 @@ void main() {
       rt.heap.addReader(ReaderCell(rContents));
 
       final call = SystemCall('file_read', [
-        ReaderTerm(rPath),
-        WriterTerm(wContents),
+        VarRef(rPath, isReader: true),
+        VarRef(wContents, isReader: false),
       ]);
       final result = fileReadPredicate(rt, call);
 
@@ -216,7 +216,7 @@ void main() {
 
       final callRead = SystemCall('file_read', [
         ConstTerm(testPath),
-        WriterTerm(wContents),
+        VarRef(wContents, isReader: false),
       ]);
       final resultRead = fileReadPredicate(rt, callRead);
 
@@ -257,7 +257,7 @@ void main() {
 
       final callRead = SystemCall('file_read', [
         ConstTerm(testPath),
-        WriterTerm(wContents),
+        VarRef(wContents, isReader: false),
       ]);
       fileReadPredicate(rt, callRead);
 

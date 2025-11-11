@@ -47,7 +47,7 @@ void main() {
       rt.heap.addWriter(WriterCell(wX, rX));
       rt.heap.addReader(ReaderCell(rX));
 
-      final call = SystemCall('write', [ReaderTerm(rX)]);
+      final call = SystemCall('write', [VarRef(rX, isReader: true)]);
       final result = writePredicate(rt, call);
 
       expect(result, SystemResult.suspend);
@@ -138,7 +138,7 @@ void main() {
 
       final call = SystemCall('directory_list', [
         ConstTerm(tempDir.path),
-        WriterTerm(wList),
+        VarRef(wList, isReader: false),
       ]);
       final result = directoryListPredicate(rt, call);
 
@@ -166,7 +166,7 @@ void main() {
 
       final call = SystemCall('directory_list', [
         ConstTerm('${tempDir.path}/nonexistent'),
-        WriterTerm(wList),
+        VarRef(wList, isReader: false),
       ]);
       final result = directoryListPredicate(rt, call);
 
@@ -197,8 +197,8 @@ void main() {
       rt.heap.addReader(ReaderCell(rName));
 
       final call = SystemCall('variable_name', [
-        WriterTerm(wX),
-        WriterTerm(wName),
+        VarRef(wX, isReader: false),
+        VarRef(wName, isReader: false),
       ]);
       final result = variableNamePredicate(rt, call);
 
@@ -227,8 +227,8 @@ void main() {
       rt.heap.addReader(ReaderCell(rName));
 
       final call = SystemCall('variable_name', [
-        ReaderTerm(rX),
-        WriterTerm(wName),
+        VarRef(rX, isReader: true),
+        VarRef(wName, isReader: false),
       ]);
       final result = variableNamePredicate(rt, call);
 
@@ -252,7 +252,7 @@ void main() {
 
       final call = SystemCall('copy_term', [
         ConstTerm('original'),
-        WriterTerm(wCopy),
+        VarRef(wCopy, isReader: false),
       ]);
       final result = copyTermPredicate(rt, call);
 
@@ -280,8 +280,8 @@ void main() {
       rt.heap.addReader(ReaderCell(rCopy));
 
       final call = SystemCall('copy_term', [
-        ReaderTerm(rX),
-        WriterTerm(wCopy),
+        VarRef(rX, isReader: true),
+        VarRef(wCopy, isReader: false),
       ]);
       final result = copyTermPredicate(rt, call);
 
@@ -310,7 +310,7 @@ void main() {
 
       final call = SystemCall('link', [
         ConstTerm(['file', 'math']),
-        WriterTerm(wOffset),
+        VarRef(wOffset, isReader: false),
       ]);
       final result = linkPredicate(rt, call);
 
@@ -328,7 +328,7 @@ void main() {
 
       final call = SystemCall('load_module', [
         ConstTerm('test.glp'),
-        WriterTerm(wModule),
+        VarRef(wModule, isReader: false),
       ]);
       final result = loadModulePredicate(rt, call);
 

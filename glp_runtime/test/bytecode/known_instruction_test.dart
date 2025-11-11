@@ -139,7 +139,7 @@ void main() {
     rt.heap.addReader(ReaderCell(rY));
     // Y is unbound
 
-    rt.heap.bindWriterStruct(wX, 'f', [WriterTerm(wY)]);
+    rt.heap.bindWriterStruct(wX, 'f', [VarRef(wY, isReader: false)]);
 
     // Call p(X) where X is bound to f(Y) - X is known even though Y is not
     const goalId = 100;

@@ -168,7 +168,7 @@ void main() {
 
     rt.heap.bindWriterStruct(wList12, '[|]', [
       ConstTerm('1'),
-      WriterTerm(wTail12),
+      VarRef(wTail12, isReader: false),
     ]);
 
     // Build [3]
@@ -193,7 +193,7 @@ void main() {
 
     rt.heap.bindWriterStruct(wListAB, '[|]', [
       ConstTerm('a'),
-      WriterTerm(wTailAB),
+      VarRef(wTailAB, isReader: false),
     ]);
 
     // Build [c]
@@ -209,9 +209,9 @@ void main() {
     rt.heap.addWriter(WriterCell(wMerge1, rMerge1));
     rt.heap.addReader(ReaderCell(rMerge1));
     rt.heap.bindWriterStruct(wMerge1, 'merge', [
-      WriterTerm(wList12),
-      WriterTerm(wList3),
-      WriterTerm(wXs),
+      VarRef(wList12, isReader: false),
+      VarRef(wList3, isReader: false),
+      VarRef(wXs, isReader: false),
     ]);
 
     // Build merge([a,b],[c],Ys)
@@ -220,9 +220,9 @@ void main() {
     rt.heap.addWriter(WriterCell(wMerge2, rMerge2));
     rt.heap.addReader(ReaderCell(rMerge2));
     rt.heap.bindWriterStruct(wMerge2, 'merge', [
-      WriterTerm(wListAB),
-      WriterTerm(wListC),
-      WriterTerm(wYs),
+      VarRef(wListAB, isReader: false),
+      VarRef(wListC, isReader: false),
+      VarRef(wYs, isReader: false),
     ]);
 
     // Build merge(Xs?,Ys?,Zs)
@@ -231,9 +231,9 @@ void main() {
     rt.heap.addWriter(WriterCell(wMerge3, rMerge3));
     rt.heap.addReader(ReaderCell(rMerge3));
     rt.heap.bindWriterStruct(wMerge3, 'merge', [
-      ReaderTerm(rXs),
-      ReaderTerm(rYs),
-      WriterTerm(wZs),
+      VarRef(rXs, isReader: true),
+      VarRef(rYs, isReader: true),
+      VarRef(wZs, isReader: false),
     ]);
 
     // Build (merge([1,2],[3],Xs), merge([a,b],[c],Ys))
@@ -241,14 +241,14 @@ void main() {
     const rConj12 = 25;
     rt.heap.addWriter(WriterCell(wConj12, rConj12));
     rt.heap.addReader(ReaderCell(rConj12));
-    rt.heap.bindWriterStruct(wConj12, ',', [WriterTerm(wMerge1), WriterTerm(wMerge2)]);
+    rt.heap.bindWriterStruct(wConj12, ',', [VarRef(wMerge1, isReader: false), VarRef(wMerge2, isReader: false)]);
 
     // Build ((merge([1,2],[3],Xs), merge([a,b],[c],Ys)), merge(Xs?,Ys?,Zs))
     const wConj = 26;
     const rConj = 27;
     rt.heap.addWriter(WriterCell(wConj, rConj));
     rt.heap.addReader(ReaderCell(rConj));
-    rt.heap.bindWriterStruct(wConj, ',', [WriterTerm(wConj12), WriterTerm(wMerge3)]);
+    rt.heap.bindWriterStruct(wConj, ',', [VarRef(wConj12, isReader: false), VarRef(wMerge3, isReader: false)]);
 
     print('STRUCTURES:');
     print('  [1,2] = writer $wList12');

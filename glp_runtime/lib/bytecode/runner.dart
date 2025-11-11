@@ -6,7 +6,6 @@ import 'package:glp_runtime/runtime/cells.dart';
 import 'package:glp_runtime/runtime/system_predicates.dart';
 import 'opcodes.dart';
 import 'opcodes_v2.dart' as opv2;
-import 'migration_helper.dart';
 
 enum RunResult { terminated, suspended, yielded, outOfReductions }
 
@@ -165,15 +164,15 @@ class BytecodeRunner {
       if (term.value == 'nil') return '[]';
       if (term.value == null) return '<null>';
       return term.value.toString();
-    } else if (MigrationHelper.isWriter(term)) {
-      final wid = MigrationHelper.getVarId(term)!;
+    } else if (term is VarRef && !term.isReader) {
+      final wid = term.varId;
       if (rt.heap.isWriterBound(wid)) {
         final value = rt.heap.valueOfWriter(wid);
         if (value != null) return _formatTerm(rt, value, markReaders: markReaders);
       }
       return 'W$wid';
-    } else if (MigrationHelper.isReader(term)) {
-      final rid = MigrationHelper.getVarId(term)!;
+    } else if (term is VarRef && term.isReader) {
+      final rid = term.varId;
       final wid = rt.heap.writerIdForReader(rid);
       if (wid != null && rt.heap.isWriterBound(wid)) {
         final value = rt.heap.valueOfWriter(wid);
@@ -234,7 +233,7 @@ class BytecodeRunner {
       // IfWriter guard: succeeds if variable is a writer
       if (op is IfWriter) {
         final term = cx.clauseVars[op.varIndex];
-        if (MigrationHelper.isWriter(term)) {
+        if (term is VarRef && !term.isReader) {
           // It's a writer - succeed
           pc++;
           continue;
@@ -249,7 +248,7 @@ class BytecodeRunner {
       // IfReader guard: succeeds if variable is a reader
       if (op is IfReader) {
         final term = cx.clauseVars[op.varIndex];
-        if (MigrationHelper.isReader(term)) {
+        if (term is VarRef && term.isReader) {
           // It's a reader - succeed
           pc++;
           continue;
@@ -268,7 +267,7 @@ class BytecodeRunner {
         final term = cx.clauseVars[op.varIndex];
         if (op.isReader) {
           // Check if it's a reader
-          if (MigrationHelper.isReader(term)) {
+          if (term is VarRef && term.isReader) {
             pc++;
             continue;
           } else {
@@ -278,7 +277,7 @@ class BytecodeRunner {
           }
         } else {
           // Check if it's a writer
-          if (MigrationHelper.isWriter(term)) {
+          if (term is VarRef && !term.isReader) {
             pc++;
             continue;
           } else {
@@ -427,9 +426,9 @@ class BytecodeRunner {
               cx.S = 0;
               pc++; continue;
             }
-          } else if (MigrationHelper.isWriter(clauseVarValue)) {
+          } else if (clauseVarValue is VarRef && !clauseVarValue.isReader) {
             // Check if this writer is bound to a structure
-            final wid = MigrationHelper.getVarId(clauseVarValue)!;
+            final wid = clauseVarValue.varId;
             if (cx.rt.heap.isWriterBound(wid)) {
               final value = cx.rt.heap.valueOfWriter(wid);
               if (value is StructTerm && value.functor == op.functor && value.args.length == op.arity) {
@@ -728,9 +727,9 @@ class BytecodeRunner {
               pc = _findNextClauseTry(pc);
               continue;
             }
-          } else if (MigrationHelper.isReader(storedValue)) {
+          } else if (storedValue is VarRef && storedValue.isReader) {
             // storedValue is a reader (e.g., Xs?) - bind writer to reader's value
-            final readerId = MigrationHelper.getVarId(storedValue)!;
+            final readerId = storedValue.varId;
             final wid = cx.rt.heap.writerIdForReader(readerId);
             if (wid != null && cx.rt.heap.isWriterBound(wid)) {
               // Reader's writer is bound - bind arg writer to that value
@@ -746,7 +745,7 @@ class BytecodeRunner {
           }
         } else if (arg.isReader) {
           // Argument is a reader - verify it matches stored value
-          if (MigrationHelper.isReader(storedValue)) {
+          if (storedValue is VarRef && storedValue.isReader) {
             // storedValue is also a reader - fail definitively
             // (clause-local reader can never be bound in the future)
             _softFailToNextClause(cx, pc);
@@ -860,9 +859,9 @@ class BytecodeRunner {
               if (value is ConstTerm && value.value == op.value) {
                 // Constant matches - advance
                 cx.S++;
-              } else if (MigrationHelper.isWriter(value)) {
+              } else if (value is VarRef && !value.isReader) {
                 // Writer variable - bind to constant in σ̂w
-                final wid = MigrationHelper.getVarId(value)!;
+                final wid = value.varId;
                 if (cx.rt.heap.isWriterBound(wid)) {
                   // Already bound - check if it matches
                   final boundValue = cx.rt.heap.valueOfWriter(wid);
@@ -881,9 +880,9 @@ class BytecodeRunner {
                   cx.sigmaHat[wid] = ConstTerm(op.value);
                   cx.S++;
                 }
-              } else if (MigrationHelper.isReader(value)) {
+              } else if (value is VarRef && value.isReader) {
                 // Reader variable - check if bound, else suspend
-                final rid = MigrationHelper.getVarId(value)!;
+                final rid = value.varId;
                 final wid = cx.rt.heap.writerIdForReader(rid);
                 if (wid != null && cx.rt.heap.isWriterBound(wid)) {
                   // Reader is bound - check if it matches
@@ -1010,12 +1009,12 @@ class BytecodeRunner {
               final value = struct.args[cx.S];
               if (debug && cx.goalId == 100) print('  [G${cx.goalId}] UnifyWriter: struct.args[${cx.S}] = $value');
               // Store the writer in clause var
-              if (MigrationHelper.isWriter(value)) {
-                cx.clauseVars[op.varIndex] = MigrationHelper.getVarId(value)!;
+              if (value is VarRef && !value.isReader) {
+                cx.clauseVars[op.varIndex] = value.varId;
                 cx.S++;
-              } else if (MigrationHelper.isReader(value)) {
+              } else if (value is VarRef && value.isReader) {
                 // Extract reader term - dereference if bound, store as-is if unbound
-                final rid = MigrationHelper.getVarId(value)!;
+                final rid = value.varId;
                 final wid = cx.rt.heap.writerIdForReader(rid);
                 if (wid != null && cx.rt.heap.isWriterBound(wid)) {
                   // Reader is bound - extract the actual value from the paired writer
@@ -1058,7 +1057,7 @@ class BytecodeRunner {
               if (wc != null) {
                 struct.args[cx.S] = VarRef(wc.readerId, isReader: true);
               }
-            } else if (MigrationHelper.isReader(clauseVarValue)) {
+            } else if (clauseVarValue is VarRef && clauseVarValue.isReader) {
               // Clause var is already a reader term - use it directly
               struct.args[cx.S] = clauseVarValue as Term;
             } else if (clauseVarValue is Term) {
@@ -1093,7 +1092,7 @@ class BytecodeRunner {
                 struct.args[cx.S] = VarRef(wc.readerId, isReader: true);
                 if (debug) print('  [G${cx.goalId}] UnifyReader BODY: Using paired reader ${wc.readerId} for writer $clauseVarValue');
               }
-            } else if (MigrationHelper.isReader(clauseVarValue)) {
+            } else if (clauseVarValue is VarRef && clauseVarValue.isReader) {
               // Already a reader term - use directly
               struct.args[cx.S] = clauseVarValue as Term;
               if (debug) print('  [G${cx.goalId}] UnifyReader BODY: Using existing ReaderTerm $clauseVarValue');
@@ -1125,18 +1124,18 @@ class BytecodeRunner {
             final struct = cx.currentStructure as StructTerm;
             if (cx.S < struct.args.length) {
               final value = struct.args[cx.S];
-              if (MigrationHelper.isReader(value)) {
+              if (value is VarRef && value.isReader) {
                 // Store the writer ID (not the reader ID) in clause var
-                final rid = MigrationHelper.getVarId(value)!;
+                final rid = value.varId;
                 final wid = cx.rt.heap.writerIdForReader(rid);
                 if (wid != null) {
                   cx.clauseVars[op.varIndex] = wid;
                 }
                 cx.S++;
-              } else if (MigrationHelper.isWriter(value)) {
+              } else if (value is VarRef && !value.isReader) {
                 // Writer term - store the writer ID directly
                 // This happens when clause head expects reader but structure has writer
-                cx.clauseVars[op.varIndex] = MigrationHelper.getVarId(value)!;
+                cx.clauseVars[op.varIndex] = value.varId;
                 cx.S++;
               } else {
                 // Mismatch
@@ -1487,9 +1486,9 @@ class BytecodeRunner {
             cx.rt.heap.bindWriterConst(varId, value.value);
             cx.argReaders[op.argSlot] = varId;
             if (debug) print('  [G${cx.goalId}] PutReader: created V$varId for constant');
-          } else if (MigrationHelper.isReader(value)) {
+          } else if (value is VarRef && value.isReader) {
             // It's already a reader - use its ID directly
-            cx.argReaders[op.argSlot] = MigrationHelper.getVarId(value)!;
+            cx.argReaders[op.argSlot] = value.varId;
           } else if (value == null) {
             // First occurrence of this variable - create fresh unbound variable
             final varId = cx.rt.heap.allocateFreshVar();
@@ -2044,15 +2043,15 @@ class BytecodeRunner {
         bool hasUnboundWriter = false;
 
         void collectUnbound(Object? term) {
-          if (MigrationHelper.isWriter(term)) {
-            final wid = MigrationHelper.getVarId(term)!;
+          if (term is VarRef && !term.isReader) {
+            final wid = term.varId;
             if (!cx.rt.heap.isWriterBound(wid)) {
               hasUnboundWriter = true;
             } else {
               collectUnbound(cx.rt.heap.valueOfWriter(wid));
             }
-          } else if (MigrationHelper.isReader(term)) {
-            final rid = MigrationHelper.getVarId(term)!;
+          } else if (term is VarRef && term.isReader) {
+            final rid = term.varId;
             final wid = cx.rt.heap.writerIdForReader(rid);
             if (wid == null || !cx.rt.heap.isWriterBound(wid)) {
               unboundReaders.add(rid);
@@ -2152,10 +2151,10 @@ class BytecodeRunner {
               unboundReader = value;
             }
           }
-        } else if (MigrationHelper.isWriter(value)) {
-          isKnown = cx.rt.heap.isWriterBound(MigrationHelper.getVarId(value)!);
-        } else if (MigrationHelper.isReader(value)) {
-          final rid = MigrationHelper.getVarId(value)!;
+        } else if (value is VarRef && !value.isReader) {
+          isKnown = cx.rt.heap.isWriterBound(value.varId);
+        } else if (value is VarRef && value.isReader) {
+          final rid = value.varId;
           final wid = cx.rt.heap.writerIdForReader(rid);
           if (wid != null && cx.rt.heap.isWriterBound(wid)) {
             isKnown = true;

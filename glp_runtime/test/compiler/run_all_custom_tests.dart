@@ -1005,7 +1005,7 @@ void main() {
       const wPX = 3, rPX = 4;
       rt.heap.addWriter(WriterCell(wPX, rPX));
       rt.heap.addReader(ReaderCell(rPX));
-      rt.heap.bindWriterStruct(wPX, 'p', [WriterTerm(wX)]);
+      rt.heap.bindWriterStruct(wPX, 'p', [VarRef(wX, isReader: false)]);
 
       final runner = BytecodeRunner(program);
       final sched = Scheduler(rt: rt, runner: runner);
@@ -1050,19 +1050,19 @@ void main() {
       const wPX = 3, rPX = 4;
       rt.heap.addWriter(WriterCell(wPX, rPX));
       rt.heap.addReader(ReaderCell(rPX));
-      rt.heap.bindWriterStruct(wPX, 'p', [WriterTerm(wX)]);
+      rt.heap.bindWriterStruct(wPX, 'p', [VarRef(wX, isReader: false)]);
 
       // Build q(X?)
       const wQX = 5, rQX = 6;
       rt.heap.addWriter(WriterCell(wQX, rQX));
       rt.heap.addReader(ReaderCell(rQX));
-      rt.heap.bindWriterStruct(wQX, 'q', [ReaderTerm(rX)]);
+      rt.heap.bindWriterStruct(wQX, 'q', [VarRef(rX, isReader: true)]);
 
       // Build conjunction (p(X), q(X?))
       const wConj = 7, rConj = 8;
       rt.heap.addWriter(WriterCell(wConj, rConj));
       rt.heap.addReader(ReaderCell(rConj));
-      rt.heap.bindWriterStruct(wConj, ',', [ReaderTerm(rPX), ReaderTerm(rQX)]);
+      rt.heap.bindWriterStruct(wConj, ',', [VarRef(rPX, isReader: true), VarRef(rQX, isReader: true)]);
 
       final runner = BytecodeRunner(program);
       final sched = Scheduler(rt: rt, runner: runner);
@@ -1186,19 +1186,19 @@ void main() {
       const wPXr = 3, rPXr = 4;
       rt.heap.addWriter(WriterCell(wPXr, rPXr));
       rt.heap.addReader(ReaderCell(rPXr));
-      rt.heap.bindWriterStruct(wPXr, 'p', [ReaderTerm(rX)]);
+      rt.heap.bindWriterStruct(wPXr, 'p', [VarRef(rX, isReader: true)]);
 
       // Build p(X)
       const wPXw = 5, rPXw = 6;
       rt.heap.addWriter(WriterCell(wPXw, rPXw));
       rt.heap.addReader(ReaderCell(rPXw));
-      rt.heap.bindWriterStruct(wPXw, 'p', [WriterTerm(wX)]);
+      rt.heap.bindWriterStruct(wPXw, 'p', [VarRef(wX, isReader: false)]);
 
       // Build conjunction (p(X?), p(X))
       const wConj = 7, rConj = 8;
       rt.heap.addWriter(WriterCell(wConj, rConj));
       rt.heap.addReader(ReaderCell(rConj));
-      rt.heap.bindWriterStruct(wConj, ',', [ReaderTerm(rPXr), ReaderTerm(rPXw)]);
+      rt.heap.bindWriterStruct(wConj, ',', [VarRef(rPXr, isReader: true), VarRef(rPXw, isReader: true)]);
 
       final runner = BytecodeRunner(program);
       final sched = Scheduler(rt: rt, runner: runner);
@@ -1284,9 +1284,9 @@ void main() {
       rt.heap.addWriter(WriterCell(wMerge, rMerge));
       rt.heap.addReader(ReaderCell(rMerge));
       rt.heap.bindWriterStruct(wMerge, 'merge', [
-        WriterTerm(wListA),
-        WriterTerm(wListB),
-        WriterTerm(wZs),
+        VarRef(wListA, isReader: false),
+        VarRef(wListB, isReader: false),
+        VarRef(wZs, isReader: false),
       ]);
 
       final runner = BytecodeRunner(program);
@@ -1359,9 +1359,9 @@ void main() {
       rt.heap.addWriter(WriterCell(wMerge1, rMerge1));
       rt.heap.addReader(ReaderCell(rMerge1));
       rt.heap.bindWriterStruct(wMerge1, 'merge', [
-        ReaderTerm(rXs),
-        WriterTerm(wListA),
-        WriterTerm(wYs),
+        VarRef(rXs, isReader: true),
+        VarRef(wListA, isReader: false),
+        VarRef(wYs, isReader: false),
       ]);
 
       // Build merge(Ys?,[b],Xs)
@@ -1369,9 +1369,9 @@ void main() {
       rt.heap.addWriter(WriterCell(wMerge2, rMerge2));
       rt.heap.addReader(ReaderCell(rMerge2));
       rt.heap.bindWriterStruct(wMerge2, 'merge', [
-        ReaderTerm(rYs),
-        WriterTerm(wListB),
-        WriterTerm(wXs),
+        VarRef(rYs, isReader: true),
+        VarRef(wListB, isReader: false),
+        VarRef(wXs, isReader: false),
       ]);
 
       // Build conjunction (merge1, merge2)
@@ -1379,8 +1379,8 @@ void main() {
       rt.heap.addWriter(WriterCell(wConj, rConj));
       rt.heap.addReader(ReaderCell(rConj));
       rt.heap.bindWriterStruct(wConj, ',', [
-        WriterTerm(wMerge1),
-        WriterTerm(wMerge2),
+        VarRef(wMerge1, isReader: false),
+        VarRef(wMerge2, isReader: false),
       ]);
 
       final runner = BytecodeRunner(program);
@@ -1443,28 +1443,28 @@ void main() {
       const wLa = 10, rLa = 11;
       rt.heap.addWriter(WriterCell(wLa, rLa));
       rt.heap.addReader(ReaderCell(rLa));
-      rt.heap.bindWriterStruct(wLa, '.', [ConstTerm('a'), ReaderTerm(rXs)]);
+      rt.heap.bindWriterStruct(wLa, '.', [ConstTerm('a'), VarRef(rXs, isReader: true)]);
 
       // [b|Ys?]
       const wLb = 12, rLb = 13;
       rt.heap.addWriter(WriterCell(wLb, rLb));
       rt.heap.addReader(ReaderCell(rLb));
-      rt.heap.bindWriterStruct(wLb, '.', [ConstTerm('b'), ReaderTerm(rYs)]);
+      rt.heap.bindWriterStruct(wLb, '.', [ConstTerm('b'), VarRef(rYs, isReader: true)]);
 
       // [c|Zs?]
       const wLc = 14, rLc = 15;
       rt.heap.addWriter(WriterCell(wLc, rLc));
       rt.heap.addReader(ReaderCell(rLc));
-      rt.heap.bindWriterStruct(wLc, '.', [ConstTerm('c'), ReaderTerm(rZs)]);
+      rt.heap.bindWriterStruct(wLc, '.', [ConstTerm('c'), VarRef(rZs, isReader: true)]);
 
       // Build merge([a|Xs?],Ys?,Zs)
       const wM1 = 20, rM1 = 21;
       rt.heap.addWriter(WriterCell(wM1, rM1));
       rt.heap.addReader(ReaderCell(rM1));
       rt.heap.bindWriterStruct(wM1, 'merge', [
-        WriterTerm(wLa),
-        ReaderTerm(rYs),
-        WriterTerm(wZs),
+        VarRef(wLa, isReader: false),
+        VarRef(rYs, isReader: true),
+        VarRef(wZs, isReader: false),
       ]);
 
       // Build merge([b|Ys?],Zs?,Xs)
@@ -1472,9 +1472,9 @@ void main() {
       rt.heap.addWriter(WriterCell(wM2, rM2));
       rt.heap.addReader(ReaderCell(rM2));
       rt.heap.bindWriterStruct(wM2, 'merge', [
-        WriterTerm(wLb),
-        ReaderTerm(rZs),
-        WriterTerm(wXs),
+        VarRef(wLb, isReader: false),
+        VarRef(rZs, isReader: true),
+        VarRef(wXs, isReader: false),
       ]);
 
       // Build merge([c|Zs?],Xs?,Ys)
@@ -1482,9 +1482,9 @@ void main() {
       rt.heap.addWriter(WriterCell(wM3, rM3));
       rt.heap.addReader(ReaderCell(rM3));
       rt.heap.bindWriterStruct(wM3, 'merge', [
-        WriterTerm(wLc),
-        ReaderTerm(rXs),
-        WriterTerm(wYs),
+        VarRef(wLc, isReader: false),
+        VarRef(rXs, isReader: true),
+        VarRef(wYs, isReader: false),
       ]);
 
       // Build conjunction (m1, (m2, m3))
@@ -1492,16 +1492,16 @@ void main() {
       rt.heap.addWriter(WriterCell(wConj2, rConj2));
       rt.heap.addReader(ReaderCell(rConj2));
       rt.heap.bindWriterStruct(wConj2, ',', [
-        WriterTerm(wM2),
-        WriterTerm(wM3),
+        VarRef(wM2, isReader: false),
+        VarRef(wM3, isReader: false),
       ]);
 
       const wConj1 = 32, rConj1 = 33;
       rt.heap.addWriter(WriterCell(wConj1, rConj1));
       rt.heap.addReader(ReaderCell(rConj1));
       rt.heap.bindWriterStruct(wConj1, ',', [
-        WriterTerm(wM1),
-        WriterTerm(wConj2),
+        VarRef(wM1, isReader: false),
+        VarRef(wConj2, isReader: false),
       ]);
 
       final runner = BytecodeRunner(program);

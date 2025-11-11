@@ -484,8 +484,8 @@ class CodeGenerator {
         // This is tricky - for now, just note this limitation
         throw CompileError('Reader variables in execute() not yet supported: ${term.name}?', term.line, term.column, phase: 'codegen');
       } else {
-        // Writer variable - return writer term
-        return rt.WriterTerm(varInfo.registerIndex!);
+        // Writer variable - return VarRef with isReader: false
+        return rt.VarRef(varInfo.registerIndex!, isReader: false);
       }
     } else if (term is ListTerm) {
       if (term.isNil) {

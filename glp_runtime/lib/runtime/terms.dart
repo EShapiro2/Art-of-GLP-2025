@@ -41,25 +41,3 @@ class VarRef implements Term {
   @override
   int get hashCode => Object.hash(varId, isReader);
 }
-
-/// DEPRECATED: Old two-ID system - being migrated to VarRef
-/// Reader reference in a structure - just holds the reader ID
-/// The actual value is obtained by dereferencing through the heap
-@Deprecated('Use VarRef(varId, isReader: true) instead')
-class ReaderTerm implements Term {
-  final int readerId;
-  ReaderTerm(this.readerId);
-  @override
-  String toString() => 'R$readerId';
-}
-
-/// DEPRECATED: Old two-ID system - being migrated to VarRef
-/// Writer reference in a structure - just holds the writer ID
-/// Used when a structure contains an unbound writer variable
-@Deprecated('Use VarRef(varId, isReader: false) instead')
-class WriterTerm implements Term {
-  final int writerId;
-  WriterTerm(this.writerId);
-  @override
-  String toString() => 'W$writerId';
-}

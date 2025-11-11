@@ -97,7 +97,7 @@ void main() {
     const rPX = 21;
     rt.heap.addWriter(WriterCell(wPX, rPX));
     rt.heap.addReader(ReaderCell(rPX));
-    rt.heap.bindWriterStruct(wPX, 'p', [WriterTerm(wX)]);
+    rt.heap.bindWriterStruct(wPX, 'p', [VarRef(wX, isReader: false)]);
 
     const goal2 = 200;
     final env2 = CallEnv(readers: {0: rPX});
