@@ -16,9 +16,10 @@ class HeapV2 extends Heap {
   // ROQ: reader suspensions (varId -> Set<goalId>)
   final Map<int, Set<int>> _roq = {};
 
-  // Compatibility: Track writer->reader pairing from old two-ID system
+  // Compatibility: Track writer<->reader pairing from old two-ID system
   // In single-ID, we treat the writer ID as the canonical variable ID
   final Map<int, int> _readerToWriter = {};
+  final Map<int, int> _writerToReader = {};
 
   /// Get variable value (null if unbound)
   Term? getValue(int varId) {
@@ -176,11 +177,18 @@ class HeapV2 extends Heap {
   }
 
   /// Compatibility: Get WriterCell for varId
-  /// In single-ID: readerId == writerId == varId
+  /// In single-ID from fresh allocation: readerId == writerId == varId
+  /// From old two-ID tests: use the pairing maps
   @override
   WriterCell? writer(int varId) {
     if (_vars.containsKey(varId)) {
-      return WriterCell(varId, varId); // Both IDs are the same!
+      // Check if we have an explicit pairing from old two-ID code
+      final readerId = _writerToReader[varId];
+      if (readerId != null) {
+        return WriterCell(varId, readerId);
+      }
+      // Otherwise, in pure single-ID system, they're the same
+      return WriterCell(varId, varId);
     }
     return null;
   }
@@ -203,8 +211,9 @@ class HeapV2 extends Heap {
   void addWriter(WriterCell w) {
     // Don't call super - we don't use the old writers map
     addVariable(w.writerId);
-    // Track the pairing for writerIdForReader lookups
+    // Track the pairing for lookups
     _readerToWriter[w.readerId] = w.writerId;
+    _writerToReader[w.writerId] = w.readerId;
   }
 
   /// Compatibility: addReader from old two-ID system
