@@ -46,6 +46,14 @@ class Heap {
   bool isWriterBound(int writerId) => writerValue.containsKey(writerId);
   Term? valueOfWriter(int writerId) => writerValue[writerId];
 
+  /// Single-ID compatibility: check if variable is bound
+  /// Default implementation checks writer binding
+  bool isBound(int varId) => isWriterBound(varId);
+
+  /// Single-ID compatibility: get variable value
+  /// Default implementation gets writer value
+  Term? getValue(int varId) => valueOfWriter(varId);
+
   void bindWriterConst(int writerId, Object? v) {
     writerValue[writerId] = ConstTerm(v);
   }

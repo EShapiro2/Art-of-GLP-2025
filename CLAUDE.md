@@ -548,3 +548,4 @@ What would you like me to do?
 ## Summary
 
 You are part of an AI team building GLP. Claude Chat handles architecture and code generation. You handle execution, testing, and small fixes. Always preserve working code, especially `_ClauseVar` and `_TentativeStruct`. When in doubt, consult Claude Chat for design decisions. The code at commit 7be7d83 works correctly - respect it.
+- please remember all the times that you ask for my confimation, so that we can update the claude configuration file when we are done, OK? now proceed

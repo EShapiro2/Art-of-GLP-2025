@@ -621,8 +621,8 @@ class BytecodeRunner {
             if (existingValue != null) {
               // Variable already has a value
               if (existingValue is int) {
-                // It's a reader ID from GetVariable - wrap in ReaderTerm
-                struct.args[cx.S] = ReaderTerm(existingValue);
+                // It's a variable ID from GetVariable - wrap in VarRef
+                struct.args[cx.S] = VarRef(existingValue, isReader: true);
               } else {
                 // It's already a Term - use as is
                 struct.args[cx.S] = existingValue;
@@ -954,8 +954,8 @@ class BytecodeRunner {
             final struct = cx.currentStructure as _TentativeStruct;
             final value = cx.clauseVars[op.varIndex];
             if (value is int) {
-              // It's a writer ID
-              struct.args[cx.S] = WriterTerm(value);
+              // It's a variable ID - create VarRef
+              struct.args[cx.S] = VarRef(value, isReader: false);
             } else if (value is ConstTerm || value is StructTerm) {
               // It's a ground term extracted from READ mode - use directly
               struct.args[cx.S] = value;
@@ -974,8 +974,8 @@ class BytecodeRunner {
             final struct = cx.currentStructure as StructTerm;
             final value = cx.clauseVars[op.varIndex];
             if (value is int) {
-              // It's a writer ID - add WriterTerm
-              struct.args[cx.S] = WriterTerm(value);
+              // It's a variable ID - create VarRef
+              struct.args[cx.S] = VarRef(value, isReader: false);
             } else if (value is Term) {
               // Ground term (ConstTerm or StructTerm) - use directly
               struct.args[cx.S] = value;
@@ -1053,10 +1053,10 @@ class BytecodeRunner {
             final struct = cx.currentStructure as _TentativeStruct;
             final clauseVarValue = cx.clauseVars[op.varIndex];
             if (clauseVarValue is int) {
-              // It's a writer ID - get the reader for this writer
+              // It's a variable ID - create VarRef as reader
               final wc = cx.rt.heap.writer(clauseVarValue);
               if (wc != null) {
-                struct.args[cx.S] = ReaderTerm(wc.readerId);
+                struct.args[cx.S] = VarRef(wc.readerId, isReader: true);
               }
             } else if (MigrationHelper.isReader(clauseVarValue)) {
               // Clause var is already a reader term - use it directly
@@ -1087,10 +1087,10 @@ class BytecodeRunner {
               print('  [G${cx.goalId}] UnifyReader BODY: varIndex=${op.varIndex}, clauseVarValue=$clauseVarValue, clauseVars=${cx.clauseVars}');
             }
             if (clauseVarValue is int) {
-              // It's a writer ID - get the reader for this writer
+              // It's a variable ID - create VarRef as reader
               final wc = cx.rt.heap.writer(clauseVarValue);
               if (wc != null) {
-                struct.args[cx.S] = ReaderTerm(wc.readerId);
+                struct.args[cx.S] = VarRef(wc.readerId, isReader: true);
                 if (debug) print('  [G${cx.goalId}] UnifyReader BODY: Using paired reader ${wc.readerId} for writer $clauseVarValue');
               }
             } else if (MigrationHelper.isReader(clauseVarValue)) {
@@ -1225,9 +1225,9 @@ class BytecodeRunner {
                   final wc = cx.rt.heap.writer(resolved);
                   if (wc != null) {
                     if (arg.isWriter) {
-                      termArgs.add(WriterTerm(resolved));
+                      termArgs.add(VarRef(resolved, isReader: false));
                     } else {
-                      termArgs.add(ReaderTerm(wc.readerId));
+                      termArgs.add(VarRef(wc.readerId, isReader: true));
                     }
                   } else {
                     // Shouldn't happen - create fresh variable as fallback using heap allocation
@@ -1634,7 +1634,7 @@ class BytecodeRunner {
                 final parentStruct = cx.parentStructure as StructTerm;
                 final wc = cx.rt.heap.writer(nestedWriterId);
                 if (wc != null) {
-                  parentStruct.args[cx.parentS] = ReaderTerm(wc.readerId);
+                  parentStruct.args[cx.parentS] = VarRef(wc.readerId, isReader: true);
                 }
               }
 
@@ -1714,7 +1714,7 @@ class BytecodeRunner {
           if (wc != null) {
             // Store VarRef (reader mode) in current structure at position S
             final struct = cx.currentStructure as StructTerm;
-            struct.args[cx.S] = ReaderTerm(wc.readerId);
+            struct.args[cx.S] = VarRef(wc.readerId, isReader: true);
             cx.S++; // Move to next position
 
             // Check if structure is complete (all arguments filled)
@@ -1750,7 +1750,7 @@ class BytecodeRunner {
                   final parentStruct = cx.parentStructure as StructTerm;
                   final wc = cx.rt.heap.writer(nestedWriterId);
                   if (wc != null) {
-                    parentStruct.args[cx.parentS] = ReaderTerm(wc.readerId);
+                    parentStruct.args[cx.parentS] = VarRef(wc.readerId, isReader: true);
                   }
                 }
 
@@ -1880,9 +1880,9 @@ class BytecodeRunner {
             final w = newEnv.writerBySlot[i];
             final r = newEnv.readerBySlot[i];
             if (w != null) {
-              args.add(_formatTerm(cx.rt, WriterTerm(w)));
+              args.add(_formatTerm(cx.rt, VarRef(w, isReader: false)));
             } else if (r != null) {
-              args.add(_formatTerm(cx.rt, ReaderTerm(r)));
+              args.add(_formatTerm(cx.rt, VarRef(r, isReader: true)));
             } else {
               break;
             }
@@ -1925,9 +1925,9 @@ class BytecodeRunner {
             final w = cx.argWriters[i];
             final r = cx.argReaders[i];
             if (w != null) {
-              args.add(_formatTerm(cx.rt, WriterTerm(w)));
+              args.add(_formatTerm(cx.rt, VarRef(w, isReader: false)));
             } else if (r != null) {
-              args.add(_formatTerm(cx.rt, ReaderTerm(r)));
+              args.add(_formatTerm(cx.rt, VarRef(r, isReader: true)));
             } else {
               break;
             }
