@@ -142,6 +142,7 @@ class BytecodeRunner {
   /// If no more ClauseTry, look for SuspendEnd/NoMoreClauses to check for suspension/failure
   int _findNextClauseTry(int fromPc) {
     for (var i = fromPc + 1; i < prog.ops.length; i++) {
+      if (prog.ops[i] is ClauseNext) return i; // Find ClauseNext first (unions Si to U)
       if (prog.ops[i] is ClauseTry) return i;
       if (prog.ops[i] is SuspendEnd) return i; // Jump to SUSP to check U
       if (prog.ops[i] is NoMoreClauses) return i; // Jump to NoMoreClauses to check U

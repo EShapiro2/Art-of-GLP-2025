@@ -20,14 +20,13 @@ void main() {
 
     final rt = GlpRuntime();
 
-    // Setup: Writer X and its paired reader X?
-    const wX = 1;
-    const rX = 2;
-    rt.heap.addWriter(WriterCell(wX, rX));
-    rt.heap.addReader(ReaderCell(rX));
+    // Setup: Variable X (single-ID: writer and reader use same ID)
+    const varX = 1;  // Single ID for X variable
+    rt.heap.addWriter(WriterCell(varX, varX));  // Same ID
+    rt.heap.addReader(ReaderCell(varX));
 
     print('HEAP SETUP:');
-    print('  Writer $wX (X) paired with Reader $rX (X?)');
+    print('  Variable $varX (X) - single ID for writer and reader');
     print('');
 
     // Build combined program with clause/2 and run/1
@@ -53,6 +52,7 @@ void main() {
       BC.headConst('true', 0),        // arg0 = 'true'
       BC.COMMIT(),
       BC.PROCEED(),
+      BC.CLAUSE_NEXT('run/1_clause2'),  // If clause 1 fails, try clause 2
 
       // Clause 2: run(A) :- otherwise | clause(A?, B), run(B?).
       BC.L('run/1_clause2'),
@@ -80,16 +80,15 @@ void main() {
     }
     print('');
 
-    // Build p(X) structure
-    const wPX = 10;
-    const rPX = 11;
-    rt.heap.addWriter(WriterCell(wPX, rPX));
-    rt.heap.addReader(ReaderCell(rPX));
-    rt.heap.bindWriterStruct(wPX, 'p', [VarRef(wX, isReader: false)]);
+    // Build p(X) structure (single-ID: writer and reader use same ID)
+    const varPX = 10;  // Single ID for p(X) variable
+    rt.heap.addWriter(WriterCell(varPX, varPX));  // Same ID for writer and reader
+    rt.heap.addReader(ReaderCell(varPX));
+    rt.heap.bindWriterStruct(varPX, 'p', [VarRef(varX, isReader: false)]);
 
     // Goal: run(p(X))
     const goalId = 100;
-    final env = CallEnv(readers: {0: rPX});
+    final env = CallEnv(readers: {0: varPX});
     rt.setGoalEnv(goalId, env);
     rt.gq.enqueue(GoalRef(goalId, prog.labels['run/1']!));
 
@@ -105,12 +104,12 @@ void main() {
     print('=' * 70);
     print('RESULTS');
     print('=' * 70);
-    print('X (W$wX) bound: ${rt.heap.isWriterBound(wX)}');
+    print('X (Var$varX) bound: ${rt.heap.isWriterBound(varX)}');
 
-    expect(rt.heap.isWriterBound(wX), true, reason: 'X should be bound');
+    expect(rt.heap.isWriterBound(varX), true, reason: 'X should be bound');
 
-    if (rt.heap.isWriterBound(wX)) {
-      final xValue = rt.heap.valueOfWriter(wX);
+    if (rt.heap.isWriterBound(varX)) {
+      final xValue = rt.heap.valueOfWriter(varX);
       print('X value: $xValue');
       expect(xValue, isA<ConstTerm>(), reason: 'X should be ConstTerm');
       if (xValue is ConstTerm) {
