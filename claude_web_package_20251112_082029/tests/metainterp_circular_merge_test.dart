@@ -229,7 +229,7 @@ void main() {
         if (xsValue.args.isNotEmpty) {
           final head = xsValue.args[0];
           if (head is VarRef) {
-            final wid = rt.heap.writerIdForReader(head.varId);
+            final wid = rt.heap.writerIdForReader(head.readerId);
             if (wid != null && rt.heap.isWriterBound(wid)) {
               final headValue = rt.heap.valueOfWriter(wid);
               print('    First element: $headValue');
@@ -247,7 +247,7 @@ void main() {
         if (ysValue.args.isNotEmpty) {
           final head = ysValue.args[0];
           if (head is VarRef) {
-            final wid = rt.heap.writerIdForReader(head.varId);
+            final wid = rt.heap.writerIdForReader(head.readerId);
             if (wid != null && rt.heap.isWriterBound(wid)) {
               final headValue = rt.heap.valueOfWriter(wid);
               print('    First element: $headValue');

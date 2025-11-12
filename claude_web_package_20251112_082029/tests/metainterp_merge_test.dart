@@ -216,8 +216,8 @@ void main() {
           if (head is VarRef) {
             // In single-ID system, varId is same for writer and reader
             final varId = head.varId;
-            if (rt.heap.isBound(varId)) {
-              final headValue = rt.heap.getValue(varId);
+            if (rt.heap.isVarBound(varId)) {
+              final headValue = rt.heap.valueOfVar(varId);
               print('  Head value: $headValue');
               expect(headValue, isA<ConstTerm>(), reason: 'Head should be constant');
               if (headValue is ConstTerm) {
@@ -234,8 +234,8 @@ void main() {
           print('  Tail of Zs: $tail');
           if (tail is VarRef) {
             final tailVarId = tail.varId;
-            if (rt.heap.isBound(tailVarId)) {
-              final tailValue = rt.heap.getValue(tailVarId);
+            if (rt.heap.isVarBound(tailVarId)) {
+              final tailValue = rt.heap.valueOfVar(tailVarId);
               print('  Tail value: $tailValue');
 
               // Tail should be [b] = [|](b, [])
@@ -246,8 +246,8 @@ void main() {
                   print('    Tail head: $tailHead');
                   if (tailHead is VarRef) {
                     final tailHeadVarId = tailHead.varId;
-                    if (rt.heap.isBound(tailHeadVarId)) {
-                      final tailHeadValue = rt.heap.getValue(tailHeadVarId);
+                    if (rt.heap.isVarBound(tailHeadVarId)) {
+                      final tailHeadValue = rt.heap.valueOfVar(tailHeadVarId);
                       print('    Tail head value: $tailHeadValue');
                       if (tailHeadValue is ConstTerm) {
                         expect(tailHeadValue.value, 'b', reason: 'Second element should be b');
@@ -261,8 +261,8 @@ void main() {
                   print('    Tail tail: $tailTail');
                   if (tailTail is VarRef) {
                     final tailTailVarId = tailTail.varId;
-                    if (rt.heap.isBound(tailTailVarId)) {
-                      final tailTailValue = rt.heap.getValue(tailTailVarId);
+                    if (rt.heap.isVarBound(tailTailVarId)) {
+                      final tailTailValue = rt.heap.valueOfVar(tailTailVarId);
                       print('    Tail tail value: $tailTailValue');
                       expect(tailTailValue, isA<ConstTerm>(), reason: 'End should be []');
                       if (tailTailValue is ConstTerm) {
