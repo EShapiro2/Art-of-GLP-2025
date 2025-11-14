@@ -122,6 +122,268 @@ The occurs check in readers prevents formation of circular terms.
 
 **Implication**: Once a goal becomes reducible, it stays reducible (readers may get more instantiated, but this doesn't cause failure). This is the foundation for suspension/reactivation.
 
+## Guards vs System Predicates Called via Execute
+
+**CRITICAL DISTINCTION**: GLP has two types of runtime operations with fundamentally different semantics:
+
+### Guards (Three-Valued: Success/Suspend/Fail)
+
+**Guards are pure tests** that check runtime conditions **without side effects**:
+- Syntax: `Head :- Guard1, Guard2, ... | Body.`
+- Appear after clause head, separated by `|` (guard separator)
+- Enable conditional clause selection
+- **Three-valued semantics**: success, suspend, or fail
+- **Patient**: Suspend on unbound variables rather than fail
+- Execute during HEAD/GUARDS phase (before commit)
+- Never have side effects
+
+#### Type Guards
+
+**Currently Implemented**:
+- ✅ `ground(X)` - succeeds if X contains no unbound variables, fails otherwise
+- ✅ `known(X)` - succeeds if X is bound, fails if unbound variable
+
+**Planned Type Guards**:
+- ⏳ `number(X)` - succeeds if X bound to number, suspends if X unbound, fails if X bound to non-number
+- ⏳ `integer(X)` - succeeds if X bound to integer, suspends if X unbound, fails otherwise
+- ⏳ `writer(X)` - succeeds if X is a writer variable, fails if reader or ground
+- ⏳ `reader(X)` - succeeds if X is a reader variable, fails if writer or ground
+
+#### Arithmetic Comparison Guards
+
+All arithmetic guards suspend on unbound readers and fail on type errors:
+
+**Planned Comparison Guards**:
+- ⏳ `X < Y` - less than (suspends if either unbound, fails if non-numeric)
+- ⏳ `X =< Y` - less than or equal (note: `=<` not `<=` per Prolog convention)
+- ⏳ `X > Y` - greater than
+- ⏳ `X >= Y` - greater than or equal
+- ⏳ `X =:= Y` - arithmetic equality (evaluates expressions, compares results)
+- ⏳ `X =\= Y` - arithmetic inequality (evaluates expressions, compares results)
+
+**Precedence and Associativity**:
+```
+Comparison operators: 700 (non-associative)
+  < =< > >= =:= =\=
+Additive: 500 (left-associative)
+  + -
+Multiplicative: 400 (left-associative)
+  * / mod
+Unary minus: 200 (non-associative)
+  -
+```
+
+**Example**:
+```prolog
+% Quicksort with comparison guards
+partition(Pivot, [], [], []).
+partition(Pivot, [X | Xs?], [X | Smaller], Greater) :-
+    X? < Pivot? |    % Guard: suspend if X or Pivot unbound
+    partition(Pivot?, Xs?, Smaller, Greater).
+partition(Pivot, [X | Xs?], Smaller, [X | Greater]) :-
+    X? >= Pivot? |   % Guard: suspend if X or Pivot unbound
+    partition(Pivot?, Xs?, Smaller, Greater).
+```
+
+#### Control Guards
+
+**Currently Implemented**:
+- ✅ `otherwise` - succeeds if all previous clauses for this procedure failed (not suspended)
+
+**Planned**:
+- ⏳ `true` - always succeeds (equivalent to no guard)
+
+#### Unification Guards
+
+**Planned**:
+- ⏳ `X = Y` - unification guard (suspends on unbound readers, fails if cannot unify)
+- ⏳ `X \= Y` - non-unification guard (succeeds if cannot unify, suspends on unbound readers)
+
+### CRITICAL: Ground Guards and SRSW Relaxation
+
+**Guards that guarantee groundness allow multiple reader occurrences.**
+
+When a guard ensures a variable is ground (contains no unbound variables), that variable may appear multiple times as a reader in the clause body without violating SRSW. This is because ground terms contain no writers to expose.
+
+**Guards that imply groundness**:
+- ✅ `ground(X)` - explicitly tests for groundness
+- ⏳ `integer(X)` - integers are always ground (when implemented)
+- ⏳ `number(X)` - numbers are always ground (when implemented)
+
+**Correct patterns**:
+```prolog
+% ✅ CORRECT - ground guard allows multiple X? occurrences
+broadcast(X, Y1, Y2, Y3) :- ground(X) |
+    send(X?, Y1),     % X? appears 3 times - OK!
+    send(X?, Y2),
+    send(X?, Y3).
+
+% ✅ CORRECT - integer guard implies groundness (when implemented)
+distribute(N, R1, R2) :- integer(N) |
+    execute('evaluate', [N? * 2, R1]),   % N? appears twice - OK!
+    execute('evaluate', [N? * 3, R2]).
+
+% ✅ CORRECT - ground guard with arithmetic
+compute_twice(X, Y1, Y2) :- ground(X) |
+    execute('evaluate', [X? + 1, Y1]),
+    execute('evaluate', [X? * 2, Y2]).
+```
+
+**Incorrect patterns**:
+```prolog
+% ❌ WRONG - no ground guard, SRSW violation
+bad_broadcast(X, Y1, Y2) :-
+    send(X?, Y1),    % SRSW VIOLATION!
+    send(X?, Y2).    % X? appears twice without ground guard
+
+% ❌ WRONG - known(X) does NOT imply ground
+bad_use(X, Y1, Y2) :- known(X) |
+    send(X?, Y1),    % SRSW VIOLATION!
+    send(X?, Y2).    % X could be f(Y) where Y is unbound
+```
+
+**Key Insight**: This relaxation enables broadcasting and multi-reader patterns essential for concurrent programming.
+
+**Example**:
+```prolog
+% Using implemented guards
+factorial(N, F) :- known(N), ground(N) | compute_fact(N?, F).
+
+% Using metainterpreter pattern
+run(A) :- otherwise | clause(A?, B), run(B?).
+```
+
+#### Lexer/Parser Integration
+
+**Token Definitions** (add to lexer):
+```dart
+// Comparison operators (precedence 700, non-associative)
+'<'     → LESS
+'=<'    → LESS_EQUAL     // Prolog convention, not <=
+'>'     → GREATER
+'>='    → GREATER_EQUAL
+'=:='   → ARITH_EQUAL
+'=\\='  → ARITH_NOT_EQUAL
+
+// Unification guards (precedence 700)
+'='     → UNIFY
+'\\='   → NOT_UNIFIABLE
+```
+
+**Operator Precedence Table**:
+```
+1200  :- (rule separator)
+1100  | (guard separator)
+ 700  < =< > >= =:= =\= = \= (comparison/test operators, non-associative)
+ 500  + - (additive, left-associative)
+ 400  * / mod (multiplicative, left-associative)
+ 200  - (unary minus, non-associative)
+```
+
+**Parser Rules** (extend guard production):
+```
+guard ::= 'ground' '(' term ')'
+        | 'known' '(' term ')'
+        | 'integer' '(' term ')'
+        | 'number' '(' term ')'
+        | 'writer' '(' term ')'
+        | 'reader' '(' term ')'
+        | 'otherwise'
+        | 'true'
+        | expr COMPARISON_OP expr     // X < Y, X =< Y, etc.
+        | term '=' term               // Unification guard
+        | term '\\=' term             // Non-unification guard
+
+COMPARISON_OP ::= '<' | '=<' | '>' | '>=' | '=:=' | '=\\='
+```
+
+**Precedence Handling**:
+- Use Pratt parsing for expression operators
+- Comparison operators are non-associative (reject `X < Y < Z`)
+- Guard separator `|` binds less tightly than all comparison operators
+
+### System Predicates Called via Execute (Two-Valued: Success/Abort)
+
+**System predicates provide immediate operations** called via the `execute/2` goal:
+- Syntax: `execute('predicate_name', [Arg1, Arg2, ...])`
+- Execute synchronously during BODY phase (after commit)
+- **Two-valued semantics**: SUCCESS or ABORT (never suspend)
+- **Require all inputs bound** - unbound reader in arguments causes runtime abort
+- Execute in order as part of instruction stream
+- May have side effects (I/O, file operations, etc.)
+
+**Abort Conditions**:
+- Unbound reader in arguments
+- Type mismatch (e.g., non-numeric in arithmetic)
+- Domain error (e.g., division by zero)
+- System error (e.g., file not found)
+
+**Standard System Predicates**:
+- `evaluate` - arithmetic evaluation (aborts on unbound reader or type error)
+- `write`, `nl`, `read` - terminal I/O
+- `file_read`, `file_write`, `file_exists` - file I/O
+- `file_open`, `file_close`, `file_read_handle`, `file_write_handle` - handle-based file I/O
+- `directory_list` - directory operations
+- `current_time`, `unique_id`, `variable_name` - system information
+- `copy_term`, `distribute_stream`, `copy_term_multi` - term operations
+- `link`, `load_module` - module loading
+
+**IMPORTANT**: Safe execution pattern requires guards before execute:
+
+```prolog
+% WRONG - execute without guards
+unsafe_divide(X, Y, Z) :-
+  execute('evaluate', [X? / Y?, Z]).  % ABORT if X unbound or Y = 0
+
+% CORRECT - guards ensure safety
+safe_divide(X, Y, Z) :-
+  number(X), number(Y), Y =\= 0 |     % guards ensure preconditions
+  execute('evaluate', [X? / Y?, Z]).  % safe to execute
+```
+
+### Arithmetic Expressions
+
+**Syntax**: Infix notation with standard precedence
+```
+expr ::= number | variable | -expr
+       | expr + expr | expr - expr
+       | expr * expr | expr / expr | expr mod expr
+       | (expr)
+```
+
+**Semantics**:
+- Parser transforms infix → prefix: `X + Y` becomes `+(X, Y)`
+- Evaluation via `execute('evaluate', [Expr?, Result])`
+- Three-valued: success (all operands integers), suspend (unbound reader), fail (non-integer)
+- Type system: integers only (no floats)
+- Division by zero fails
+
+**Example**:
+```prolog
+add(X, Y, Z) :- execute('evaluate', [X? + Y?, Z]).
+% Parser transforms to: execute('evaluate', [+(X?, Y?), Z])
+```
+
+### Migration Note for Existing Programs
+
+Programs using arithmetic through explicit prefix notation will continue to work unchanged:
+
+```prolog
+% Existing code (prefix notation) - STILL VALID
+add(X, Y, Z) :- execute('evaluate', [+(X?, Y?), Z]).
+compute(Z) :- execute('evaluate', [*(+(2, 3), 4), Z]).
+```
+
+The parser enhancement allows the more natural infix syntax as syntactic sugar:
+
+```prolog
+% New code (infix notation) - EQUIVALENT
+add(X, Y, Z) :- execute('evaluate', [X? + Y?, Z]).
+compute(Z) :- execute('evaluate', [(2 + 3) * 4, Z]).
+```
+
+**Both forms compile to identical bytecode**. The infix notation is purely a parser-level transformation—the runtime, bytecode instructions, and `evaluate/2` implementation remain unchanged. This is a **backward-compatible enhancement**.
+
 ## Programming Model (Section 4 examples)
 
 ### Stream Merger (canonical example)

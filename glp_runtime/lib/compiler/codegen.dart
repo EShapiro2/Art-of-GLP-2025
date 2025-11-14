@@ -174,7 +174,16 @@ class CodeGenerator {
     ctx.inBody = true;
 
     if (clause.hasBody && clause.ast.body != null) {
-      _generateBody(clause.ast.body!, clause.varTable, ctx);
+      // SPECIAL CASE: Body is just "true" - treat like a fact (no spawn)
+      if (clause.ast.body!.length == 1 &&
+          clause.ast.body![0].functor == 'true' &&
+          clause.ast.body![0].arity == 0) {
+        // Just succeed without spawning
+        ctx.emit(bc.Proceed());
+      } else {
+        // Normal body with real goals
+        _generateBody(clause.ast.body!, clause.varTable, ctx);
+      }
     } else {
       // Empty body: just proceed
       ctx.emit(bc.Proceed());
@@ -458,16 +467,17 @@ class CodeGenerator {
       }
     }
 
-    // Generate SetClauseVar for each argument
-    for (int i = 0; i < argTerms.length; i++) {
-      final term = argTerms[i];
+    // Build arguments as Terms directly - DO NOT use SetClauseVar
+    // Per spec Section 18.1: Execute takes "arguments as list of Terms"
+    final argValues = <Object?>[];
+    for (final term in argTerms) {
+      // Convert AST Term to runtime value
       final value = _termToValue(term, varTable, ctx);
-      ctx.emit(bc.SetClauseVar(i, value));
+      argValues.add(value);
     }
 
-    // Generate Execute instruction
-    final argSlots = List.generate(argTerms.length, (i) => i);
-    ctx.emit(bc.Execute(predicateName, argSlots));
+    // Generate Execute instruction with direct arguments (not slots)
+    ctx.emit(bc.Execute(predicateName, argValues));
   }
 
   Object? _termToValue(Term term, VariableTable varTable, CodeGenContext ctx) {
@@ -480,9 +490,9 @@ class CodeGenerator {
         throw CompileError('Undefined variable: ${term.name}', term.line, term.column, phase: 'codegen');
       }
       if (term.isReader) {
-        // Return reader term - but we need the writer ID to get the reader
-        // This is tricky - for now, just note this limitation
-        throw CompileError('Reader variables in execute() not yet supported: ${term.name}?', term.line, term.column, phase: 'codegen');
+        // Reader variable - return VarRef with isReader: true
+        // In single-ID system, reader and writer share the same registerIndex
+        return rt.VarRef(varInfo.registerIndex!, isReader: true);
       } else {
         // Writer variable - return VarRef with isReader: false
         return rt.VarRef(varInfo.registerIndex!, isReader: false);

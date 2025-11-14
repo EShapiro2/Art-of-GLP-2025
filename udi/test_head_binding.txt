@@ -1,0 +1,3 @@
+simple_test.glp
+test_simple(5, 3, X).
+:quit

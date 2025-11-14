@@ -44,6 +44,27 @@ class Lexer {
       case '?': return _makeToken(TokenType.QUESTION, startLine, startColumn);
       case '|': return _makeToken(TokenType.PIPE, startLine, startColumn);
 
+      // Arithmetic operators
+      case '+': return _makeToken(TokenType.PLUS, startLine, startColumn);
+      case '*': return _makeToken(TokenType.STAR, startLine, startColumn);
+      case '/': return _makeToken(TokenType.SLASH, startLine, startColumn);
+
+      // Comparison operators
+      case '<':
+        return _makeToken(TokenType.LESS, startLine, startColumn);
+      case '>':
+        if (_match('=')) {
+          final lexeme = source.substring(_current - 2, _current);
+          return Token(TokenType.GREATER_EQUAL, lexeme, startLine, startColumn);
+        }
+        return _makeToken(TokenType.GREATER, startLine, startColumn);
+      case '=':
+        if (_match('<')) {
+          final lexeme = source.substring(_current - 2, _current);
+          return Token(TokenType.LESS_EQUAL, lexeme, startLine, startColumn);
+        }
+        return _makeToken(TokenType.EQUALS, startLine, startColumn);
+
       case ':':
         if (_match('-')) {
           final lexeme = source.substring(_current - 2, _current);
@@ -62,8 +83,16 @@ class Lexer {
       case "'":
         return _string(c, startLine, startColumn);
 
+      case '-':
+        // Check if it's a negative number literal or minus operator
+        if (_isDigit(_peek())) {
+          return _number(_current - 1, startLine, startColumn);
+        } else {
+          return _makeToken(TokenType.MINUS, startLine, startColumn);
+        }
+
       default:
-        if (_isDigit(c) || (c == '-' && _isDigit(_peek()))) {
+        if (_isDigit(c)) {
           return _number(_current - 1, startLine, startColumn);
         }
         if (_isAlpha(c)) {
@@ -80,6 +109,11 @@ class Lexer {
     }
 
     final text = source.substring(start, _current);
+
+    // Check for 'mod' keyword
+    if (text == 'mod') {
+      return Token(TokenType.MOD, text, line, column);
+    }
 
     // Check for reader syntax (Variable?)
     if (_peek() == '?' && _isUpper(text[0])) {

@@ -1,0 +1,3 @@
+arithmetic_fixed.glp
+add(5, 3, X).
+:quit

@@ -274,7 +274,8 @@ void main() {
                 }
               }
             } else {
-              print('  WARNING: Tail is UNBOUND - merge incomplete!');
+              print('  ERROR: Tail is UNBOUND - merge incomplete!');
+              fail('Tail of Zs should be bound but is unbound: $tail');
             }
           }
         }

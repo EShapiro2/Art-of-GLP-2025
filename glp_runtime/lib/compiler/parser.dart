@@ -102,23 +102,50 @@ class Parser {
 
   // Parse a predicate that could be either a guard or a goal
   dynamic _parseGoalOrGuard() {
-    final functorToken = _consume(TokenType.ATOM, 'Expected predicate name');
-    final args = <Term>[];
+    // Try to parse as regular predicate first
+    if (_check(TokenType.ATOM)) {
+      final functorToken = _consume(TokenType.ATOM, 'Expected predicate name');
+      final args = <Term>[];
 
-    if (_match(TokenType.LPAREN)) {
-      if (!_check(TokenType.RPAREN)) {
-        args.add(_parseTerm());
-
-        while (_match(TokenType.COMMA)) {
+      if (_match(TokenType.LPAREN)) {
+        if (!_check(TokenType.RPAREN)) {
           args.add(_parseTerm());
+
+          while (_match(TokenType.COMMA)) {
+            args.add(_parseTerm());
+          }
         }
+
+        _consume(TokenType.RPAREN, 'Expected ")" after arguments');
       }
 
-      _consume(TokenType.RPAREN, 'Expected ")" after arguments');
+      // Return as Goal for now (will be cast to Guard if before |)
+      return Goal(functorToken.lexeme, args, functorToken.line, functorToken.column);
     }
 
-    // Return as Goal for now (will be cast to Guard if before |)
-    return Goal(functorToken.lexeme, args, functorToken.line, functorToken.column);
+    // Otherwise, try to parse as infix comparison (e.g., X < Y)
+    // Use _parsePrimary to avoid parsing < as expression operator
+    final left = _parsePrimary();
+
+    // Check for comparison operator
+    if (_check(TokenType.LESS) || _check(TokenType.GREATER) ||
+        _check(TokenType.LESS_EQUAL) || _check(TokenType.GREATER_EQUAL) ||
+        _check(TokenType.EQUALS)) {
+      final opToken = _advance();
+      final right = _parsePrimary();
+
+      // Transform infix to prefix: X < Y → <(X, Y)
+      final functor = opToken.lexeme;
+      return Goal(functor, [left, right], opToken.line, opToken.column);
+    }
+
+    // Not a valid guard or goal
+    throw CompileError(
+      'Expected predicate name or comparison',
+      _peek().line,
+      _peek().column,
+      phase: 'parser'
+    );
   }
 
   // Atom: functor(arg1, arg2, ...)
@@ -181,8 +208,35 @@ class Parser {
     return Guard(functorToken.lexeme, args, functorToken.line, functorToken.column);
   }
 
-  // Term: variable, structure, list, constant, underscore, tuple
+  // Term: variable, structure, list, constant, underscore, tuple, or expression
   Term _parseTerm() {
+    // Try to parse as expression (handles arithmetic operators)
+    return _parseExpression();
+  }
+
+  // Expression parsing with precedence (Pratt parsing)
+  // This handles arithmetic operators with proper precedence
+  Term _parseExpression([int minPrecedence = 0]) {
+    var left = _parsePrimary();
+
+    while (_isOperator(_peek()) && _precedence(_peek()) >= minPrecedence) {
+      final op = _advance();
+      final right = _parseExpression(_precedence(op) + 1);
+      left = StructTerm(_operatorFunctor(op), [left, right], op.line, op.column);
+    }
+
+    return left;
+  }
+
+  // Primary expression: variable, number, string, list, structure, parenthesized, unary minus
+  Term _parsePrimary() {
+    // Unary minus: -X becomes neg(X)
+    if (_match(TokenType.MINUS)) {
+      final minusToken = _previous();
+      final operand = _parsePrimary();
+      return StructTerm('neg', [operand], minusToken.line, minusToken.column);
+    }
+
     // Variable or Reader
     if (_check(TokenType.VARIABLE)) {
       final token = _advance();
@@ -217,21 +271,21 @@ class Parser {
       return _parseList();
     }
 
-    // Parenthesized expression - could be tuple (A, B) or single term (A)
+    // Parenthesized expression - could be tuple (A, B) or single term (A) or arithmetic (A + B)
     if (_match(TokenType.LPAREN)) {
       final startToken = _previous();
       final terms = <Term>[];
 
-      // Parse first term
-      terms.add(_parseTerm());
+      // Parse first term (which may be an expression)
+      terms.add(_parseExpression());
 
       // Check for comma - indicates tuple/conjunction
       if (_match(TokenType.COMMA)) {
         // Build right-associative tuple: (A, B, C) = ','(A, ','(B, C))
-        terms.add(_parseTerm());
+        terms.add(_parseExpression());
 
         while (_match(TokenType.COMMA)) {
-          terms.add(_parseTerm());
+          terms.add(_parseExpression());
         }
 
         _consume(TokenType.RPAREN, 'Expected ")" after tuple');
@@ -244,8 +298,8 @@ class Parser {
 
         return result;
       } else {
-        // Single parenthesized term - just return the term itself
-        _consume(TokenType.RPAREN, 'Expected ")" after term');
+        // Single parenthesized expression - return it
+        _consume(TokenType.RPAREN, 'Expected ")" after expression');
         return terms[0];
       }
     }
@@ -259,10 +313,10 @@ class Parser {
         final args = <Term>[];
 
         if (!_check(TokenType.RPAREN)) {
-          args.add(_parseTerm());
+          args.add(_parseExpression());
 
           while (_match(TokenType.COMMA)) {
-            args.add(_parseTerm());
+            args.add(_parseExpression());
           }
         }
 
@@ -281,6 +335,74 @@ class Parser {
       _peek().column,
       phase: 'parser'
     );
+  }
+
+  // Check if token is an arithmetic operator
+  bool _isOperator(Token token) {
+    return token.type == TokenType.PLUS ||
+           token.type == TokenType.MINUS ||
+           token.type == TokenType.STAR ||
+           token.type == TokenType.SLASH ||
+           token.type == TokenType.MOD ||
+           token.type == TokenType.LESS ||
+           token.type == TokenType.GREATER ||
+           token.type == TokenType.LESS_EQUAL ||
+           token.type == TokenType.GREATER_EQUAL ||
+           token.type == TokenType.EQUALS;
+  }
+
+  // Get operator precedence
+  int _precedence(Token op) {
+    switch (op.type) {
+      case TokenType.STAR:
+      case TokenType.SLASH:
+      case TokenType.MOD:
+        return 20;  // Multiplicative
+      case TokenType.PLUS:
+      case TokenType.MINUS:
+        return 10;  // Additive
+      case TokenType.LESS:
+      case TokenType.GREATER:
+      case TokenType.LESS_EQUAL:
+      case TokenType.GREATER_EQUAL:
+      case TokenType.EQUALS:
+        return 5;   // Comparison (lower than arithmetic)
+      default:
+        return 0;
+    }
+  }
+
+  // Get operator functor name for AST
+  String _operatorFunctor(Token op) {
+    switch (op.type) {
+      case TokenType.PLUS:
+        return '+';
+      case TokenType.MINUS:
+        return '-';
+      case TokenType.STAR:
+        return '*';
+      case TokenType.SLASH:
+        return '/';
+      case TokenType.MOD:
+        return 'mod';
+      case TokenType.LESS:
+        return '<';
+      case TokenType.GREATER:
+        return '>';
+      case TokenType.LESS_EQUAL:
+        return '=<';
+      case TokenType.GREATER_EQUAL:
+        return '>=';
+      case TokenType.EQUALS:
+        return '=';
+      default:
+        throw CompileError(
+          'Unknown operator: ${op.type}',
+          op.line,
+          op.column,
+          phase: 'parser'
+        );
+    }
   }
 
   // List: [], [H|T], [X], [X,Y,Z]

@@ -25,6 +25,20 @@ enum TokenType {
   IMPLIES,        // :-
   GUARD_SEP,      // | (in clause: Head :- Guards | Body)
 
+  // Arithmetic operators
+  PLUS,           // +
+  MINUS,          // - (can be unary or binary)
+  STAR,           // *
+  SLASH,          // /
+  MOD,            // mod (keyword)
+
+  // Comparison operators
+  LESS,           // <
+  GREATER,        // >
+  LESS_EQUAL,     // =< (Prolog convention, not <=)
+  GREATER_EQUAL,  // >=
+  EQUALS,         // = (unification in guards)
+
   // Special
   UNDERSCORE,     // _ (anonymous variable)
 

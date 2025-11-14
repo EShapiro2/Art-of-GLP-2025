@@ -426,6 +426,61 @@ process(X) :- otherwise    | ... handle constant case
 
 **Usage**: Complements if_writer for complete type discrimination
 
+### 11.7 Arithmetic Guards (Planned)
+
+**Implementation Status**: ⏳ Specified but not yet implemented
+
+The following guards are planned for arithmetic operations. Unlike `evaluate/2` (which is two-valued and aborts on unbound inputs), these guards are three-valued and patient.
+
+#### Planned: number(X)
+**Operation**: Test if X is bound to a number
+**Three-valued semantics**:
+1. If X bound to number (int or double) → **SUCCEED**
+2. If X is unbound reader → **SUSPEND** (add to Si)
+3. If X bound to non-number → **FAIL**
+
+#### Planned: integer(X)
+**Operation**: Test if X is bound to an integer
+**Three-valued semantics**:
+1. If X bound to integer → **SUCCEED**
+2. If X is unbound reader → **SUSPEND** (add to Si)
+3. Otherwise (unbound writer, bound to non-integer) → **FAIL**
+
+#### Planned: Comparison Guards
+**Operations**: `X < Y`, `X =< Y`, `X > Y`, `X >= Y`, `X =:= Y`, `X =\= Y`
+
+**Note**: Prolog uses `=<` (not `<=`) for "less than or equal"
+
+**Three-valued semantics**:
+1. Both X and Y bound to numbers AND condition holds → **SUCCEED**
+2. Either X or Y is unbound reader → **SUSPEND** (add unbound readers to Si)
+3. Both bound to numbers AND condition false → **FAIL**
+
+**Parser Limitation**: Currently, the parser does NOT support infix operators in guard position. Comparison guards would require:
+- Adding comparison tokens (`LT`, `GT`, `LE`, `GE`, `ARITH_EQ`, `ARITH_NE`) to lexer
+- Updating parser to recognize these operators in guard context
+- Transforming infix to prefix predicates (e.g., `X < Y` → `<(X, Y)`)
+
+**Currently Implemented Guards**:
+- ✅ `ground(X)`, `known(X)`, `otherwise`
+- ✅ `if_writer(X)`, `if_reader(X)` - type tests
+
+**Design Pattern** (future usage):
+```prolog
+% Safe arithmetic with guards protecting execute
+safe_divide(X, Y, Z) :-
+  number(X), number(Y), Y =\= 0 |   % guards ensure preconditions
+  execute('evaluate', [X? / Y?, Z]).  % two-valued execute
+
+% Conditional computation
+compute(N, Result) :-
+  integer(N), N > 0 |               % guards test and select clause
+  execute('evaluate', [N? * 2, Result]).
+compute(N, Result) :-
+  integer(N), N =< 0 |
+  execute('evaluate', [-N?, Result]).
+```
+
 ## 12. System Instructions
 
 ### 12.1 get_variable Xi, Ai
@@ -584,11 +639,52 @@ System predicates are external Dart functions callable from GLP bytecode via the
 
 ### 18.2 Implemented System Predicates
 
+**IMPORTANT**: System predicates called via execute/2 have **two-valued semantics** (success/abort), NOT three-valued (success/suspend/fail). They abort on unbound readers rather than suspending.
+
 **Arithmetic**:
-- `evaluate(Expression, Result)` - Arithmetic evaluation with operators: +, -, *, /, mod
-  - Suspends on unbound readers in expression
-  - Binds or verifies result
-  - Fails on division by zero or type errors
+- `evaluate(Expression, Result)` - Arithmetic evaluation
+
+**Syntax**: `execute('evaluate', [Expression, Result])`
+
+**Semantics**: **Two-valued** (success or abort)
+- All operands bound numbers → compute and unify result → SUCCESS
+- Any operand unbound → ABORT "Unbound reader in arithmetic"
+- Non-numeric operand → ABORT "Type error: expected number"
+- Division by zero → ABORT "Arithmetic error: division by zero"
+
+**Expression Format**: Prefix structure notation using functors:
+- `+(X, Y)` - addition
+- `-(X, Y)` - subtraction
+- `*(X, Y)` - multiplication
+- `/(X, Y)` - division
+- `mod(X, Y)` - modulo
+- `neg(X)` - unary negation
+
+**Parser Support**: The GLP parser automatically transforms infix arithmetic notation to prefix:
+- Source: `X? + Y?` → AST: `+(VarRef(X, true), VarRef(Y, true))`
+- Source: `(2 + 3) * 4` → AST: `*(+(2, 3), 4)`
+- Source: `-X?` → AST: `neg(VarRef(X, true))`
+
+**Type System**: Integers and floats supported. The lexer parses both `int` and `double` literals.
+
+**Example GLP Source**:
+```prolog
+% UNSAFE - aborts if X or Y unbound
+add(X, Y, Z) :- execute('evaluate', [X? + Y?, Z]).
+
+% SAFE - guards ensure inputs bound
+safe_add(X, Y, Z) :-
+  number(X), number(Y) |
+  execute('evaluate', [X? + Y?, Z]).
+```
+
+**Compiles to Execute instruction with**:
+```
+execute('evaluate', [
+  +(VarRef(X, isReader:true), VarRef(Y, isReader:true)),
+  VarRef(Z, isReader:false)
+])
+```
 
 **Utilities**:
 - `current_time(Time)` - Binds Time to current milliseconds since epoch
@@ -671,3 +767,340 @@ void registerStandardPredicates(SystemPredicateRegistry registry) {
 - `copy_term(Term, Copy1, Copy2)` - Multi-output deep copy
 
 These require additional runtime support for stream merging and multi-reader coordination.
+
+---
+
+## 19. Guard Predicates
+
+**Status**: SPECIFICATION COMPLETE - Implementation pending
+
+Guards provide read-only tests that determine clause selection. They appear between the HEAD and BODY phases, execute with three-valued semantics, and MUST NOT mutate heap state.
+
+### 19.1 Guard Execution Model
+
+**Phase**: Between HEAD and BODY (after HEAD unification, before COMMIT)
+**Semantics**: Three-valued (SUCCESS/FAILURE/SUSPEND)
+**Purity**: No heap mutations, no side effects, deterministic
+**Expression Evaluation**: Guards may contain arithmetic expressions that are evaluated before comparison
+
+**Execution Flow**:
+1. HEAD phase completes, σ̂w built
+2. Guards execute left-to-right
+3. Guard SUCCESS: continue to next guard or COMMIT
+4. Guard FAILURE: discard σ̂w, try next clause
+5. Guard SUSPEND: add readers to Si, discard σ̂w, try next clause
+6. All guards succeed: COMMIT applies σ̂w, enter BODY
+
+### 19.2 Arithmetic Expression Evaluation in Guards
+
+Guards like `X? + 1 < Y? * 2` require expression evaluation:
+
+1. **Recursively evaluate** arithmetic subexpressions (+, -, *, /, mod)
+2. **If all operands ground**: compute numeric result
+3. **If any operand contains unbound readers**: suspend, add readers to Si
+4. **Apply comparison** to evaluated results
+
+**Note**: This uses the same arithmetic evaluator as evaluate/2 but with three-valued semantics (can suspend).
+
+**Example**:
+```prolog
+qsort([X|Xs], Sorted) :- X? < Pivot? | partition(X?, Xs?, Less, Greater), ...
+```
+
+If Pivot is unbound: guard suspends, adds Pivot's reader to Si, tries next clause.
+
+### 19.3 Arithmetic Comparison Guards
+
+These guards compare numeric expressions with three-valued semantics.
+
+#### 19.3.1 guard_less Xi, Xj
+**Source**: `X < Y` in guard position
+**Operation**: Evaluate Xi < Xj
+**Behavior**:
+- Evaluate expressions in Xi and Xj
+- If both ground numbers: succeed if Xi < Xj, else fail
+- If unbound readers in either: suspend, add readers to Si
+- Type error (non-numeric): fail
+
+**Compilation**:
+```prolog
+p(X, Y) :- X? < Y? | body.
+```
+→
+```
+get_variable X0, A0
+get_variable X1, A1
+guard_less X0, X1
+commit
+[body instructions]
+```
+
+#### 19.3.2 guard_greater Xi, Xj
+**Source**: `X > Y`
+**Operation**: Evaluate Xi > Xj
+**Behavior**: As guard_less with inverted comparison
+
+#### 19.3.3 guard_less_equal Xi, Xj
+**Source**: `X =< Y` (Prolog syntax, not <=)
+**Operation**: Evaluate Xi =< Xj
+**Behavior**: As guard_less with inclusive comparison
+
+#### 19.3.4 guard_greater_equal Xi, Xj
+**Source**: `X >= Y`
+**Operation**: Evaluate Xi >= Xj
+**Behavior**: As guard_less with inclusive inverted comparison
+
+#### 19.3.5 guard_arith_equal Xi, Xj
+**Source**: `X =:= Y` (arithmetic equality)
+**Operation**: Evaluate Xi =:= Xj
+**Behavior**:
+- Evaluates both sides as arithmetic expressions
+- Compares numeric values for equality (IEEE 754 for floats)
+- Suspends if either side contains unbound readers
+- Type error if non-numeric: fail
+
+#### 19.3.6 guard_arith_not_equal Xi, Xj
+**Source**: `X =\= Y` (arithmetic inequality)
+**Operation**: Evaluate Xi =\= Xj
+**Behavior**: Negation of guard_arith_equal
+
+**Note**: All six comparison guards follow the same pattern: evaluate expressions, compare if ground, suspend if unbound readers present.
+
+### 19.4 Type Guards
+
+These guards test term types and properties.
+
+#### 19.4.1 guard_ground Xi
+**Source**: `ground(X)` in guard position
+**Operation**: Test if Xi is ground (contains no variables)
+**Behavior**:
+- Recursively check Xi for any unbound variables
+- Succeed if fully ground (no variables)
+- Suspend if contains unbound readers
+- Fail if contains unbound writers
+
+**Example**:
+```prolog
+safe_div(X, Y, Z?) :- ground(X), ground(Y), Y? =\= 0 | execute('evaluate', [X? / Y?, Z]).
+```
+
+#### 19.4.2 guard_known Xi
+**Source**: `known(X)` in guard position
+**Operation**: Test if Xi is not a variable
+**Behavior**:
+- Succeed if Xi is bound to any term (even if that term contains variables)
+- Suspend if Xi is unbound reader
+- Fail if Xi is unbound writer
+
+**Difference from ground**: `known([X])` succeeds even if X is unbound, `ground([X])` fails.
+
+#### 19.4.3 guard_integer Xi
+**Source**: `integer(X)` in guard position
+**Operation**: Test if Xi is an integer
+**Behavior**:
+- Succeed if Xi is bound to integer value
+- Fail if Xi is bound to non-integer (including float)
+- Suspend if Xi is unbound reader
+
+#### 19.4.4 guard_number Xi
+**Source**: `number(X)` in guard position
+**Operation**: Test if Xi is numeric (integer or real)
+**Behavior**: As guard_integer but accepts any numeric type (int or float)
+
+#### 19.4.5 guard_writer Xi
+**Source**: `writer(X)` in guard position
+**Operation**: Test if Xi is an unbound writer
+**Behavior**:
+- Succeed if Xi is unbound writer variable
+- Fail otherwise
+- **Non-monotonic**: can succeed then fail after binding
+
+#### 19.4.6 guard_reader Xi
+**Source**: `reader(X)` in guard position
+**Operation**: Test if Xi is an unbound reader
+**Behavior**:
+- Succeed if Xi is unbound reader variable
+- Fail otherwise
+- **Non-monotonic**: can succeed then fail after paired writer binds
+
+### 19.5 Control Guards
+
+#### 19.5.1 guard_true
+**Source**: `true` in guard position
+**Operation**: Always succeeds
+**Behavior**: Unconditional success (no-op guard)
+
+#### 19.5.2 guard_otherwise
+**Source**: `otherwise` in guard position
+**Operation**: Succeeds if all previous clauses failed
+**Compiler directive**: Compiler must track clause ordering
+**Behavior**: Success if reached, typically used in last clause
+
+**Example**:
+```prolog
+classify(X, pos) :- X? > 0 | true.
+classify(X, neg) :- X? < 0 | true.
+classify(X, zero) :- otherwise | true.
+```
+
+### 19.6 Unification Guards
+
+#### 19.6.1 guard_unify Xi, Xj
+**Source**: `X = Y` in guard position
+**Operation**: Attempt unification
+**Behavior**:
+- Perform tentative writer MGU (add bindings to σ̂w)
+- Success if unifiable
+- Fail if not unifiable (structure mismatch)
+- Suspend if unbound readers block unification
+
+**Example**:
+```prolog
+p(X, Y) :- X = f(Y, Z?) | body.  % Adds X=f(Y,Z) to σ̂w if succeeds
+```
+
+#### 19.6.2 guard_not_unifiable Xi, Xj
+**Source**: `X \= Y` in guard position
+**Operation**: Test non-unifiability
+**Behavior**: Negation of guard_unify (no bindings added to σ̂w)
+
+### 19.7 Lexer/Parser Integration
+
+#### Token Definitions
+
+| Source | Token Type    | Priority | Associativity | Bytecode Instruction      |
+|--------|---------------|----------|---------------|---------------------------|
+| `<`    | LESS          | 700      | non-assoc     | guard_less                |
+| `>`    | GREATER       | 700      | non-assoc     | guard_greater             |
+| `=<`   | LESS_EQ       | 700      | non-assoc     | guard_less_equal          |
+| `>=`   | GREATER_EQ    | 700      | non-assoc     | guard_greater_equal       |
+| `=:=`  | ARITH_EQ      | 700      | non-assoc     | guard_arith_equal         |
+| `=\=`  | ARITH_NE      | 700      | non-assoc     | guard_arith_not_equal     |
+| `=`    | UNIFY         | 800      | non-assoc     | guard_unify (in guards)   |
+| `\=`   | NOT_UNIFY     | 800      | non-assoc     | guard_not_unifiable       |
+
+#### Operator Precedence (from lowest to highest)
+
+1. **Guard separator**: `|` - 1100
+2. **Conjunction**: `,` - 1000
+3. **Unification**: `=`, `\=` - 800
+4. **Comparison**: `<`, `>`, `=<`, `>=`, `=:=`, `=\=` - 700
+5. **Addition**: `+`, `-` - 500
+6. **Multiplication**: `*`, `/`, `mod` - 400
+7. **Primary**: variables, numbers, parentheses - highest
+
+#### Lexer Rules
+
+```
+// IMPORTANT: Check multi-character operators FIRST
+
+// Two-character operators
+'=<'   → LESS_EQ        // Prolog style (not <=)
+'>='   → GREATER_EQ
+'\\='  → NOT_UNIFY      // Backslash + equals
+
+// Three-character operators
+'=:='  → ARITH_EQ       // Arithmetic equality
+'=\\=' → ARITH_NE       // Arithmetic inequality (backslash)
+
+// Single-character operators (check AFTER multi-char)
+'<'    → LESS
+'>'    → GREATER
+'='    → UNIFY
+```
+
+**Ordering Critical**: Lexer must check `=<` before `<`, `=:=` before `=`, etc.
+
+### 19.8 Guards vs. System Predicates
+
+**Key Distinction**: Guards are three-valued built-in tests; system predicates are two-valued external functions.
+
+| Aspect               | Guards                                  | System Predicates                |
+|----------------------|-----------------------------------------|----------------------------------|
+| **Examples**         | `guard_less`, `guard_ground`            | `evaluate/2`, `write/1`          |
+| **Semantics**        | Three-valued (SUCCESS/FAIL/SUSPEND)     | Two-valued (SUCCESS/ABORT)       |
+| **Phase**            | Before COMMIT (guards phase)            | After COMMIT (body phase)        |
+| **Heap Access**      | Read-only                               | Read/Write                       |
+| **σ̂w Access**        | Read-only                               | N/A (already committed)          |
+| **Side Effects**     | Forbidden (pure)                        | Allowed (I/O, arithmetic)        |
+| **Purpose**          | Clause selection                        | Computation/IO                   |
+| **Suspension**       | On unbound readers (three-valued)       | Abort on unbound readers         |
+| **Instruction Type** | Built-in bytecode instructions          | External function calls          |
+
+### 19.9 Compilation Example
+
+**Source**:
+```prolog
+qsort([Pivot|Rest], Sorted) :-
+    Pivot? < 100, known(Rest) |
+    partition(Pivot?, Rest?, Less, Greater),
+    qsort(Less?, SortedLess),
+    qsort(Greater?, SortedGreater),
+    append(SortedLess?, [Pivot|SortedGreater?]?, Sorted).
+```
+
+**Compiled Bytecode**:
+```
+clause_try qsort/2, 0       % Start first clause
+head_cons A0                % Match [Pivot|Rest]
+get_variable X0, A0_head    % Pivot (from list head)
+get_variable X1, A0_tail    % Rest (from list tail)
+get_variable X2, A1         % Sorted
+
+% Guards (before COMMIT)
+guard_less X0, 100          % Pivot? < 100 (suspends if Pivot unbound)
+guard_known X1              % known(Rest) (suspends if Rest unbound)
+
+commit                      % Apply σ̂w, enter BODY
+
+% Body instructions
+put_reader X0               % Pivot? for partition arg
+put_reader X1               % Rest? for partition arg
+put_writer X3               % Less
+put_writer X4               % Greater
+spawn partition/4
+
+put_reader X3               % Less? for recursive qsort
+put_writer X5               % SortedLess
+spawn qsort/2
+
+put_reader X4               % Greater? for recursive qsort
+put_writer X6               % SortedGreater
+spawn qsort/2
+
+put_reader X5               % SortedLess?
+put_structure [Pivot|...]   % Build [Pivot|SortedGreater?]
+put_writer X2               % Sorted
+spawn append/3
+
+proceed
+```
+
+### 19.10 Implementation Requirements
+
+Guards must satisfy these requirements:
+
+1. **Purity**: No heap mutations, no side effects, deterministic
+2. **Expression Evaluation**: Handle mixed int/real arithmetic per IEEE 754
+3. **Suspension Tracking**: Properly track all unbound readers encountered
+4. **Guard Failure**: Discard σ̂w and try next clause
+5. **Left-to-Right**: Guards evaluate in order, short-circuit on failure/suspension
+6. **Type Coercion**: Follow Prolog conventions (integer + real = real)
+7. **Canonical Ordering**: For term comparison: numbers < atoms < strings < lists < structures
+
+### 19.11 Implementation Status
+
+**Status**: SPECIFICATION COMPLETE
+
+**Implementation Phases**:
+1. ✅ Specification written (this section)
+2. ⏳ Lexer tokens (comparison operators)
+3. ⏳ Parser support (guard position, precedence)
+4. ⏳ Bytecode instructions (guard_less, guard_greater, etc.)
+5. ⏳ Runtime implementation (expression evaluation, three-valued logic)
+6. ⏳ Testing (unit tests, integration tests)
+
+**See Also**:
+- Section 11: Existing guard instructions (ground, known, if_writer, if_reader)
+- Section 18: System predicates (execute mechanism)
+- parser-spec.md: Parser implementation details

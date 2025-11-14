@@ -70,6 +70,7 @@ void registerStandardPredicates(SystemPredicateRegistry registry) {
 ///   evaluate(+(2, *(3, 4)), R)  % R = 14
 ///   evaluate(+(X?, 5), R)       % Suspend on X
 SystemResult evaluatePredicate(GlpRuntime rt, SystemCall call) {
+  print('[EVALUATE] ========== CALLED ==========');
   if (call.args.length != 2) {
     print('[ERROR] evaluate/2 requires exactly 2 arguments, got ${call.args.length}');
     return SystemResult.failure;
@@ -77,6 +78,8 @@ SystemResult evaluatePredicate(GlpRuntime rt, SystemCall call) {
 
   final exprTerm = call.args[0];
   final resultTerm = call.args[1];
+  print('[EVALUATE] ExprTerm: $exprTerm (${exprTerm.runtimeType})');
+  print('[EVALUATE] ResultTerm: $resultTerm (${resultTerm.runtimeType})');
 
   // Step 1: Check if expression is ground (no unbound variables)
   final unboundReaders = <int>{};
@@ -130,16 +133,21 @@ SystemResult evaluatePredicate(GlpRuntime rt, SystemCall call) {
   }
 
   // Step 2: Expression is ground - evaluate it
+  print('[EVALUATE] Expression is ground, evaluating...');
   final result = _evaluate(rt, exprTerm);
+  print('[EVALUATE] Computed result: $result (${result.runtimeType})');
   if (result == null) {
     // Evaluation failed (e.g., type error, division by zero)
+    print('[EVALUATE] Evaluation failed - returning failure');
     return SystemResult.failure;
   }
 
   // Step 3: Bind or verify result variable
+  print('[EVALUATE] Binding/verifying result...');
   if (resultTerm is VarRef && !resultTerm.isReader) {
     // ResultVar is a writer - bind it to the result
     final wid = resultTerm.varId;
+    print('[EVALUATE] ResultTerm is writer with ID: $wid');
     if (rt.heap.isWriterBound(wid)) {
       // Writer already bound - verify it matches the result
       final existingValue = rt.heap.getValue(wid);
@@ -159,16 +167,27 @@ SystemResult evaluatePredicate(GlpRuntime rt, SystemCall call) {
     } else {
       // Writer is unbound - bind it to the result
       // System predicates in BODY phase can directly mutate the heap
+      print('[EVALUATE] Writer $wid is unbound, binding to $result...');
       if (result is num || result is String || result is bool || result == null) {
         rt.heap.bindWriterConst(wid, result);
+        print('[EVALUATE] Called bindWriterConst($wid, $result)');
       } else if (result is Term) {
         // Result is already a term - bind it
         rt.heap.bindVariable(wid, result);
+        print('[EVALUATE] Called bindVariable($wid, $result)');
       } else {
         // Unknown result type
         return SystemResult.failure;
       }
     }
+    print('[EVALUATE] Checking if binding persisted...');
+    final bound = rt.heap.isWriterBound(wid);
+    print('[EVALUATE] Writer $wid bound after call: $bound');
+    if (bound) {
+      final value = rt.heap.getValue(wid);
+      print('[EVALUATE] Writer $wid value: $value');
+    }
+    print('[EVALUATE] Returning SUCCESS');
     return SystemResult.success;
   } else if (resultTerm is VarRef && resultTerm.isReader) {
     // ResultVar is a reader - verify its writer's value matches the result
@@ -286,6 +305,57 @@ Object? _evaluate(GlpRuntime rt, Object? term) {
               return null; // Division by zero
             }
             return left % right;
+          }
+        }
+        break;
+
+      case '<':
+        if (args.length == 2) {
+          final left = _evaluate(rt, args[0]);
+          final right = _evaluate(rt, args[1]);
+          if (left is num && right is num) {
+            return left < right;
+          }
+        }
+        break;
+
+      case '>':
+        if (args.length == 2) {
+          final left = _evaluate(rt, args[0]);
+          final right = _evaluate(rt, args[1]);
+          if (left is num && right is num) {
+            return left > right;
+          }
+        }
+        break;
+
+      case '=<':
+        if (args.length == 2) {
+          final left = _evaluate(rt, args[0]);
+          final right = _evaluate(rt, args[1]);
+          if (left is num && right is num) {
+            return left <= right;
+          }
+        }
+        break;
+
+      case '>=':
+        if (args.length == 2) {
+          final left = _evaluate(rt, args[0]);
+          final right = _evaluate(rt, args[1]);
+          if (left is num && right is num) {
+            return left >= right;
+          }
+        }
+        break;
+
+      case '=':
+        // Equality comparison for evaluate
+        if (args.length == 2) {
+          final left = _evaluate(rt, args[0]);
+          final right = _evaluate(rt, args[1]);
+          if (left is num && right is num) {
+            return left == right;
           }
         }
         break;

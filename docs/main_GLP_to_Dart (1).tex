@@ -256,6 +256,39 @@ The SRSW requirement is realized by two complementary concepts:
 This SRSW syntactic restriction excludes programs like the equality definition $X=X$ as it has two occurrences of the writer $X$. At the same time it
 eliminates the need for distributed atomic unification~\cite{kleinman1990distributed}—replacing it with efficient point-to-point communication of a single assignment from the single occurrence of a writer to the single occurrence of its paired reader.
 
+\mypara{Arithmetic Expressions}
+GLP provides arithmetic expressions for numeric computation. Arithmetic expressions are terms that evaluate to integer values using the \verb|evaluate/2| system predicate:
+
+\textbf{Syntax}: Arithmetic expressions support standard infix notation with precedence:
+\begin{verbatim}
+expr ::= number
+       | variable
+       | '-' expr                % unary negation
+       | expr '+' expr           % addition
+       | expr '-' expr           % subtraction
+       | expr '*' expr           % multiplication
+       | expr '/' expr           % integer division
+       | expr 'mod' expr         % modulo
+       | '(' expr ')'            % grouping
+\end{verbatim}
+
+\textbf{Operator Precedence} (highest to lowest):
+\begin{enumerate}
+\item Parentheses: \verb|()|
+\item Multiplicative: \verb|*|, \verb|/|, \verb|mod|
+\item Additive: \verb|+|, \verb|-|
+\end{enumerate}
+All operators are left-associative. Unary negation \verb|-X| uses functor \verb|neg| to avoid ambiguity with binary subtraction.
+
+\textbf{Semantics}: Arithmetic expressions are \emph{not guards}—they have side effects via suspension. The parser transforms infix notation to prefix structure notation: \verb|X + Y| becomes \verb|+(X, Y)|. Evaluation uses the system predicate \verb|evaluate(Expr?, Result)| which follows three-valued semantics: success (all operands bound integers), suspend (unbound reader operand), or fail (non-integer operand).
+
+\textbf{Example}:
+\begin{verbatim}
+add(X, Y, Z) :- execute('evaluate', [X? + Y?, Z]).
+% Query: add(3, 4, Z) results in Z = 7
+% Parser transforms: X? + Y? → +(VarRef(X,true), VarRef(Y,true))
+\end{verbatim}
+
 \subsection{GLP Operational semantics}
 
 \begin{definition}[Writer and Reader Substitution, Reader Counterpart, Suspension Set, Writer MGU]\label{definition:glp-unification}
@@ -314,8 +347,20 @@ The monotonicity of GLP goal/clause reduction (Proposition~\ref{proposition:glp-
 
 
 \mypara{Guards and system predicates}
-GLP also includes \emph{guards}—predicates that test runtime conditions (e.g., \verb|ground(X)| tests if \verb|X| contains no variables) without modifying state, appearing after clause heads separated by \verb=|=—and \emph{system predicates} that provide access to the GLP runtime state and operating system and hardware capabilities (variable state and name, arithmetic evaluation, timestamps). Guards enable conditional clause selection. The \verb|ground(X)| guard allows relaxing the single-reader constraint for \verb|X?| for the clause it occurs in, as having multiple occurrences of \verb|X?| instantiated to a ground term does not violate the fundamental single-writer requirement.
-Their specification appears in Appendix~\ref{appendix:guards-system}.
+GLP distinguishes between \emph{guards} (three-valued) and \emph{system predicates called via execute} (two-valued):
+
+\textbf{Guards} are pure tests with \emph{three-valued semantics} (success/suspend/fail). They appear after clause heads separated by \verb=|= and enable conditional clause selection. Guards are \emph{patient}—they suspend on unbound variables rather than fail. Currently implemented: \verb|ground(X)| tests if \verb|X| contains no unbound variables; \verb|known(X)| tests if \verb|X| is bound; \verb|otherwise| succeeds if previous clauses failed (not suspended). Planned: type guards (\verb|number(X)|, \verb|integer(X)|, \verb|writer(X)|, \verb|reader(X)|), comparison guards (\verb|X < Y|, \verb|X =< Y|, \verb|X > Y|, \verb|X >= Y|, \verb|X =:= Y|, \verb|X =\= Y|), unification guards (\verb|X = Y|, \verb|X \= Y|), and control guards (\verb|true|). The \verb|ground(X)| guard allows relaxing the single-reader constraint for \verb|X?| in that clause, as multiple occurrences of a ground term do not violate single-writer.
+
+\textbf{System predicates called via execute} have \emph{two-valued semantics} (success/abort). They execute synchronously during the BODY phase via \verb|execute('predicate_name', [Args])|. Unlike guards, they \emph{require all inputs bound}—unbound readers cause runtime abort. Examples: \verb|write(X)| for output, \verb|evaluate(Expr?, Result)| for arithmetic evaluation (aborts on unbound operands), \verb|current_time(T)| for timestamps, \verb|file_read(Path, Contents)| for file I/O.
+
+\textbf{Safe Pattern}: Use guards to ensure preconditions before execute:
+\begin{verbatim}
+safe_divide(X, Y, Z) :-
+  number(X), number(Y), Y =\= 0 |
+  execute('evaluate', [X? / Y?, Z]).
+\end{verbatim}
+
+Their full specification appears in Appendix~\ref{appendix:guards-system}.
 
 In~\cite{shapiro2025glp} it was shown that, like LP, GLP computations are deductions, but, unlike LP, a goal that can be reduced in a configuration can still be reduced in any subsequent configuration of the computation and additional safety properties.
 
@@ -827,34 +872,142 @@ This mechanism addresses three vulnerabilities in conventional social networks. 
 Guards and system predicates extend GLP programs with access to the GLP runtime state, operating system and hardware capabilities.
 
 \mypara{Guard predicates}
-Guards provide read-only access to the runtime state of GLP computation. A guard appears after the clause head, separated by \verb=|=, and must be satisfied for the clause to be selected. The following guards are fundamental for concurrent GLP programming:
+Guards provide read-only access to the runtime state of GLP computation with \emph{three-valued semantics} (success/suspend/fail). A guard appears after the clause head, separated by \verb=|=, and must be satisfied for the clause to be selected. Guards are \emph{patient}—they suspend on unbound variables rather than fail.
 
+\textbf{Currently Implemented Guards}:
 \begin{itemize}
-\item \verb|ground(X)| succeeds if \verb|X| contains no variables. With this guard, the clause body may contain multiple occurrences of \verb|X?| without violating the single-writer requirement, enabling safe replication of ground terms to multiple concurrent consumers.
-\item \verb|known(X)| succeeds if \verb|X| is not a variable, though it may not be ground.
-\item \verb|writer(X)| and \verb|reader(X)| succeed if  \verb|X| is an uninstantiated writer or reader respectively.  Note that \verb|reader(X)| is non-monotonic.
-\item \verb|otherwise| succeeds if all previous clauses for this procedure failed.
-\item \verb|X=Y| succeed if $X$ and $Y$ are identical
-\item \verb|X=\=Y| succeeds if the unification of $X$ and $Y$ fails. 
+\item \verb|ground(X)| succeeds if \verb|X| contains no unbound variables, suspends on unbound readers. With this guard, the clause body may contain multiple occurrences of \verb|X?| without violating the single-writer requirement, enabling safe replication of ground terms to multiple concurrent consumers.
+\item \verb|known(X)| succeeds if \verb|X| is not a variable (though it may not be ground), suspends on unbound readers.
+\item \verb|otherwise| succeeds if all previous clauses for this procedure failed (not suspended).
 \end{itemize}
+
+\textbf{Planned Type Guards}:
+\begin{itemize}
+\item \verb|number(X)| succeeds if \verb|X| bound to number, suspends if unbound, fails if bound to non-number
+\item \verb|integer(X)| succeeds if \verb|X| bound to integer, suspends if unbound, fails otherwise
+\item \verb|writer(X)| succeeds if \verb|X| is a writer variable, fails if reader or ground
+\item \verb|reader(X)| succeeds if \verb|X| is a reader variable, fails if writer or ground
+\end{itemize}
+
+\textbf{Planned Arithmetic Comparison Guards} (require parser extension for infix syntax):
+\begin{itemize}
+\item \verb|X < Y| less than (suspends if either unbound, fails on type error)
+\item \verb|X =< Y| less than or equal (note: \verb|=<| not \verb|<=| per Prolog convention)
+\item \verb|X > Y| greater than
+\item \verb|X >= Y| greater than or equal
+\item \verb|X =:= Y| arithmetic equality (evaluates expressions, compares results)
+\item \verb|X =\= Y| arithmetic inequality (evaluates expressions, compares results)
+\end{itemize}
+
+\textbf{Planned Unification Guards}:
+\begin{itemize}
+\item \verb|X = Y| unification guard (suspends on unbound readers, fails if cannot unify)
+\item \verb|X \= Y| non-unification guard (succeeds if cannot unify, suspends on unbound readers)
+\end{itemize}
+
+\textbf{Planned Control Guards}:
+\begin{itemize}
+\item \verb|true| always succeeds (equivalent to no guard)
+\end{itemize}
+
+\textbf{Guard Syntax and Semantics}:
+
+Comparison guards use infix syntax in source code and are transformed to prefix by the parser:
+\begin{itemize}
+\item Source: \verb|X < Y| $\rightarrow$ AST: \verb|Atom('<', [X, Y])| $\rightarrow$ Bytecode: \verb|guard_less|
+\item Source: \verb|X =< Y| $\rightarrow$ AST: \verb|Atom('=<', [X, Y])| $\rightarrow$ Bytecode: \verb|guard_less_equal|
+\item Source: \verb|X > Y| $\rightarrow$ AST: \verb|Atom('>', [X, Y])| $\rightarrow$ Bytecode: \verb|guard_greater|
+\item Source: \verb|X >= Y| $\rightarrow$ AST: \verb|Atom('>=', [X, Y])| $\rightarrow$ Bytecode: \verb|guard_greater_equal|
+\item Source: \verb|X =:= Y| $\rightarrow$ AST: \verb|Atom('=:=', [X, Y])| $\rightarrow$ Bytecode: \verb|guard_arith_equal|
+\item Source: \verb|X =\= Y| $\rightarrow$ AST: \verb|Atom('=\\=', [X, Y])| $\rightarrow$ Bytecode: \verb|guard_arith_not_equal|
+\end{itemize}
+
+\textbf{Operator Precedence}:
+\begin{verbatim}
+1200  :- (rule separator)
+1100  | (guard separator)
+ 700  < =< > >= =:= =\= = \= (comparison, non-associative)
+ 500  + - (additive, left-associative)
+ 400  * / mod (multiplicative, left-associative)
+ 200  - (unary minus, non-associative)
+\end{verbatim}
+
+\textbf{Implementation Requirements}: Lexer must recognize multi-character operators (\verb|=<|, \verb|>=|, \verb|=:=|, \verb|=\=|, \verb|\=|). Parser must handle infix syntax in guard position and transform to prefix. Comparison operators are non-associative (expressions like \verb|X < Y < Z| are rejected).
+
+\textbf{Example with Comparison Guards}:
+\begin{verbatim}
+% Quicksort with comparison guards
+partition(Pivot, [], [], []).
+partition(Pivot, [X | Xs?], [X | Smaller], Greater) :-
+    X? < Pivot? |
+    partition(Pivot?, Xs?, Smaller, Greater).
+partition(Pivot, [X | Xs?], Smaller, [X | Greater]) :-
+    X? >= Pivot? |
+    partition(Pivot?, Xs?, Smaller, Greater).
+\end{verbatim}
 
 \mypara{Defined guard predicates}
 To support abstract data types and cleaner code organization, GLP provides for user-defined guards, defined unit clauses \verb|p(T1,...,Tn)|.  The call \verb|p(S1,...,Sn)| in the guard is folded to the equalities \verb|T1=S1,...,Tn=Sn| for each unit goal. This mechanism is demonstrated in the channel abstractions below.
 
-\mypara{System predicates}
-System predicates execute atomically with goal/clause reduction and provide access to underlying runtime services:
+\mypara{System predicates called via execute}
+System predicates execute atomically with goal/clause reduction via \verb|execute('predicate_name', [Args])| and have \emph{two-valued semantics} (success/abort). Unlike guards, they \emph{require all inputs bound}—unbound readers cause runtime abort.
+
+\textbf{Standard System Predicates}:
 \begin{itemize}
-\item \verb|evaluate(Expr?,Result)| evaluates ground arithmetic expressions.
-\item \verb|current_time(T)| provides system timestamps for temporal coordination.
-\item \verb|variable_name(X,Name)| returns a unique identifier for variable \verb|X| and its pair.
+\item \verb|evaluate(Expr?,Result)| evaluates arithmetic expressions (aborts on unbound operands)
+\item \verb|write(X)|, \verb|nl()|, \verb|read(X)| for terminal I/O
+\item \verb|file_read(Path,Contents)|, \verb|file_write(Path,Contents)| for file I/O
+\item \verb|current_time(T)| provides system timestamps for temporal coordination
+\item \verb|variable_name(X,Name)| returns a unique identifier for variable \verb|X| and its pair
+\item \verb|copy_term(X,Y)|, \verb|distribute_stream(X,Y)| for term operations
+\end{itemize}
+
+\mypara{Arithmetic Evaluation System Predicate}
+The \verb|evaluate/2| system predicate provides arithmetic computation:
+
+\textbf{Syntax}: \verb|execute('evaluate', [Expression, Result])|
+
+\textbf{Expression Format}: Prefix structure notation with functors \verb|+|, \verb|-|, \verb|*|, \verb|/|, \verb|mod|, and \verb|neg| for unary negation. The parser automatically transforms infix expressions to this format.
+
+\textbf{Two-valued semantics} (success/abort):
+\begin{enumerate}
+\item \textbf{Success}: All operands bound to numbers → compute result, unify with Result
+\item \textbf{Abort}: Any operand unbound OR non-numeric OR division by zero → runtime abort
+\end{enumerate}
+
+\textbf{Type System}: Integers and floats supported. The lexer parses both \verb|int| and \verb|double| literals. Division by zero aborts.
+
+\textbf{Example GLP Source}:
+\begin{verbatim}
+add(X, Y, Z) :- execute('evaluate', [X? + Y?, Z]).
+compute(Z) :- execute('evaluate', [(2 + 3) * 4, Z]).
+\end{verbatim}
+
+\textbf{Compiles to bytecode}:
+\begin{verbatim}
+execute('evaluate', [+(VarRef(X, isReader:true),
+                       VarRef(Y, isReader:true)),
+                     VarRef(Z, isReader:false)])
+\end{verbatim}
+
+\textbf{Parser Transformation Rules}:
+\begin{itemize}
+\item \verb|X + Y| → \verb|+(X, Y)|
+\item \verb|X - Y| → \verb|-(X, Y)|
+\item \verb|X * Y| → \verb|*(X, Y)|
+\item \verb|X / Y| → \verb|/(X, Y)|
+\item \verb|X mod Y| → \verb|mod(X, Y)|
+\item \verb|-X| → \verb|neg(X)|  (unary negation)
+\item \verb|X + Y * Z| → \verb|+(X, *(Y, Z))|  (precedence)
+\item \verb|(X + Y) * Z| → \verb|*(+(X, Y), Z)|  (parentheses)
 \end{itemize}
 
 \mypara{Arithmetic evaluation in assignments}
-Arithmetic expressions are defined by the following clause:
+Arithmetic expressions can be used in assignment notation:
 \begin{verbatim}
 X? := E :- ground(E) | evaluate(E?,X).
 \end{verbatim}
-Ensuring the expression is ground before calling the system evaluator, maintaining program safety whilst providing convenient notation for mathematical computations.
+This ensures the expression is ground before calling the evaluator, maintaining program safety whilst providing convenient notation for mathematical computations.
 
 \section{Additional Programming Techniques}\label{appendix:additional-techniques}
 

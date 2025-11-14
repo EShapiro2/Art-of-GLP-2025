@@ -12,6 +12,13 @@ enum RunResult { terminated, suspended, yielded, outOfReductions }
 /// Unification mode for structure traversal (WAM-style)
 enum UnifyMode { read, write }
 
+/// Result of guard evaluation
+enum GuardResult {
+  success,  // Guard succeeded, continue with clause
+  failure,  // Guard failed, try next clause
+  suspend,  // Would suspend, but we handle this before evaluation
+}
+
 typedef LabelName = String;
 
 class BytecodeProgram {
@@ -390,10 +397,10 @@ class BytecodeRunner {
         // For clause variables, get the value from clauseVars
         if (isClauseVar) {
           final clauseVarValue = cx.clauseVars[op.argSlot];
-          // print('DEBUG: HeadStructure checking clauseVars[${op.argSlot}]: ${clauseVarValue?.runtimeType} = $clauseVarValue');
+          print('DEBUG MetaInterp: HeadStructure checking clauseVars[${op.argSlot}]: ${clauseVarValue?.runtimeType} = $clauseVarValue');
           if (clauseVarValue == null) {
             // Unbound clause variable - soft fail
-            if (debug && cx.goalId >= 4000) print('  HeadStructure: clause var ${op.argSlot} is unbound, failing');
+            print('DEBUG MetaInterp: clauseVar ${op.argSlot} is NULL, failing');
             _softFailToNextClause(cx, pc);
             pc = _findNextClauseTry(pc);
             continue;
@@ -428,9 +435,10 @@ class BytecodeRunner {
               pc++; continue;
             }
           } else if (clauseVarValue is VarRef && !clauseVarValue.isReader) {
-            // Check if this writer is bound to a structure
+            // VarRef writer - check if bound, or create tentative structure
             final wid = clauseVarValue.varId;
             if (cx.rt.heap.isWriterBound(wid)) {
+              // Writer is bound - check if it matches
               final value = cx.rt.heap.valueOfWriter(wid);
               if (value is StructTerm && value.functor == op.functor && value.args.length == op.arity) {
                 if (debug && cx.goalId >= 4000) print('  HeadStructure: clause var ${op.argSlot} = W$wid = $value, MATCH!');
@@ -439,22 +447,75 @@ class BytecodeRunner {
                 cx.S = 0;
                 pc++; continue;
               }
+              // Bound but doesn't match
+              if (debug && cx.goalId >= 4000) print('  HeadStructure: clause var ${op.argSlot} = W$wid = $value, NO MATCH');
+              _softFailToNextClause(cx, pc);
+              pc = _findNextClauseTry(pc);
+              continue;
+            } else {
+              // FIX: Unbound writer - create tentative structure in σ̂w
+              if (debug && cx.goalId >= 4000) print('  HeadStructure: clause var ${op.argSlot} = W$wid (unbound), creating tentative structure');
+              final struct = _TentativeStruct(op.functor, op.arity, List.filled(op.arity, null));
+              cx.sigmaHat[wid] = struct;
+              cx.currentStructure = struct;
+              cx.mode = UnifyMode.write;
+              cx.S = 0;
+              pc++; continue;
             }
-            // No match
-            if (debug && cx.goalId >= 4000) print('  HeadStructure: clause var ${op.argSlot} = W$wid, NO MATCH');
-            _softFailToNextClause(cx, pc);
-            pc = _findNextClauseTry(pc);
-            continue;
+          } else if (clauseVarValue is VarRef && clauseVarValue.isReader) {
+            // VarRef reader - dereference and check if bound to matching structure
+            final rid = clauseVarValue.varId;
+            print('DEBUG SUSPEND: HeadStructure checking VarRef reader R$rid');
+            final wid = cx.rt.heap.writerIdForReader(rid);
+            print('DEBUG SUSPEND: writerIdForReader(R$rid) = $wid');
+            if (wid == null || !cx.rt.heap.isWriterBound(wid)) {
+              // Unbound reader - add to Si and soft fail
+              print('DEBUG SUSPEND: Reader R$rid is UNBOUND! Adding to Si');
+              print('  wid = $wid');
+              if (wid != null) {
+                print('  isWriterBound($wid) = ${cx.rt.heap.isWriterBound(wid)}');
+              }
+              cx.si.add(rid);
+              _softFailToNextClause(cx, pc);
+              pc = _findNextClauseTry(pc);
+              continue;
+            }
+            print('DEBUG SUSPEND: Reader R$rid is bound to W$wid, dereferencing...');
+            // Bound reader - dereference and check structure
+            final rawValue = cx.rt.heap.valueOfWriter(wid);
+            if (rawValue == null) {
+              if (debug && cx.goalId >= 4000) print('  HeadStructure: reader $rid -> writer $wid has null value, failing');
+              _softFailToNextClause(cx, pc);
+              pc = _findNextClauseTry(pc);
+              continue;
+            }
+            final value = cx.rt.heap.dereference(rawValue);
+            if (debug && cx.goalId >= 4000) print('  HeadStructure: reader $rid -> writer $wid dereferenced = $value');
+            if (value is StructTerm && value.functor == op.functor && value.args.length == op.arity) {
+              // Match!
+              if (debug && cx.goalId >= 4000) print('  HeadStructure: MATCH! Entering READ mode');
+              cx.currentStructure = value;
+              cx.mode = UnifyMode.read;
+              cx.S = 0;
+              pc++; continue;
+            } else {
+              // No match
+              if (debug && cx.goalId >= 4000) print('  HeadStructure: NO MATCH, failing');
+              _softFailToNextClause(cx, pc);
+              pc = _findNextClauseTry(pc);
+              continue;
+            }
           } else if (clauseVarValue is StructTerm) {
             // Direct structure value (from dereferencing a bound reader)
+            print('DEBUG MetaInterp: StructTerm path - functor="${clauseVarValue.functor}" vs op.functor="${op.functor}"');
             if (clauseVarValue.functor == op.functor && clauseVarValue.args.length == op.arity) {
-              if (debug && cx.goalId >= 4000) print('  HeadStructure: clause var ${op.argSlot} = $clauseVarValue, MATCH!');
+              print('DEBUG MetaInterp: MATCH! Entering READ mode');
               cx.currentStructure = clauseVarValue;
               cx.mode = UnifyMode.read;
               cx.S = 0;
               pc++; continue;
             } else {
-              if (debug && cx.goalId >= 4000) print('  HeadStructure: clause var ${op.argSlot} = $clauseVarValue, NO MATCH');
+              print('DEBUG MetaInterp: NO MATCH - failing to next clause');
               _softFailToNextClause(cx, pc);
               pc = _findNextClauseTry(pc);
               continue;
@@ -524,10 +585,19 @@ class BytecodeRunner {
             continue;
           }
 
-          // Bound reader - get value and check if it's a matching structure
-          final value = cx.rt.heap.valueOfWriter(wid);
+          // Bound reader - dereference fully and check if it's a matching structure
+          final rawValue = cx.rt.heap.valueOfWriter(wid);
+          if (rawValue == null) {
+            // Null value - should not happen for bound writer
+            if (debug && (cx.goalId >= 4000 || cx.goalId == 100)) print('  HeadStructure: writer $wid has null value, failing');
+            _softFailToNextClause(cx, pc);
+            pc = _findNextClauseTry(pc);
+            continue;
+          }
+          // Dereference recursively in case value is a VarRef chain
+          final value = cx.rt.heap.dereference(rawValue);
           // print('DEBUG: HeadStructure - Writer $wid value = ${value.runtimeType}: $value, expecting ${op.functor}/${op.arity}');
-          if (debug && (cx.goalId >= 4000 || cx.goalId == 100)) print('  HeadStructure: writer $wid value = $value, expecting ${op.functor}/${op.arity}');
+          if (debug && (cx.goalId >= 4000 || cx.goalId == 100)) print('  HeadStructure: writer $wid dereferenced value = $value, expecting ${op.functor}/${op.arity}');
           if (value is StructTerm && value.functor == op.functor && value.args.length == op.arity) {
             // Matching structure - enter READ mode
             if (debug && (cx.goalId >= 4000 || cx.goalId == 100)) print('  HeadStructure: MATCH! Entering READ mode');
@@ -545,6 +615,15 @@ class BytecodeRunner {
         }
 
         // Ground term case (not writer or reader)
+        print('DEBUG: HeadStructure line 610 - GROUND TERM PATH');
+        print('  op.argSlot = ${op.argSlot}');
+        print('  arg = $arg');
+        print('  arg?.isWriter = ${arg?.isWriter}');
+        print('  arg?.isReader = ${arg?.isReader}');
+        print('  isClauseVar = $isClauseVar');
+        if (isClauseVar && op.argSlot < 100) {
+          print('  clauseVars[${op.argSlot}] = ${cx.clauseVars[op.argSlot]}');
+        }
         // TODO: Handle ground structures when CallEnv supports them
         _softFailToNextClause(cx, pc);
         pc = _findNextClauseTry(pc);
@@ -684,13 +763,12 @@ class BytecodeRunner {
           continue;
         }
 
-        // Store the argument value/reference in clause variable
+        // Store bare IDs (not VarRef) - HEAD instructions expect bare IDs
+        // Guards handle both VarRef and bare int for dereferencing
         if (arg.isWriter) {
-          cx.clauseVars[op.varIndex] = arg.writerId;
+          cx.clauseVars[op.varIndex] = arg.writerId!;
         } else if (arg.isReader) {
-          // Store reader ID (not the dereferenced value)
-          // putReader/putWriter will extract the reader from this
-          cx.clauseVars[op.varIndex] = arg.readerId;
+          cx.clauseVars[op.varIndex] = arg.readerId!;
         } else {
           // Ground term - would need to handle if CallEnv supported it
           _softFailToNextClause(cx, pc);
@@ -721,8 +799,15 @@ class BytecodeRunner {
         // Unify argument with stored value
         if (arg.isWriter) {
           // Argument is a writer - bind it to stored value in σ̂w
-          if (storedValue is int) {
-            // storedValue is a writer ID - check they match
+          if (storedValue is VarRef && !storedValue.isReader) {
+            // storedValue is a writer VarRef - check they match
+            if (arg.writerId != storedValue.varId) {
+              _softFailToNextClause(cx, pc);
+              pc = _findNextClauseTry(pc);
+              continue;
+            }
+          } else if (storedValue is int) {
+            // Legacy: bare writer ID - check they match
             if (arg.writerId != storedValue) {
               _softFailToNextClause(cx, pc);
               pc = _findNextClauseTry(pc);
@@ -953,8 +1038,11 @@ class BytecodeRunner {
           if (cx.currentStructure is _TentativeStruct) {
             final struct = cx.currentStructure as _TentativeStruct;
             final value = cx.clauseVars[op.varIndex];
-            if (value is int) {
-              // It's a variable ID - create VarRef
+            if (value is VarRef) {
+              // Already a VarRef - use directly
+              struct.args[cx.S] = value;
+            } else if (value is int) {
+              // Legacy: bare ID - create VarRef
               struct.args[cx.S] = VarRef(value, isReader: false);
             } else if (value is ConstTerm || value is StructTerm) {
               // It's a ground term extracted from READ mode - use directly
@@ -963,7 +1051,8 @@ class BytecodeRunner {
               // Create fresh variable
               final varId = cx.rt.heap.allocateFreshVar();
               cx.rt.heap.addVariable(varId);
-              cx.clauseVars[op.varIndex] = varId;
+              // CRITICAL FIX: Store VarRef, not bare ID
+              cx.clauseVars[op.varIndex] = VarRef(varId, isReader: false);
               struct.args[cx.S] = VarRef(varId, isReader: false);
             } else {
               struct.args[cx.S] = _ClauseVar(op.varIndex, isWriter: true);
@@ -973,8 +1062,11 @@ class BytecodeRunner {
             // BODY phase structure building
             final struct = cx.currentStructure as StructTerm;
             final value = cx.clauseVars[op.varIndex];
-            if (value is int) {
-              // It's a variable ID - create VarRef
+            if (value is VarRef) {
+              // Already a VarRef - use directly
+              struct.args[cx.S] = value;
+            } else if (value is int) {
+              // Legacy: bare ID - create VarRef
               struct.args[cx.S] = VarRef(value, isReader: false);
             } else if (value is Term) {
               // Ground term (ConstTerm or StructTerm) - use directly
@@ -983,15 +1075,23 @@ class BytecodeRunner {
               // Create fresh variable
               final varId = cx.rt.heap.allocateFreshVar();
               cx.rt.heap.addVariable(varId);
-              cx.clauseVars[op.varIndex] = varId;
+              // CRITICAL FIX: Store VarRef, not bare ID
+              cx.clauseVars[op.varIndex] = VarRef(varId, isReader: false);
               struct.args[cx.S] = VarRef(varId, isReader: false);
             }
             cx.S++;
 
             // Check if structure is complete
             if (cx.S >= struct.args.length) {
-              final targetWriterId = cx.clauseVars[-1];
-              if (targetWriterId is int) {
+              final targetValue = cx.clauseVars[-1];
+              int? targetWriterId;
+              if (targetValue is VarRef) {
+                targetWriterId = targetValue.varId;
+              } else if (targetValue is int) {
+                targetWriterId = targetValue;
+              }
+
+              if (targetWriterId != null) {
                 cx.rt.heap.bindWriterStruct(targetWriterId, struct.functor, struct.args);
                 cx.currentStructure = null;
                 cx.mode = UnifyMode.read;
@@ -1011,7 +1111,8 @@ class BytecodeRunner {
               if (debug && cx.goalId == 100) print('  [G${cx.goalId}] UnifyWriter: struct.args[${cx.S}] = $value');
               // Store the writer in clause var
               if (value is VarRef && !value.isReader) {
-                cx.clauseVars[op.varIndex] = value.varId;
+                // CRITICAL FIX: Store the VarRef itself, not just the ID
+                cx.clauseVars[op.varIndex] = value;
                 cx.S++;
               } else if (value is VarRef && value.isReader) {
                 // Extract reader term - dereference if bound, store as-is if unbound
@@ -1052,15 +1153,21 @@ class BytecodeRunner {
           if (cx.currentStructure is _TentativeStruct) {
             final struct = cx.currentStructure as _TentativeStruct;
             final clauseVarValue = cx.clauseVars[op.varIndex];
-            if (clauseVarValue is int) {
-              // It's a variable ID - create VarRef as reader
+            if (clauseVarValue is VarRef && clauseVarValue.isReader) {
+              // Clause var is already a reader term - use it directly
+              struct.args[cx.S] = clauseVarValue;
+            } else if (clauseVarValue is VarRef && !clauseVarValue.isReader) {
+              // It's a writer VarRef - get paired reader
+              final wc = cx.rt.heap.writer(clauseVarValue.varId);
+              if (wc != null) {
+                struct.args[cx.S] = VarRef(wc.readerId, isReader: true);
+              }
+            } else if (clauseVarValue is int) {
+              // Legacy: bare ID - create VarRef as reader
               final wc = cx.rt.heap.writer(clauseVarValue);
               if (wc != null) {
                 struct.args[cx.S] = VarRef(wc.readerId, isReader: true);
               }
-            } else if (clauseVarValue is VarRef && clauseVarValue.isReader) {
-              // Clause var is already a reader term - use it directly
-              struct.args[cx.S] = clauseVarValue as Term;
             } else if (clauseVarValue is Term) {
               // Clause var is bound to a term (e.g., [] or a structure)
               // Create a fresh variable and tentatively bind it to this value in σ̂w
@@ -1075,7 +1182,8 @@ class BytecodeRunner {
               // Must create the variable first (unbound)
               final varId = cx.rt.heap.allocateFreshVar();
               cx.rt.heap.addVariable(varId);
-              cx.clauseVars[op.varIndex] = varId;
+              // CRITICAL FIX: Store VarRef, not bare ID
+              cx.clauseVars[op.varIndex] = VarRef(varId, isReader: true);
               struct.args[cx.S] = VarRef(varId, isReader: true);
             }
             cx.S++;
@@ -1086,22 +1194,30 @@ class BytecodeRunner {
             if (debug) {
               print('  [G${cx.goalId}] UnifyReader BODY: varIndex=${op.varIndex}, clauseVarValue=$clauseVarValue, clauseVars=${cx.clauseVars}');
             }
-            if (clauseVarValue is int) {
-              // It's a variable ID - create VarRef as reader
+            if (clauseVarValue is VarRef && clauseVarValue.isReader) {
+              // Already a reader term - use directly
+              struct.args[cx.S] = clauseVarValue;
+              if (debug) print('  [G${cx.goalId}] UnifyReader BODY: Using existing ReaderTerm $clauseVarValue');
+            } else if (clauseVarValue is VarRef && !clauseVarValue.isReader) {
+              // It's a writer VarRef - get paired reader
+              final wc = cx.rt.heap.writer(clauseVarValue.varId);
+              if (wc != null) {
+                struct.args[cx.S] = VarRef(wc.readerId, isReader: true);
+                if (debug) print('  [G${cx.goalId}] UnifyReader BODY: Using paired reader ${wc.readerId} for writer ${clauseVarValue.varId}');
+              }
+            } else if (clauseVarValue is int) {
+              // Legacy: bare ID - create VarRef as reader
               final wc = cx.rt.heap.writer(clauseVarValue);
               if (wc != null) {
                 struct.args[cx.S] = VarRef(wc.readerId, isReader: true);
                 if (debug) print('  [G${cx.goalId}] UnifyReader BODY: Using paired reader ${wc.readerId} for writer $clauseVarValue');
               }
-            } else if (clauseVarValue is VarRef && clauseVarValue.isReader) {
-              // Already a reader term - use directly
-              struct.args[cx.S] = clauseVarValue as Term;
-              if (debug) print('  [G${cx.goalId}] UnifyReader BODY: Using existing ReaderTerm $clauseVarValue');
             } else if (clauseVarValue == null) {
               // First occurrence as reader - create variable
               final varId = cx.rt.heap.allocateFreshVar();
               cx.rt.heap.addVariable(varId);
-              cx.clauseVars[op.varIndex] = varId;
+              // CRITICAL FIX: Store VarRef, not bare ID
+              cx.clauseVars[op.varIndex] = VarRef(varId, isReader: true);
               struct.args[cx.S] = VarRef(varId, isReader: true);
               if (debug) print('  [G${cx.goalId}] UnifyReader BODY: Creating FRESH variable V$varId for varIndex=${op.varIndex}');
             }
@@ -1109,8 +1225,15 @@ class BytecodeRunner {
 
             // Check if structure is complete
             if (cx.S >= struct.args.length) {
-              final targetWriterId = cx.clauseVars[-1];
-              if (targetWriterId is int) {
+              final targetValue = cx.clauseVars[-1];
+              int? targetWriterId;
+              if (targetValue is VarRef) {
+                targetWriterId = targetValue.varId;
+              } else if (targetValue is int) {
+                targetWriterId = targetValue;
+              }
+
+              if (targetWriterId != null) {
                 cx.rt.heap.bindWriterStruct(targetWriterId, struct.functor, struct.args);
                 cx.currentStructure = null;
                 cx.mode = UnifyMode.read;
@@ -1220,8 +1343,29 @@ class BytecodeRunner {
                 // Clause variable placeholder - need to resolve to actual writer/reader
                 // Check if already resolved in clauseVars
                 final resolved = cx.clauseVars[arg.varIndex];
-                if (resolved is int) {
-                  // Already resolved to a writer ID - use writer or reader based on isWriter flag
+                if (resolved is VarRef) {
+                  // Already a VarRef - use it directly or extract reader if needed
+                  if (arg.isWriter && !resolved.isReader) {
+                    // Writer placeholder, resolved to writer VarRef - use as-is
+                    termArgs.add(resolved);
+                  } else if (arg.isWriter && resolved.isReader) {
+                    // Writer placeholder but resolved to reader? Get paired writer
+                    final wid = cx.rt.heap.writerIdForReader(resolved.varId);
+                    if (wid != null) {
+                      termArgs.add(VarRef(wid, isReader: false));
+                    }
+                  } else if (!arg.isWriter && resolved.isReader) {
+                    // Reader placeholder, resolved to reader VarRef - use as-is
+                    termArgs.add(resolved);
+                  } else if (!arg.isWriter && !resolved.isReader) {
+                    // Reader placeholder but resolved to writer? Get paired reader
+                    final wc = cx.rt.heap.writer(resolved.varId);
+                    if (wc != null) {
+                      termArgs.add(VarRef(wc.readerId, isReader: true));
+                    }
+                  }
+                } else if (resolved is int) {
+                  // Legacy: bare ID - use writer or reader based on isWriter flag
                   final wc = cx.rt.heap.writer(resolved);
                   if (wc != null) {
                     if (arg.isWriter) {
@@ -1233,7 +1377,8 @@ class BytecodeRunner {
                     // Shouldn't happen - create fresh variable as fallback using heap allocation
                     final varId = cx.rt.heap.allocateFreshVar();
                     cx.rt.heap.addVariable(varId);
-                    cx.clauseVars[arg.varIndex] = varId;
+                    // CRITICAL FIX: Store VarRef, not bare ID
+                    cx.clauseVars[arg.varIndex] = VarRef(varId, isReader: !arg.isWriter);
                     if (arg.isWriter) {
                       termArgs.add(VarRef(varId, isReader: false));
                     } else {
@@ -1247,7 +1392,8 @@ class BytecodeRunner {
                   // Not yet resolved - create fresh variable (WAM-style)
                   final varId = cx.rt.heap.allocateFreshVar();
                   cx.rt.heap.addVariable(varId);
-                  cx.clauseVars[arg.varIndex] = varId;
+                  // CRITICAL FIX: Store VarRef, not bare ID
+                  cx.clauseVars[arg.varIndex] = VarRef(varId, isReader: !arg.isWriter);
                   if (arg.isWriter) {
                     termArgs.add(VarRef(varId, isReader: false));
                   } else {
@@ -1423,8 +1569,12 @@ class BytecodeRunner {
           // Get writer ID from clause variable
           final value = cx.clauseVars[op.varIndex];
           if (debug) print('  [G${cx.goalId}] PutWriter: value=$value, type=${value.runtimeType}');
-          if (value is int) {
-            // It's a writer ID - store in argument register
+          if (value is VarRef) {
+            // It's a VarRef - extract writer ID and store in argument register
+            if (debug) print('  [G${cx.goalId}] PutWriter: storing writer ${value.varId} in argWriters[${op.argSlot}]');
+            cx.argWriters[op.argSlot] = value.varId;
+          } else if (value is int) {
+            // Legacy: bare int (should not happen after our fixes, but keep for safety)
             if (debug) print('  [G${cx.goalId}] PutWriter: storing writer $value in argWriters[${op.argSlot}]');
             cx.argWriters[op.argSlot] = value;
           } else if (value is _ClauseVar) {
@@ -1434,7 +1584,8 @@ class BytecodeRunner {
             cx.rt.heap.addVariable(varId);
             cx.argWriters[op.argSlot] = varId;
             // Update clause var to point to the actual variable
-            cx.clauseVars[op.varIndex] = varId;
+            // CRITICAL FIX: Store VarRef, not bare ID
+            cx.clauseVars[op.varIndex] = VarRef(varId, isReader: false);
           } else if (value == null) {
             // Variable doesn't exist yet - allocate fresh variable
             // This happens when a variable first appears in BODY phase
@@ -1442,7 +1593,8 @@ class BytecodeRunner {
             cx.rt.heap.addVariable(varId);
             cx.argWriters[op.argSlot] = varId;
             // Store in clause var for future references
-            cx.clauseVars[op.varIndex] = varId;
+            // CRITICAL FIX: Store VarRef, not bare ID
+            cx.clauseVars[op.varIndex] = VarRef(varId, isReader: false);
           } else {
             print('WARNING: PutWriter got unexpected value: $value');
           }
@@ -1458,10 +1610,25 @@ class BytecodeRunner {
           if (debug) {
             print('  [G${cx.goalId}] PC=$pc PutReader varIndex=${op.varIndex} argSlot=${op.argSlot} clauseVars=${cx.clauseVars}');
           }
-          // Get ID from clause variable - could be writer ID, reader ID, or StructTerm
+          // Get ID from clause variable - could be VarRef, StructTerm, ConstTerm
           final value = cx.clauseVars[op.varIndex];
-          if (value is int) {
-            // Check if it's a writer ID or reader ID
+          if (value is VarRef) {
+            // It's a VarRef - handle writer vs reader
+            if (value.isReader) {
+              // Already a reader - use its ID directly
+              cx.argReaders[op.argSlot] = value.varId;
+            } else {
+              // It's a writer - get its paired reader
+              final wc = cx.rt.heap.writer(value.varId);
+              if (wc != null) {
+                if (debug && cx.goalId == 100) print('  [G${cx.goalId}] PutReader: Setting argReaders[${op.argSlot}] = ${wc.readerId}');
+                cx.argReaders[op.argSlot] = wc.readerId;
+              } else {
+                print('WARNING: PutReader got writer VarRef but no WriterCell found');
+              }
+            }
+          } else if (value is int) {
+            // Legacy: bare int (should not happen after our fixes, but keep for safety)
             final wc = cx.rt.heap.writer(value);
             if (debug && cx.goalId == 100) print('  [G${cx.goalId}] PutReader: value=$value, wc=$wc, wc.readerId=${wc?.readerId}');
             if (wc != null) {
@@ -1487,14 +1654,12 @@ class BytecodeRunner {
             cx.rt.heap.bindWriterConst(varId, value.value);
             cx.argReaders[op.argSlot] = varId;
             if (debug) print('  [G${cx.goalId}] PutReader: created V$varId for constant');
-          } else if (value is VarRef && value.isReader) {
-            // It's already a reader - use its ID directly
-            cx.argReaders[op.argSlot] = value.varId;
           } else if (value == null) {
             // First occurrence of this variable - create fresh unbound variable
             final varId = cx.rt.heap.allocateFreshVar();
             cx.rt.heap.addVariable(varId);
-            cx.clauseVars[op.varIndex] = varId;  // Remember variable ID
+            // CRITICAL FIX: Store VarRef, not bare ID
+            cx.clauseVars[op.varIndex] = VarRef(varId, isReader: false);
             cx.argReaders[op.argSlot] = varId;
             if (debug) print('  [G${cx.goalId}] PutReader: created fresh unbound variable V$varId for first occurrence');
           } else {
@@ -1562,7 +1727,8 @@ class BytecodeRunner {
             cx.argReaders[op.argSlot] = varId;
           } else {
             // This is a temp register - store variable in clauseVars for later reference
-            cx.clauseVars[op.argSlot] = varId;
+            // CRITICAL FIX: Store VarRef, not bare ID
+            cx.clauseVars[op.argSlot] = VarRef(varId, isReader: false);
           }
 
           // Create structure with placeholder args (will be filled by subsequent Set* instructions)
@@ -1581,8 +1747,11 @@ class BytecodeRunner {
           final existingWriterId = cx.clauseVars[op.varIndex];
           final int writerId;
 
-          if (existingWriterId is int) {
-            // Use existing writer
+          if (existingWriterId is VarRef) {
+            // Use existing writer from VarRef
+            writerId = existingWriterId.varId;
+          } else if (existingWriterId is int) {
+            // Legacy: bare int (use it directly)
             writerId = existingWriterId;
           } else {
             // Allocate new variable only if uninitialized
@@ -1590,7 +1759,8 @@ class BytecodeRunner {
             cx.rt.heap.addVariable(varId);
 
             // Store variable ID in clause variable
-            cx.clauseVars[op.varIndex] = varId;
+            // CRITICAL FIX: Store VarRef, not bare ID
+            cx.clauseVars[op.varIndex] = VarRef(varId, isReader: false);
             writerId = varId;
           }
 
@@ -1602,9 +1772,15 @@ class BytecodeRunner {
           // Check if structure is complete (all arguments filled)
           if (cx.S >= struct.args.length) {
             // Structure complete - bind the target writer (stored at clauseVars[-1])
-            final targetWriterId = cx.clauseVars[-1];
+            final targetValue = cx.clauseVars[-1];
+            int? targetWriterId;
+            if (targetValue is VarRef) {
+              targetWriterId = targetValue.varId;
+            } else if (targetValue is int) {
+              targetWriterId = targetValue;
+            }
             // print('DEBUG: SetWriter - structure complete! functor=${struct.functor}, S=${cx.S}/${struct.args.length}, targetWriter=$targetWriterId, hasParent=${cx.parentStructure != null}');
-            if (targetWriterId is int) {
+            if (targetWriterId != null) {
               // Bind the writer to the completed structure
               cx.rt.heap.bindWriterStruct(targetWriterId, struct.functor, struct.args);
 
@@ -1696,8 +1872,11 @@ class BytecodeRunner {
           final existingWriterId = cx.clauseVars[op.varIndex];
           final int writerId;
 
-          if (existingWriterId is int) {
-            // Use existing writer
+          if (existingWriterId is VarRef) {
+            // Use existing writer from VarRef
+            writerId = existingWriterId.varId;
+          } else if (existingWriterId is int) {
+            // Legacy: bare int (use it directly)
             writerId = existingWriterId;
           } else {
             // Allocate new variable only if uninitialized
@@ -1705,7 +1884,8 @@ class BytecodeRunner {
             cx.rt.heap.addVariable(varId);
 
             // Store variable ID in clause variable
-            cx.clauseVars[op.varIndex] = varId;
+            // CRITICAL FIX: Store VarRef, not bare ID
+            cx.clauseVars[op.varIndex] = VarRef(varId, isReader: false);
             writerId = varId;
           }
 
@@ -1720,8 +1900,14 @@ class BytecodeRunner {
             // Check if structure is complete (all arguments filled)
             if (cx.S >= struct.args.length) {
               // Structure complete - bind the target writer (stored at clauseVars[-1])
-              final targetWriterId = cx.clauseVars[-1];
-              if (targetWriterId is int) {
+              final targetValue = cx.clauseVars[-1];
+              int? targetWriterId;
+              if (targetValue is VarRef) {
+                targetWriterId = targetValue.varId;
+              } else if (targetValue is int) {
+                targetWriterId = targetValue;
+              }
+              if (targetWriterId != null) {
                 // Bind the writer to the completed structure
                 cx.rt.heap.bindWriterStruct(targetWriterId, struct.functor, struct.args);
 
@@ -1976,22 +2162,9 @@ class BytecodeRunner {
 
       // ===== VARIABLE INSTRUCTIONS =====
 
-      if (op is GetVariable) {
-        // get_variable Xi, Ai: Load argument Ai into clause variable Xi
-        // This records the argument value for later use in BODY
-        final argInfo = _getArg(cx, op.argSlot);
-        if (debug) print('  [G${cx.goalId}] GetVariable varIndex=${op.varIndex} argSlot=${op.argSlot} argInfo=$argInfo');
-        if (argInfo != null) {
-          if (argInfo.isWriter) {
-            if (debug) print('  [G${cx.goalId}] GetVariable: storing writer ${argInfo.writerId} in clauseVars[${op.varIndex}]');
-            cx.clauseVars[op.varIndex] = argInfo.writerId!;
-          } else if (argInfo.isReader) {
-            if (debug) print('  [G${cx.goalId}] GetVariable: storing reader ${argInfo.readerId} in clauseVars[${op.varIndex}]');
-            cx.clauseVars[op.varIndex] = argInfo.readerId!;
-          }
-        }
-        pc++; continue;
-      }
+      // REMOVED: Duplicate GetVariable handler
+      // The correct GetVariable handler is at line 690 and stores VarRef objects
+      // This duplicate handler was storing bare IDs which caused guard comparison bugs
 
       // ===== BODY INSTRUCTIONS =====
       // These execute after COMMIT
@@ -2010,12 +2183,123 @@ class BytecodeRunner {
 
       // ===== GUARD INSTRUCTIONS =====
       if (op is Guard) {
-        // Call guard predicate - not yet implemented
-        // For now, soft-fail to next clause
-        print('[WARN] Guard instruction not fully implemented - failing');
-        _softFailToNextClause(cx, pc);
-        pc = _findNextClauseTry(pc);
-        continue;
+        // Execute guard predicate with three-valued semantics
+        // Guards can SUCCESS (continue), FAIL (try next clause), or SUSPEND (add to Si)
+        //
+        // The compiler emits PutWriter/PutReader/PutConstant to set up argument registers
+        // before this instruction, so we read from cx.argWriters and cx.argReaders
+
+        final predicateName = op.procedureLabel;  // Actually the predicate name (e.g., '<', '>')
+        final arity = op.arity;
+
+        if (debug) {
+          print('[GUARD] Evaluating: $predicateName/$arity');
+          print('[GUARD] argWriters: ${cx.argWriters}');
+          print('[GUARD] argReaders: ${cx.argReaders}');
+        }
+
+        // Extract and dereference arguments from argument registers
+        final args = <Object?>[];
+        final unboundReaders = <int>{};
+
+        for (int i = 0; i < arity; i++) {
+          Object? argValue;
+
+          // Check argWriters first (for unbound writers)
+          if (cx.argWriters.containsKey(i)) {
+            final writerId = cx.argWriters[i]!;
+            print('[GUARD] Arg $i from argWriters: $writerId');
+            argValue = VarRef(writerId, isReader: false);
+          }
+          // Then check argReaders (contains BOTH bound writers AND actual readers)
+          else if (cx.argReaders.containsKey(i)) {
+            final varId = cx.argReaders[i]!;
+            print('[GUARD] Arg $i from argReaders: $varId');
+
+            // CRITICAL FIX: Determine if this is a writer ID or reader ID
+            // Check if varId exists as a writer in the heap
+            final writerCell = cx.rt.heap.writer(varId);
+
+            if (writerCell != null) {
+              // It's a WRITER ID (from PutBoundConst storing bound constants)
+              // Treat as a writer variable
+              print('[GUARD] Arg $i is WRITER ID (from PutBoundConst)');
+              argValue = VarRef(varId, isReader: false);
+
+              if (debug) {
+                print('[GUARD] Slot $i: Writer ID $varId (bound: ${cx.rt.heap.isWriterBound(varId)})');
+              }
+            } else {
+              // It's a READER ID (from PutReader for actual readers)
+              // Treat as a reader variable
+              print('[GUARD] Arg $i is READER ID (from PutReader)');
+              argValue = VarRef(varId, isReader: true);
+
+              if (debug) {
+                // Check if this reader's paired writer is bound
+                final writerId = cx.rt.heap.writerIdForReader(varId);
+                print('[GUARD] Slot $i: Reader ID $varId (writer $writerId bound: ${writerId != null ? cx.rt.heap.isWriterBound(writerId) : false})');
+              }
+            }
+          }
+          // Check clauseVars for HEAD variables
+          else if (cx.clauseVars.containsKey(i)) {
+            argValue = cx.clauseVars[i];
+            print('[GUARD] Arg $i from clauseVars: $argValue');
+          }
+          else {
+            // No argument at this slot
+            if (debug) {
+              print('[GUARD] WARNING: Argument $i not found in argWriters, argReaders, or clauseVars');
+            }
+            argValue = null;
+          }
+
+          // Dereference to get actual values, tracking unbound readers
+          if (argValue != null) {
+            print('[GUARD] Before deref - Arg $i: $argValue (${argValue.runtimeType})');
+            final (derefValue, readers) = _dereferenceWithTracking(argValue, cx);
+            print('[GUARD] After deref - Arg $i: $derefValue (${derefValue.runtimeType})');
+            args.add(derefValue);
+            unboundReaders.addAll(readers);
+
+            if (debug) {
+              print('[GUARD] Arg $i: $argValue → $derefValue');
+            }
+          } else {
+            args.add(null);
+          }
+        }
+
+        // If any arguments have unbound readers, suspend
+        if (unboundReaders.isNotEmpty) {
+          if (debug) {
+            print('[GUARD] SUSPEND - unbound readers: $unboundReaders');
+          }
+          cx.si.addAll(unboundReaders);
+          _softFailToNextClause(cx, pc);
+          pc = _findNextClauseTry(pc);
+          continue;
+        }
+
+        // All arguments are ground - evaluate the guard
+        final result = _evaluateGuard(predicateName, args, cx);
+
+        if (result == GuardResult.success) {
+          if (debug) {
+            print('[GUARD] SUCCESS - continuing');
+          }
+          pc++;
+          continue;
+        } else {
+          // FAIL - try next clause
+          if (debug) {
+            print('[GUARD] FAIL - trying next clause');
+          }
+          _softFailToNextClause(cx, pc);
+          pc = _findNextClauseTry(pc);
+          continue;
+        }
       }
 
       if (op is Ground) {
@@ -2206,14 +2490,28 @@ class BytecodeRunner {
           continue;
         }
 
-        // Extract arguments from clause variables
-        final args = <Object?>[];
-        for (final argSlot in op.argSlots) {
-          args.add(cx.clauseVars[argSlot]);
+        // Process arguments directly - they're already Terms (per spec Section 18.1)
+        // No need to look up in clauseVars - args are passed directly
+        print('[EXECUTE] Direct args: ${op.args}');
+        final processedArgs = <Object?>[];
+
+        for (final arg in op.args) {
+          print('[EXECUTE] Processing arg: $arg (${arg.runtimeType})');
+
+          // Resolve VarRefs that reference HEAD variables
+          // HEAD variables stored via GetVariable remain in clauseVars
+          final resolved = _resolveHeadVarRefs(arg, cx);
+          print('[EXECUTE] After HEAD resolve: $resolved');
+
+          // Dereference to get actual values from heap
+          final derefArg = _dereferenceForExecute(resolved, cx.rt, cx);
+          print('[EXECUTE] After deref: $derefArg (${derefArg.runtimeType})');
+
+          processedArgs.add(derefArg);
         }
 
         // Create system call context
-        final call = SystemCall(op.predicateName, args);
+        final call = SystemCall(op.predicateName, processedArgs);
 
         // Execute the system predicate
         final result = predicate(cx.rt, call);
@@ -2277,6 +2575,28 @@ class BytecodeRunner {
             _softFailToNextClause(cx, pc);
             pc = _findNextClauseTry(pc);
             continue;
+          } else if (clauseVarValue is VarRef) {
+            // VarRef stored in clauseVars - extract varId and handle
+            final varId = clauseVarValue.varId;
+            if (cx.rt.heap.isBound(varId)) {
+              final value = cx.rt.heap.getValue(varId);
+              if (value is ConstTerm && value.value == 'nil') {
+                if (debug && cx.goalId >= 4000) print('  HeadNil: clause var ${op.argSlot} = VarRef($varId) = $value, MATCH');
+                pc++;
+                continue;
+              } else {
+                if (debug && cx.goalId >= 4000) print('  HeadNil: clause var ${op.argSlot} = VarRef($varId) = $value, NO MATCH');
+                _softFailToNextClause(cx, pc);
+                pc = _findNextClauseTry(pc);
+                continue;
+              }
+            } else {
+              // Unbound variable - bind to nil in σ̂w
+              cx.sigmaHat[varId] = ConstTerm('nil');
+              if (debug && cx.goalId >= 4000) print('  HeadNil: clause var ${op.argSlot} = VarRef($varId) (unbound), binding to nil');
+              pc++;
+              continue;
+            }
           } else if (clauseVarValue is int) {
             // Writer ID - check if bound
             final wid = clauseVarValue;
@@ -2562,6 +2882,339 @@ class BytecodeRunner {
 
     // TODO: Handle ground terms
     return null;
+  }
+
+  /// Resolves VarRefs that reference HEAD variables to actual heap IDs
+  /// HEAD variables are stored in clauseVars via GetVariable
+  /// This converts VarRef(headIndex) → VarRef(heapId)
+  static Object? _resolveHeadVarRefs(Object? term, RunnerContext cx) {
+    if (term is VarRef) {
+      // Check if this VarRef's ID is a HEAD variable index
+      // GetVariable stores heap IDs in clauseVars, so we can look them up
+      if (cx.clauseVars.containsKey(term.varId)) {
+        final binding = cx.clauseVars[term.varId];
+        if (binding is int) {
+          // It's a heap ID from HEAD phase - create new VarRef with actual ID
+          return VarRef(binding, isReader: term.isReader);
+        } else if (binding is VarRef) {
+          // Already a VarRef - return as is
+          return binding;
+        } else if (binding is Term) {
+          // It's a Term - return as is
+          return binding;
+        }
+      }
+      // Not in clauseVars or not resolvable - return as is
+      return term;
+    } else if (term is StructTerm) {
+      // Recursively resolve arguments in structures
+      final resolvedArgs = <Term>[];
+      for (final arg in term.args) {
+        final resolved = _resolveHeadVarRefs(arg, cx);
+        if (resolved is Term) {
+          resolvedArgs.add(resolved);
+        } else {
+          resolvedArgs.add(ConstTerm(resolved));
+        }
+      }
+      return StructTerm(term.functor, resolvedArgs);
+    } else {
+      // Other types - return as is
+      return term;
+    }
+  }
+
+  /// Helper to dereference values for execute() arguments
+  /// Recursively dereferences readers to get actual bound values
+  static Object? _dereferenceForExecute(Object? term, GlpRuntime rt, RunnerContext cx) {
+    if (term is VarRef) {
+      // Now varId should be an actual heap ID (after _resolveHeadVarRefs)
+      final varId = term.varId;
+      print('[DEREF] VarRef: $term (id=$varId, isReader=${term.isReader})');
+
+      // Check sigma-hat for tentative bindings (during HEAD/GUARD phase)
+      if (cx.sigmaHat.containsKey(varId)) {
+        final value = cx.sigmaHat[varId];
+        print('[DEREF] Found in sigma-hat: $value');
+        return _dereferenceForExecute(value, rt, cx);
+      }
+
+      print('[DEREF] isWriterBound($varId) = ${rt.heap.isWriterBound(varId)}');
+
+      // For readers, check if the paired writer is bound
+      // For writers, check if the writer itself is bound
+      if (rt.heap.isWriterBound(varId)) {
+        final value = rt.heap.getValue(varId);
+        print('[DEREF] Bound to: $value');
+        // Recursively dereference in case value contains more VarRefs
+        return _dereferenceForExecute(value, rt, cx);
+      } else {
+        // Unbound - return the VarRef as-is
+        // (system predicate will handle suspension)
+        print('[DEREF] Unbound - returning as-is');
+        return term;
+      }
+    } else if (term is StructTerm) {
+      print('[DEREF] StructTerm: ${term.functor}/${term.args.length}');
+      // Recursively dereference arguments in structures
+      final derefArgs = <Term>[];
+      for (final arg in term.args) {
+        final derefArg = _dereferenceForExecute(arg, rt, cx);
+        // Wrap primitives in ConstTerm
+        if (derefArg is Term) {
+          derefArgs.add(derefArg);
+        } else {
+          derefArgs.add(ConstTerm(derefArg));
+        }
+      }
+      return StructTerm(term.functor, derefArgs);
+    } else {
+      // Const, List, or other - return as-is
+      print('[DEREF] Other: $term (${term.runtimeType})');
+      return term;
+    }
+  }
+
+  /// Dereference a term and track any unbound readers encountered
+  /// Used by guard evaluation to detect suspension conditions
+  static (Object?, Set<int>) _dereferenceWithTracking(Object? term, RunnerContext cx) {
+    final unboundReaders = <int>{};
+
+    Object? dereference(Object? t) {
+      // Resolve clauseVars first (same pattern as Execute fix)
+      if (t is VarRef && cx.clauseVars.containsKey(t.varId)) {
+        // Resolve clause variable index to actual heap ID
+        final resolved = cx.clauseVars[t.varId];
+        if (resolved is int) {
+          t = VarRef(resolved, isReader: t.isReader);
+        } else if (resolved != null) {
+          // Already resolved to a term
+          return dereference(resolved);
+        }
+      }
+
+      if (t is VarRef) {
+        if (t.isReader) {
+          // Reader - check if paired writer is bound
+          final varId = t.varId;
+          if (cx.rt.heap.isWriterBound(varId)) {
+            final boundValue = cx.rt.heap.getValue(varId);
+            // CRITICAL FIX: Recursively dereference the bound value
+            return dereference(boundValue);
+          } else {
+            // Unbound reader - track it
+            unboundReaders.add(varId);
+            return t;
+          }
+        } else {
+          // Writer variable
+          final varId = t.varId;
+
+          // Check sigma-hat first (tentative bindings)
+          if (cx.sigmaHat.containsKey(varId)) {
+            return dereference(cx.sigmaHat[varId]);
+          }
+
+          // Check heap
+          if (cx.rt.heap.isWriterBound(varId)) {
+            final boundValue = cx.rt.heap.getValue(varId);
+            // CRITICAL FIX: Recursively dereference the bound value
+            return dereference(boundValue);
+          } else {
+            // Unbound writer - can't evaluate
+            return t;
+          }
+        }
+      } else if (t is StructTerm) {
+        // For arithmetic expressions, recursively evaluate
+        if (_isArithmeticOp(t.functor)) {
+          final evalArgs = <Object?>[];
+          for (final arg in t.args) {
+            evalArgs.add(dereference(arg));
+          }
+          // Check if all args are ground numbers
+          if (evalArgs.every((a) => a is num || (a is ConstTerm && a.value is num))) {
+            return _evaluateArithmetic(t.functor, evalArgs);
+          }
+        }
+        // Return structure as-is if not arithmetic
+        return t;
+      } else if (t is ConstTerm) {
+        // CRITICAL FIX: Unwrap ConstTerm to get primitive value
+        return t.value;
+      } else if (t is int) {
+        // Bare int represents a variable ID - look up its bound value
+        if (cx.rt.heap.isWriterBound(t)) {
+          final boundValue = cx.rt.heap.getValue(t);
+          // Recursively dereference the bound value
+          return dereference(boundValue);
+        } else {
+          // Unbound variable - return as VarRef for proper handling
+          return VarRef(t, isReader: false);
+        }
+      } else {
+        return t;
+      }
+    }
+
+    final result = dereference(term);
+    return (result, unboundReaders);
+  }
+
+  /// Check if a functor is an arithmetic operator
+  static bool _isArithmeticOp(String functor) {
+    return const {'+', '-', '*', '/', 'mod', 'neg'}.contains(functor);
+  }
+
+  /// Evaluate arithmetic expression (already ground)
+  static num _evaluateArithmetic(String op, List<Object?> args) {
+    // Extract numeric values
+    num getNum(Object? v) {
+      if (v is num) return v;
+      if (v is ConstTerm && v.value is num) return v.value as num;
+      throw StateError('Non-numeric value in arithmetic: $v');
+    }
+
+    if (args.isEmpty) {
+      throw StateError('Arithmetic operator $op requires arguments');
+    }
+
+    final a = getNum(args[0]);
+
+    // Unary operators
+    if (op == 'neg' || (op == '-' && args.length == 1)) {
+      return -a;
+    }
+
+    // Binary operators
+    if (args.length < 2) {
+      throw StateError('Binary operator $op requires two arguments');
+    }
+    final b = getNum(args[1]);
+
+    switch (op) {
+      case '+': return a + b;
+      case '-': return a - b;
+      case '*': return a * b;
+      case '/': return a / b;
+      case 'mod': return a.toInt() % b.toInt();
+      default: throw StateError('Unknown arithmetic operator: $op');
+    }
+  }
+
+  /// Evaluate a guard predicate with ground arguments
+  static GuardResult _evaluateGuard(String predicateName, List<Object?> args, RunnerContext cx) {
+    // Extract values from any remaining ConstTerms
+    Object? getValue(Object? v) {
+      if (v is ConstTerm) return v.value;
+      return v;
+    }
+
+    switch (predicateName) {
+      // Comparison guards
+      case '<':
+        if (args.length < 2) return GuardResult.failure;
+        final a = getValue(args[0]);
+        final b = getValue(args[1]);
+
+        // Debug output
+        print('[EVAL_GUARD] < comparison:');
+        print('[EVAL_GUARD]   args[0] = ${args[0]} (${args[0].runtimeType})');
+        print('[EVAL_GUARD]   args[1] = ${args[1]} (${args[1].runtimeType})');
+        print('[EVAL_GUARD]   a = $a (${a.runtimeType})');
+        print('[EVAL_GUARD]   b = $b (${b.runtimeType})');
+        print('[EVAL_GUARD]   a is num = ${a is num}');
+        print('[EVAL_GUARD]   b is num = ${b is num}');
+
+        if (a is num && b is num) {
+          final result = a < b;
+          print('[EVAL_GUARD]   $a < $b = $result');
+          return result ? GuardResult.success : GuardResult.failure;
+        }
+        print('[EVAL_GUARD]   Type mismatch - returning failure');
+        return GuardResult.failure;
+
+      case '>':
+        if (args.length < 2) return GuardResult.failure;
+        final a = getValue(args[0]);
+        final b = getValue(args[1]);
+        if (a is num && b is num) {
+          return a > b ? GuardResult.success : GuardResult.failure;
+        }
+        return GuardResult.failure;
+
+      case '=<':
+        if (args.length < 2) return GuardResult.failure;
+        final a = getValue(args[0]);
+        final b = getValue(args[1]);
+        if (a is num && b is num) {
+          return a <= b ? GuardResult.success : GuardResult.failure;
+        }
+        return GuardResult.failure;
+
+      case '>=':
+        if (args.length < 2) return GuardResult.failure;
+        final a = getValue(args[0]);
+        final b = getValue(args[1]);
+        if (a is num && b is num) {
+          return a >= b ? GuardResult.success : GuardResult.failure;
+        }
+        return GuardResult.failure;
+
+      case '=:=':
+        if (args.length < 2) return GuardResult.failure;
+        final a = getValue(args[0]);
+        final b = getValue(args[1]);
+        if (a is num && b is num) {
+          return a == b ? GuardResult.success : GuardResult.failure;
+        }
+        return GuardResult.failure;
+
+      case '=\\=':
+        if (args.length < 2) return GuardResult.failure;
+        final a = getValue(args[0]);
+        final b = getValue(args[1]);
+        if (a is num && b is num) {
+          return a != b ? GuardResult.success : GuardResult.failure;
+        }
+        return GuardResult.failure;
+
+      // Type guards
+      case 'ground':
+        // Already checked for unbound readers in caller
+        return GuardResult.success;
+
+      case 'known':
+        // Check if argument is not a variable
+        if (args.isEmpty) return GuardResult.failure;
+        final arg = args[0];
+        if (arg is VarRef) {
+          return GuardResult.failure;
+        }
+        return GuardResult.success;
+
+      case 'integer':
+        if (args.isEmpty) return GuardResult.failure;
+        final val = getValue(args[0]);
+        return (val is int) ? GuardResult.success : GuardResult.failure;
+
+      case 'number':
+        if (args.isEmpty) return GuardResult.failure;
+        final val = getValue(args[0]);
+        return (val is num) ? GuardResult.success : GuardResult.failure;
+
+      // Control guards
+      case 'otherwise':
+        // This is handled by the compiler - should not reach runtime
+        return GuardResult.success;
+
+      case 'true':
+        return GuardResult.success;
+
+      default:
+        print('[WARN] Unknown guard predicate: $predicateName');
+        return GuardResult.failure;
+    }
   }
 }
 

@@ -516,11 +516,17 @@ The HEAD phase performs **tentative unification** building ÏƒÌ‚w without he
    - Normative semantics for GLP language
    - Defines three-valued unification, suspension, commitment
 
-6. **FCP Implementation**: https://github.com/EShapiro2/FCP - Flat Concurrent Prolog full source code
+6. **FCP Implementation**: Flat Concurrent Prolog full source code
    - **AUTHORITATIVE** reference for module system, process activation, and goal scheduling
    - Complete working implementation of abstract machine semantics
-   - Paper: `/Users/udi/GLP/docs/1-s2.0-0743106689900113-main.pdf` (Houri & Shapiro, 1989)
-   - **READ THE SOURCE CODE** for understanding modules, process records, and activation semantics
+   - **Local Source**: `/Users/udi/Dropbox/Concurrent Prolog/FCP/Savannah` - Full FCP AM implementation
+   - **GitHub Mirror**: https://github.com/EShapiro2/FCP
+   - **Paper**: `/Users/udi/GLP/docs/1-s2.0-0743106689900113-main.pdf` (Houri & Shapiro, 1989)
+   - **READ THE SOURCE CODE** for understanding:
+     - System predicate argument handling and dereferencing
+     - How ground testing works with structures
+     - Variable reference handling in execute/call operations
+     - Module system, process records, and activation semantics
 
 ### Implementation Protocol
 
@@ -590,3 +596,7 @@ What would you like me to do?
 You are part of an AI team building GLP. Claude Chat handles architecture and code generation. You handle execution, testing, and small fixes. Always preserve working code, especially `_ClauseVar` and `_TentativeStruct`. When in doubt, consult Claude Chat for design decisions. The code at commit 7be7d83 works correctly - respect it.
 - please remember all the times that you ask for my confimation, so that we can update the claude configuration file when we are done, OK? now proceed
 - please remember to provide all docs when proving a new claude web with full context
+- when we are discussing, do not change topic or switch to coding until we agree that the discussion is over
+- please remember all your blocking reqeusts from me, so that you can later change yourm json configuration file to eliminate them
+- please formalize the process of code creation and checking, insted of debugging in the dark
+- every plan must have testing to ensure that nothing gets broken along the way

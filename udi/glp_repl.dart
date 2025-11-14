@@ -21,6 +21,8 @@ import 'package:glp_runtime/runtime/terms.dart' as rt;
 void main() async {
   // Get git commit info
   final gitCommit = await _getGitCommit();
+  // Build timestamp (updated at compile time)
+  final buildTime = '2025-11-14T07:34:00Z (with HeadStructure+REPL dereference fixes)';
 
   print('╔════════════════════════════════════════╗');
   print('║   GLP REPL - Interactive Interpreter   ║');
@@ -29,6 +31,7 @@ void main() async {
   if (gitCommit != null) {
     print('Build: $gitCommit');
   }
+  print('Compiled: $buildTime');
   print('Working directory: udi/');
   print('Source files: glp/*.glp');
   print('Compiled files: bin/*.glpc');
@@ -212,8 +215,9 @@ void main() async {
         for (final entry in queryVarWriters.entries) {
           final varName = entry.key;
           final writerId = entry.value;
-          if (rt.heap.isWriterBound(writerId)) {
-            final value = rt.heap.valueOfWriter(writerId);
+          // Use single-ID heap methods (writerId == readerId in single-ID system)
+          if (rt.heap.isBound(writerId)) {
+            final value = rt.heap.getValue(writerId);
             print('  $varName = ${_formatTerm(value, rt)}');
           } else {
             print('  $varName = <unbound>');
@@ -492,17 +496,18 @@ String _formatTerm(rt.Term? term, [GlpRuntime? runtime, Set<int>? visited]) {
       // Format head element
       String headStr;
       if (head is rt.VarRef && runtime != null) {
-        // Dereference VarRef (single-ID system)
+        // Dereference VarRef (single-ID system) - fully recursive
         final varId = head.varId;
         if (visited.contains(varId)) {
           headStr = '<circular>';
         } else {
           visited.add(varId);
-          if (runtime.heap.isBound(varId)) {
-            final value = runtime.heap.getValue(varId);
-            headStr = _formatTerm(value, runtime, visited);
+          final derefHead = runtime.heap.dereference(head);
+          if (derefHead is rt.VarRef) {
+            // Still unbound after dereferencing
+            headStr = derefHead.isReader ? 'R${derefHead.varId}?' : 'W${derefHead.varId}';
           } else {
-            headStr = head.isReader ? 'R$varId?' : 'W$varId';
+            headStr = _formatTerm(derefHead, runtime, visited);
           }
         }
       } else if (head is rt.VarRef && runtime != null) {
@@ -528,7 +533,7 @@ String _formatTerm(rt.Term? term, [GlpRuntime? runtime, Set<int>? visited]) {
 
       // Move to tail
       if (tail is rt.VarRef && runtime != null) {
-        // Handle VarRef (single-ID system)
+        // Handle VarRef (single-ID system) - dereference fully
         final varId = tail.varId;
         if (visited.contains(varId)) {
           // Circular reference in tail
@@ -536,14 +541,15 @@ String _formatTerm(rt.Term? term, [GlpRuntime? runtime, Set<int>? visited]) {
           return '[${elements.join(', ')} | <circular $label>]';
         }
         visited.add(varId);
-        if (runtime.heap.isBound(varId)) {
-          current = runtime.heap.getValue(varId);
-          if (current == null || current is! rt.StructTerm) break;
-        } else {
-          // Unbound variable in tail - show it
-          final label = tail.isReader ? 'R$varId?' : 'W$varId';
+        // Dereference recursively to get final value
+        final derefTail = runtime.heap.dereference(tail);
+        if (derefTail is rt.VarRef) {
+          // Still unbound after dereferencing
+          final label = derefTail.isReader ? 'R${derefTail.varId}?' : 'W${derefTail.varId}';
           return '[${elements.join(', ')} | $label]';
         }
+        current = derefTail;
+        if (current == null || current is! rt.StructTerm) break;
       } else if (tail is rt.VarRef && runtime != null) {
         // OLD: Handle ReaderTerm (backward compatibility)
         final readerId = tail.varId;
