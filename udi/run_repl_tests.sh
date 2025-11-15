@@ -135,6 +135,35 @@ run_test "Structure Demo" \
     "P =" || true  # May fail due to numeric parsing
 
 # ============================================
+# SORTING TESTS
+# ============================================
+
+run_test "Quicksort empty list" \
+    "qsort.glp" \
+    "quicksort([],X)." \
+    "X = \[\]"
+
+run_test "Quicksort single element" \
+    "qsort.glp" \
+    "quicksort([1],X)." \
+    "X = \[1\]"
+
+run_test "Insertion sort empty list" \
+    "isort.glp" \
+    "insertion_sort([],X)." \
+    "X = \[\]"
+
+run_test "Insertion sort single element" \
+    "isort.glp" \
+    "insertion_sort([3],X)." \
+    "X = \[3\]"
+
+run_test "Insertion sort two elements" \
+    "isort.glp" \
+    "insertion_sort([3,4],X)." \
+    "X = \[3, 4\]"
+
+# ============================================
 # SUMMARY
 # ============================================
 
