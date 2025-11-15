@@ -22,7 +22,7 @@ void main() async {
   // Get git commit info
   final gitCommit = await _getGitCommit();
   // Build timestamp (updated at compile time)
-  final buildTime = '2025-11-14T11:37:22Z (with UnifyWriter/UnifyReader SRSW fix)';
+  final buildTime = '2025-11-15T21:45:00Z (with VarRef binding fix in commit.dart)';
 
   print('╔════════════════════════════════════════╗');
   print('║   GLP REPL - Interactive Interpreter   ║');
@@ -41,8 +41,8 @@ void main() async {
   print('');
 
   final compiler = GlpCompiler();
-  final rt = GlpRuntime();
-  registerStandardPredicates(rt.systemPredicates);
+  final runtime = GlpRuntime();
+  registerStandardPredicates(runtime.systemPredicates);
 
   // Track loaded programs
   final loadedPrograms = <String, BytecodeProgram>{};
@@ -121,13 +121,13 @@ void main() async {
 
         // Execute with empty environment (zero-arity wrapper)
         final env = CallEnv();
-        rt.setGoalEnv(goalId, env);
-        rt.setGoalProgram(goalId, 'main');
+        runtime.setGoalEnv(goalId, env);
+        runtime.setGoalProgram(goalId, 'main');
 
         final runner = BytecodeRunner(combinedProgram);
-        final scheduler = Scheduler(rt: rt, runners: {'main': runner});
+        final scheduler = Scheduler(rt: runtime, runners: {'main': runner});
 
-        rt.gq.enqueue(GoalRef(goalId, entryPC));
+        runtime.gq.enqueue(GoalRef(goalId, entryPC));
         goalId++;
 
         final ran = scheduler.drain(maxCycles: 10000, debug: debugTrace);
@@ -192,19 +192,19 @@ void main() async {
 
       for (int i = 0; i < args.length; i++) {
         final arg = args[i];
-        final (readerId, writerId) = _setupArgument(rt, arg, i, readers, writers, queryVarWriters);
+        final (readerId, writerId) = _setupArgument(runtime, arg, i, readers, writers, queryVarWriters);
       }
 
       // Set up goal environment
       final env = CallEnv(readers: readers, writers: writers);
-      rt.setGoalEnv(goalId, env);
-      rt.setGoalProgram(goalId, 'main');
+      runtime.setGoalEnv(goalId, env);
+      runtime.setGoalProgram(goalId, 'main');
 
       // Create scheduler and run
       final runner = BytecodeRunner(combinedProgram);
-      final scheduler = Scheduler(rt: rt, runners: {'main': runner});
+      final scheduler = Scheduler(rt: runtime, runners: {'main': runner});
 
-      rt.gq.enqueue(GoalRef(goalId, entryPC));
+      runtime.gq.enqueue(GoalRef(goalId, entryPC));
       final currentGoalId = goalId;
       goalId++;
 
@@ -216,9 +216,11 @@ void main() async {
           final varName = entry.key;
           final writerId = entry.value;
           // Use single-ID heap methods (writerId == readerId in single-ID system)
-          if (rt.heap.isBound(writerId)) {
-            final value = rt.heap.getValue(writerId);
-            print('  $varName = ${_formatTerm(value, rt)}');
+          if (runtime.heap.isBound(writerId)) {
+            // Dereference the value to follow binding chains (e.g., W1002 → R1002 → [])
+            final varRef = rt.VarRef(writerId, isReader: false);
+            final derefValue = runtime.heap.dereference(varRef);
+            print('  $varName = ${_formatTerm(derefValue, runtime)}');
           } else {
             print('  $varName = <unbound>');
           }

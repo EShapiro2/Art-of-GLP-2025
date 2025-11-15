@@ -32,6 +32,9 @@ class CommitOps {
       } else if (value is ConstTerm) {
         // ConstTerm - extract the actual value
         heap.bindWriterConst(writerId, value.value);
+      } else if (value is VarRef) {
+        // Variable reference - bind writer to this variable
+        heap.bindVariable(writerId, value);
       } else if (value is String || value is int || value is bool) {
         // Primitive constant value
         heap.bindWriterConst(writerId, value);
