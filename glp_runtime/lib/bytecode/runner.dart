@@ -969,29 +969,92 @@ class BytecodeRunner {
           continue;
         }
 
-        final storedValue = cx.clauseVars[op.varIndex];
+        var storedValue = cx.clauseVars[op.varIndex];
         if (storedValue == null) {
           _softFailToNextClause(cx, pc);
           pc = _findNextClauseTry(pc);
           continue;
         }
 
+        // Check if storedValue is a reader ID (from GetReaderVariable mode conversion)
+        // If so, we need to get the corresponding writer ID
+        if (storedValue is int) {
+          final wid = cx.rt.heap.writerIdForReader(storedValue);
+          if (wid != null) {
+            // It's a reader ID - use the paired writer ID instead
+            storedValue = wid;
+          }
+        }
+
         // Unify argument with stored value (writer MGU)
         if (arg.isWriter) {
-          // Check if this writer was already bound by earlier GetReaderVariable
-          final existingBinding = cx.sigmaHat[arg.writerId!];
-          if (existingBinding != null) {
-            // Writer was bound by mode conversion - verify binding matches stored value
-            if (existingBinding is VarRef && existingBinding.varId != storedValue) {
+          // Check if argument writer is bound
+          final argBound = cx.rt.heap.isWriterBound(arg.writerId!);
+
+          if (argBound) {
+            // Argument writer is bound - need to unify values
+            final argValue = cx.rt.heap.valueOfWriter(arg.writerId!);
+
+            // Check if stored value is also bound
+            if (storedValue is int) {
+              // storedValue is a writer ID - check if it's bound
+              final storedBound = cx.rt.heap.isWriterBound(storedValue);
+              if (storedBound) {
+                // Both bound - compare values
+                final storedVal = cx.rt.heap.valueOfWriter(storedValue);
+                // Check if values match
+                bool match = false;
+                if (argValue is ConstTerm && storedVal is ConstTerm) {
+                  match = argValue.value == storedVal.value;
+                } else if (argValue is StructTerm && storedVal is StructTerm) {
+                  match = argValue.functor == storedVal.functor && argValue.args.length == storedVal.args.length;
+                  // Note: shallow comparison, deep comparison would need recursive check
+                } else {
+                  match = argValue == storedVal;
+                }
+                if (!match) {
+                  _softFailToNextClause(cx, pc);
+                  pc = _findNextClauseTry(pc);
+                  continue;
+                }
+              } else {
+                // Stored writer unbound, arg bound - bind stored to arg's value
+                // Note: storedValue should be a writer ID, bind it in σ̂w
+                cx.sigmaHat[storedValue] = argValue;
+              }
+            } else if (storedValue is Term) {
+              // storedValue is a Term - compare with arg's value
+              bool match = false;
+              if (argValue is ConstTerm && storedValue is ConstTerm) {
+                match = argValue.value == storedValue.value;
+              } else if (argValue is StructTerm && storedValue is StructTerm) {
+                match = argValue.functor == storedValue.functor && argValue.args.length == storedValue.args.length;
+              } else {
+                match = argValue == storedValue;
+              }
+              if (!match) {
+                _softFailToNextClause(cx, pc);
+                pc = _findNextClauseTry(pc);
+                continue;
+              }
+            }
+          } else {
+            // Argument writer is unbound
+            // Check if this writer was already bound by earlier GetReaderVariable
+            final existingBinding = cx.sigmaHat[arg.writerId!];
+            if (existingBinding != null) {
+              // Writer was bound by mode conversion - verify binding matches stored value
+              if (existingBinding is VarRef && existingBinding.varId != storedValue) {
+                _softFailToNextClause(cx, pc);
+                pc = _findNextClauseTry(pc);
+                continue;
+              }
+            } else if (storedValue is int && arg.writerId != storedValue) {
+              // No existing binding - direct ID comparison
               _softFailToNextClause(cx, pc);
               pc = _findNextClauseTry(pc);
               continue;
             }
-          } else if (storedValue is int && arg.writerId != storedValue) {
-            // No existing binding - direct ID comparison
-            _softFailToNextClause(cx, pc);
-            pc = _findNextClauseTry(pc);
-            continue;
           }
           // Match - continue
         } else if (arg.isReader) {

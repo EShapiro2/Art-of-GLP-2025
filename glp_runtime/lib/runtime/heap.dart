@@ -34,7 +34,22 @@ class Heap {
   void bindVariable(int varId, Term value) {
     final cell = _vars[varId];
     if (cell != null && cell.value == null) {
-      cell.value = value;
+      // Special handling for VarRef: if binding to a reader VarRef,
+      // bind to the writer instead to avoid reader-of-reader chains
+      if (value is VarRef && value.isReader) {
+        // Get the paired writer for this reader
+        final writerId = writerIdForReader(value.varId);
+        if (writerId != null) {
+          // Bind to the writer, not the reader
+          cell.value = VarRef(writerId, isReader: false);
+        } else {
+          // No paired writer found - bind to reader as fallback
+          cell.value = value;
+        }
+      } else {
+        // Normal binding
+        cell.value = value;
+      }
       _processROQ(varId);
     }
   }
