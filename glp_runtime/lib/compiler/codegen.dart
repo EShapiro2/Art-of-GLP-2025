@@ -213,12 +213,20 @@ class CodeGenerator {
       final isFirstOccurrence = !ctx.seenHeadVars.contains(baseVarName);
 
       if (isFirstOccurrence) {
-        // First occurrence: use GetVariable
-        ctx.emit(bc.GetVariable(regIndex, argSlot));
+        // First occurrence: emit mode-aware opcode
+        if (term.isReader) {
+          ctx.emit(bc.GetReaderVariable(regIndex, argSlot));
+        } else {
+          ctx.emit(bc.GetWriterVariable(regIndex, argSlot));
+        }
         ctx.seenHeadVars.add(baseVarName);
       } else {
-        // Subsequent occurrence: use GetValue
-        ctx.emit(bc.GetValue(regIndex, argSlot));
+        // Subsequent occurrence: emit mode-aware opcode
+        if (term.isReader) {
+          ctx.emit(bc.GetReaderValue(regIndex, argSlot));
+        } else {
+          ctx.emit(bc.GetWriterValue(regIndex, argSlot));
+        }
       }
 
     } else if (term is ConstTerm) {
