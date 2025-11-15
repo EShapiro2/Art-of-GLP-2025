@@ -145,7 +145,9 @@ that could make the unification succeed.
 
 ## 7. Body Construction Instructions
 
-All put_*/body construction instructions are **heap-mutating**: they allocate and write structures/values to the heap as part of **body execution**.
+All put_*/body construction instructions used for **goal spawning** are **heap-mutating**: they allocate and write structures/values to the heap as part of **body execution**.
+
+**Exception**: `put_reader` and `put_writer` used for **guard argument setup** (in HEAD/GUARD phase) are **pure register loads** and do not mutate the heap. They simply copy variable references from clause variables (Xi) into argument registers (Ai) for guard evaluation.
 
 ### 7.1 put_structure f/n, Ai
 **Operation**: Create structure with functor f/n in argument Ai  
@@ -382,12 +384,23 @@ When the original boot goal executes `requeue p/1`, its κ changes from 7 (boot/
 Guards execute in **Phase 1** (head+guards) and are **pure tests**; they may succeed, fail, or suspend, but **do not mutate heap state**. On failure, the tentative σ̂w is discarded and the next clause head is tried; on suspension, the **goal** is suspended.
 
 ### 11.1 guard P, Args
-**Operation**: Call guard predicate P  
+**Operation**: Call guard predicate P
 **Behavior**:
 - Execute guard without side effects
 - If succeeds: continue
 - If fails: try next clause
 - If suspends: suspend entire goal
+
+**Argument Setup**: Before a guard instruction, use `put_reader` and/or `put_writer` to load guard arguments into argument registers. These operations are pure loads when used for guards (no heap mutation, no variable allocation). The guard handler reads arguments from the argument registers (argReaders/argWriters maps).
+
+**Example**:
+```
+put_reader X2, A0    % Load A? into argument register 0
+put_reader X0, A1    % Load X? into argument register 1
+guard <, 2           % Evaluate A? < X? with 2 arguments
+```
+
+**Note**: Section 19 describes a future design using dedicated guard opcodes (e.g., `guard_less X0, X1`) that reference variable indices directly, eliminating the need for argument register setup. Until those are implemented, guards use the generic `guard P, arity` instruction with `put_reader`/`put_writer` for argument passing.
 
 ### 11.2 ground X
 **Operation**: Succeeds if X is ground (contains no unbound variables)

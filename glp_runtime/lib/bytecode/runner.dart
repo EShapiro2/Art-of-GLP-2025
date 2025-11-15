@@ -1743,40 +1743,41 @@ class BytecodeRunner {
 
       // ===== BODY argument setup instructions =====
       if (op is PutWriter) {
-        if (cx.inBody) {
-          if (debug) print('  [G${cx.goalId}] PC=$pc PutWriter varIndex=${op.varIndex} argSlot=${op.argSlot} clauseVars=${cx.clauseVars}');
-          // Get writer ID from clause variable
-          final value = cx.clauseVars[op.varIndex];
-          if (debug) print('  [G${cx.goalId}] PutWriter: value=$value, type=${value.runtimeType}');
-          if (value is VarRef) {
-            // It's a VarRef - extract writer ID and store in argument register
-            if (debug) print('  [G${cx.goalId}] PutWriter: storing writer ${value.varId} in argWriters[${op.argSlot}]');
-            cx.argWriters[op.argSlot] = value.varId;
-          } else if (value is int) {
-            // Legacy: bare int (should not happen after our fixes, but keep for safety)
-            if (debug) print('  [G${cx.goalId}] PutWriter: storing writer $value in argWriters[${op.argSlot}]');
-            cx.argWriters[op.argSlot] = value;
-          } else if (value is _ClauseVar) {
-            // It's a placeholder - we need to create an actual variable (WAM-style)
-            // This happens when HeadWriter created a placeholder in WRITE mode
-            final varId = cx.rt.heap.allocateFreshVar();
-            cx.rt.heap.addVariable(varId);
-            cx.argWriters[op.argSlot] = varId;
-            // Update clause var to point to the actual variable
-            // CRITICAL FIX: Store VarRef, not bare ID
-            cx.clauseVars[op.varIndex] = VarRef(varId, isReader: false);
-          } else if (value == null) {
-            // Variable doesn't exist yet - allocate fresh variable
-            // This happens when a variable first appears in BODY phase
-            final varId = cx.rt.heap.allocateFreshVar();
-            cx.rt.heap.addVariable(varId);
-            cx.argWriters[op.argSlot] = varId;
-            // Store in clause var for future references
-            // CRITICAL FIX: Store VarRef, not bare ID
-            cx.clauseVars[op.varIndex] = VarRef(varId, isReader: false);
-          } else {
-            print('WARNING: PutWriter got unexpected value: $value');
-          }
+        // Used for both guard argument setup (HEAD/GUARD phase) and goal spawning (BODY phase)
+        // In guard context: pure register load from clauseVars to argWriters
+        // In body context: may allocate fresh variables if not yet defined
+        if (debug) print('  [G${cx.goalId}] PC=$pc PutWriter varIndex=${op.varIndex} argSlot=${op.argSlot} clauseVars=${cx.clauseVars}');
+        // Get writer ID from clause variable
+        final value = cx.clauseVars[op.varIndex];
+        if (debug) print('  [G${cx.goalId}] PutWriter: value=$value, type=${value.runtimeType}');
+        if (value is VarRef) {
+          // It's a VarRef - extract writer ID and store in argument register
+          if (debug) print('  [G${cx.goalId}] PutWriter: storing writer ${value.varId} in argWriters[${op.argSlot}]');
+          cx.argWriters[op.argSlot] = value.varId;
+        } else if (value is int) {
+          // Legacy: bare int (should not happen after our fixes, but keep for safety)
+          if (debug) print('  [G${cx.goalId}] PutWriter: storing writer $value in argWriters[${op.argSlot}]');
+          cx.argWriters[op.argSlot] = value;
+        } else if (value is _ClauseVar) {
+          // It's a placeholder - we need to create an actual variable (WAM-style)
+          // This happens when HeadWriter created a placeholder in WRITE mode
+          final varId = cx.rt.heap.allocateFreshVar();
+          cx.rt.heap.addVariable(varId);
+          cx.argWriters[op.argSlot] = varId;
+          // Update clause var to point to the actual variable
+          // CRITICAL FIX: Store VarRef, not bare ID
+          cx.clauseVars[op.varIndex] = VarRef(varId, isReader: false);
+        } else if (value == null) {
+          // Variable doesn't exist yet - allocate fresh variable
+          // This happens when a variable first appears in BODY phase
+          final varId = cx.rt.heap.allocateFreshVar();
+          cx.rt.heap.addVariable(varId);
+          cx.argWriters[op.argSlot] = varId;
+          // Store in clause var for future references
+          // CRITICAL FIX: Store VarRef, not bare ID
+          cx.clauseVars[op.varIndex] = VarRef(varId, isReader: false);
+        } else {
+          print('WARNING: PutWriter got unexpected value: $value');
         }
         if (debug) print('  [G${cx.goalId}] PutWriter: about to increment PC to ${pc+1}');
         pc++;
@@ -1785,66 +1786,73 @@ class BytecodeRunner {
       }
 
       if (op is PutReader) {
-        if (cx.inBody) {
-          if (debug) {
-            print('  [G${cx.goalId}] PC=$pc PutReader varIndex=${op.varIndex} argSlot=${op.argSlot} clauseVars=${cx.clauseVars}');
-          }
-          // Get ID from clause variable - could be VarRef, StructTerm, ConstTerm
-          final value = cx.clauseVars[op.varIndex];
-          if (value is VarRef) {
-            // It's a VarRef - handle writer vs reader
-            if (value.isReader) {
-              // Already a reader - use its ID directly
-              cx.argReaders[op.argSlot] = value.varId;
-            } else {
-              // It's a writer - get its paired reader
-              final wc = cx.rt.heap.writer(value.varId);
-              if (wc != null) {
-                if (debug && cx.goalId == 100) print('  [G${cx.goalId}] PutReader: Setting argReaders[${op.argSlot}] = ${wc.readerId}');
-                cx.argReaders[op.argSlot] = wc.readerId;
-              } else {
-                print('WARNING: PutReader got writer VarRef but no WriterCell found');
-              }
-            }
-          } else if (value is int) {
-            // Legacy: bare int (should not happen after our fixes, but keep for safety)
-            final wc = cx.rt.heap.writer(value);
-            if (debug && cx.goalId == 100) print('  [G${cx.goalId}] PutReader: value=$value, wc=$wc, wc.readerId=${wc?.readerId}');
+        // Used for both guard argument setup (HEAD/GUARD phase) and goal spawning (BODY phase)
+        // In guard context: pure register load from clauseVars to argReaders
+        // In body context: may allocate fresh variables if not yet defined
+        if (debug) {
+          print('  [G${cx.goalId}] PC=$pc PutReader varIndex=${op.varIndex} argSlot=${op.argSlot} clauseVars=${cx.clauseVars}');
+        }
+        // Get ID from clause variable - could be VarRef, StructTerm, ConstTerm
+        final value = cx.clauseVars[op.varIndex];
+        if (value is VarRef) {
+          // It's a VarRef - handle writer vs reader
+          if (value.isReader) {
+            // Already a reader - use its ID directly
+            cx.argReaders[op.argSlot] = value.varId;
+          } else {
+            // It's a writer - get its paired reader
+            final wc = cx.rt.heap.writer(value.varId);
             if (wc != null) {
-              // It's a writer ID - get its paired reader
               if (debug && cx.goalId == 100) print('  [G${cx.goalId}] PutReader: Setting argReaders[${op.argSlot}] = ${wc.readerId}');
               cx.argReaders[op.argSlot] = wc.readerId;
             } else {
-              // Not a writer - assume it's already a reader ID
-              if (debug && cx.goalId == 100) print('  [G${cx.goalId}] PutReader: Not a writer, assuming reader ID, setting argReaders[${op.argSlot}] = $value');
-              cx.argReaders[op.argSlot] = value;
+              print('WARNING: PutReader got writer VarRef but no WriterCell found');
             }
-          } else if (value is StructTerm) {
-            // It's a structure - create fresh variable and bind it (WAM-style)
-            final varId = cx.rt.heap.allocateFreshVar();
-            cx.rt.heap.addVariable(varId);
-            cx.rt.heap.bindWriterStruct(varId, value.functor, value.args);
-            cx.argReaders[op.argSlot] = varId;
-          } else if (value is ConstTerm) {
-            // It's a ground constant - create fresh variable and bind it (WAM-style)
-            if (debug) print('  [G${cx.goalId}] PutReader: creating fresh variable for ground constant ${value.value}');
-            final varId = cx.rt.heap.allocateFreshVar();
-            cx.rt.heap.addVariable(varId);
-            cx.rt.heap.bindWriterConst(varId, value.value);
-            cx.argReaders[op.argSlot] = varId;
-            if (debug) print('  [G${cx.goalId}] PutReader: created V$varId for constant');
-          } else if (value == null) {
-            // First occurrence of this variable - create fresh unbound variable
-            final varId = cx.rt.heap.allocateFreshVar();
-            cx.rt.heap.addVariable(varId);
-            // CRITICAL FIX: Store VarRef, not bare ID
-            cx.clauseVars[op.varIndex] = VarRef(varId, isReader: false);
-            cx.argReaders[op.argSlot] = varId;
-            if (debug) print('  [G${cx.goalId}] PutReader: created fresh unbound variable V$varId for first occurrence');
-          } else {
-            // Unknown - skip
-            print('WARNING: PutReader got unexpected value: $value');
           }
+        } else if (value is int) {
+          // Legacy: bare int (should not happen after our fixes, but keep for safety)
+          final wc = cx.rt.heap.writer(value);
+          if (debug && cx.goalId == 100) print('  [G${cx.goalId}] PutReader: value=$value, wc=$wc, wc.readerId=${wc?.readerId}');
+          if (wc != null) {
+            // It's a writer ID - get its paired reader
+            if (debug && cx.goalId == 100) print('  [G${cx.goalId}] PutReader: Setting argReaders[${op.argSlot}] = ${wc.readerId}');
+            cx.argReaders[op.argSlot] = wc.readerId;
+          } else {
+            // Not a writer - assume it's already a reader ID
+            if (debug && cx.goalId == 100) print('  [G${cx.goalId}] PutReader: Not a writer, assuming reader ID, setting argReaders[${op.argSlot}] = $value');
+            cx.argReaders[op.argSlot] = value;
+          }
+        } else if (value is StructTerm) {
+          // It's a structure - create fresh variable and bind it (WAM-style)
+          // Note: This allocates a fresh variable, which is heap-mutating
+          // Only happens in BODY phase; guards should not have unprocessed structures
+          final varId = cx.rt.heap.allocateFreshVar();
+          cx.rt.heap.addVariable(varId);
+          cx.rt.heap.bindWriterStruct(varId, value.functor, value.args);
+          cx.argReaders[op.argSlot] = varId;
+        } else if (value is ConstTerm) {
+          // It's a ground constant - create fresh variable and bind it (WAM-style)
+          // Note: This allocates a fresh variable, which is heap-mutating
+          // Only happens in BODY phase; guards should not have unprocessed constants
+          if (debug) print('  [G${cx.goalId}] PutReader: creating fresh variable for ground constant ${value.value}');
+          final varId = cx.rt.heap.allocateFreshVar();
+          cx.rt.heap.addVariable(varId);
+          cx.rt.heap.bindWriterConst(varId, value.value);
+          cx.argReaders[op.argSlot] = varId;
+          if (debug) print('  [G${cx.goalId}] PutReader: created V$varId for constant');
+        } else if (value == null) {
+          // First occurrence of this variable - create fresh unbound variable
+          // Note: This allocates a fresh variable, which is heap-mutating
+          // Only happens in BODY phase; guards reference HEAD variables which already exist
+          final varId = cx.rt.heap.allocateFreshVar();
+          cx.rt.heap.addVariable(varId);
+          // CRITICAL FIX: Store VarRef, not bare ID
+          cx.clauseVars[op.varIndex] = VarRef(varId, isReader: false);
+          cx.argReaders[op.argSlot] = varId;
+          if (debug) print('  [G${cx.goalId}] PutReader: created fresh unbound variable V$varId for first occurrence');
+        } else {
+          // Unknown - skip
+          print('WARNING: PutReader got unexpected value: $value');
         }
         if (debug) print('  [G${cx.goalId}] PutReader: continuing to PC ${pc+1}');
         pc++; continue;
