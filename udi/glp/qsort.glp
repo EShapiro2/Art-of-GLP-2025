@@ -24,3 +24,8 @@ partition ([ ], _ , [ ], [ ]).
 
 
 
+testqs :-  qsort(X?,Y,[1|Z?]).
+
+testqs1(Y?) :-  qsort([],Y,[1|Z?]).
+
+testqs2(Y?) :-  qsort([],Y,[1]).

@@ -1,3 +1,2 @@
-% Test partition guard clause
-partition ([X | Xs], A, Smaller?, [X? | Larger?]) :-
-    A? < X? | partition (Xs?, A?, Smaller, Larger).
+% Test file with just partition base case
+partition([], _, [], []).

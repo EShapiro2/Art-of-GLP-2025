@@ -22,7 +22,7 @@ void main() async {
   // Get git commit info
   final gitCommit = await _getGitCommit();
   // Build timestamp (updated at compile time)
-  final buildTime = '2025-11-16T03:15:00Z (Mode-aware opcodes per spec: \u03c3\u0302w bindings only)';
+  final buildTime = '2025-11-17T04:00:00Z (FIX: GetWriterValue isReader flag)';
 
   print('╔════════════════════════════════════════╗');
   print('║   GLP REPL - Interactive Interpreter   ║');
@@ -82,6 +82,23 @@ void main() async {
     if (trimmed == ':trace' || trimmed == ':t') {
       debugTrace = !debugTrace;
       print('Trace ${debugTrace ? "enabled" : "disabled"}');
+      continue;
+    }
+
+    if (trimmed.startsWith(':bytecode') || trimmed.startsWith(':bc')) {
+      // Display bytecode for loaded programs
+      if (loadedPrograms.isEmpty) {
+        print('No programs loaded');
+        continue;
+      }
+      for (final entry in loadedPrograms.entries) {
+        print('\nBytecode for ${entry.key}:');
+        print('=' * 60);
+        final prog = entry.value;
+        for (int i = 0; i < prog.ops.length; i++) {
+          print('  ${i.toString().padLeft(4)}: ${prog.ops[i]}');
+        }
+      }
       continue;
     }
 
@@ -466,6 +483,27 @@ rt.Term _buildListTerm(GlpRuntime runtime, ListTerm list, Map<String, int> query
   rt.Term tailTerm;
   if (tail is ListTerm) {
     tailTerm = _buildListTerm(runtime, tail, queryVarWriters);
+  } else if (tail is VarTerm) {
+    // Variable tail (e.g., [1|Z?]) - check if already exists
+    final baseName = tail.name;
+    final existingWriterId = queryVarWriters[baseName];
+
+    if (tail.isReader && existingWriterId != null) {
+      // Reader for existing writer - in single-ID, use same ID
+      tailTerm = rt.VarRef(existingWriterId, isReader: true);
+    } else if (!tail.isReader && existingWriterId != null) {
+      // Writer already exists - reuse it
+      tailTerm = rt.VarRef(existingWriterId, isReader: false);
+    } else {
+      // First occurrence - create fresh pair
+      final (writerId, readerId) = runtime.heap.allocateFreshPair();
+      runtime.heap.addWriter(WriterCell(writerId, readerId));
+      runtime.heap.addReader(ReaderCell(readerId));
+      if (!tail.isReader) {
+        queryVarWriters[baseName] = writerId;
+      }
+      tailTerm = tail.isReader ? rt.VarRef(readerId, isReader: true) : rt.VarRef(writerId, isReader: false);
+    }
   } else {
     tailTerm = rt.ConstTerm(null);
   }

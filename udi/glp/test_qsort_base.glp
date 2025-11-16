@@ -1,0 +1,2 @@
+% qsort base case only
+qsort([], Rest?, Rest).

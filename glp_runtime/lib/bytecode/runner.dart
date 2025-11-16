@@ -961,8 +961,16 @@ class BytecodeRunner {
           final freshVar = cx.rt.heap.allocateFreshVar();
           cx.rt.heap.addVariable(freshVar);
 
+          print('[TRACE GetReaderVariable] Writer→Reader mode conversion:');
+          print('  varIndex=${op.varIndex}, argSlot=${op.argSlot}');
+          print('  Caller writer ID: ${arg.writerId}');
+          print('  Allocated fresh var: V$freshVar');
+          print('  sigmaHat binding: W${arg.writerId} → R$freshVar');
+
           // Bind caller's writer to reader view in σ̂w
           cx.sigmaHat[arg.writerId!] = VarRef(freshVar, isReader: true);
+
+          print('  clauseVars[${{op.varIndex}}] = $freshVar (int)');
 
           // Store fresh var as clause variable (used as reader in clause body)
           cx.clauseVars[op.varIndex] = freshVar;
@@ -1064,7 +1072,9 @@ class BytecodeRunner {
                 cx.sigmaHat[arg.writerId!] = freshVarBinding;
               } else if (arg.writerId != storedValue) {
                 // Fresh var still unbound - bind arg writer to it
-                cx.sigmaHat[arg.writerId!] = VarRef(storedValue, isReader: false);
+                // CRITICAL FIX: storedValue came from GetReaderVariable mode conversion
+                // It's a fresh variable meant to be used as a reader
+                cx.sigmaHat[arg.writerId!] = VarRef(storedValue, isReader: true);
               }
               // If arg.writerId == storedValue, they're the same variable (idempotent)
             } else if (storedValue is Term) {
@@ -1680,6 +1690,18 @@ class BytecodeRunner {
         // Print reduction (successful commit)
         if (debug) {
           print('>>> REDUCTION: Goal ${cx.goalId} at PC $pc (commit succeeded, σ̂w has ${convertedSigmaHat.length} bindings)');
+        }
+
+        // TRACE: Show all sigmaHat bindings before applying to heap
+        print('[TRACE Commit] Applying sigmaHat to heap (${convertedSigmaHat.length} bindings):');
+        for (final entry in convertedSigmaHat.entries) {
+          final writerId = entry.key;
+          final value = entry.value;
+          print('  W$writerId → $value');
+          // FLAG invalid writer→writer bindings
+          if (value is VarRef && !value.isReader) {
+            print('    ⚠️  WARNING: Writer→Writer binding detected!');
+          }
         }
 
         // Apply σ̂w: bind writers to tentative values, then wake suspended goals
@@ -2311,6 +2333,11 @@ class BytecodeRunner {
       // ===== Goal spawning and control flow =====
       if (op is Spawn) {
         if (cx.inBody) {
+          // TRACE: Show argument preparation
+          print('[TRACE Spawn] Preparing to spawn ${op.procedureLabel}:');
+          print('  argWriters: {${cx.argWriters.entries.map((e) => '${e.key}: W${e.value}').join(', ')}}');
+          print('  argReaders: {${cx.argReaders.entries.map((e) => '${e.key}: R${e.value}').join(', ')}}');
+
           // Spawn a new goal with arguments from argWriters/argReaders
           // Create CallEnv from current argument registers
           final newEnv = CallEnv(

@@ -164,6 +164,39 @@ run_test "Insertion sort two elements" \
     "X = \[3, 4\]"
 
 # ============================================
+# QUICKSORT ADDITIONAL TESTS
+# ============================================
+
+run_test "Quicksort two elements [1,2]" \
+    "qsort.glp" \
+    "quicksort([1,2],X)." \
+    "X = \[1, 2\]"
+
+# ============================================
+# METAINTERPRETER MERGE TESTS
+# ============================================
+
+run_test "Metainterpreter: merge([a],[b],X)" \
+    "run1.glp" \
+    "run(merge([a],[b],X))." \
+    "X = \[a, b\]"
+
+run_test "Metainterpreter: merge([a],[b,c,d],X)" \
+    "run1.glp" \
+    "run(merge([a],[b,c,d],X))." \
+    "X = \[a, b, c, d\]"
+
+run_test "Metainterpreter: run2(X) - shared variable test" \
+    "run1.glp" \
+    "run2(X)." \
+    "X = \[\]"
+
+run_test "Metainterpreter: merge chain with shared vars" \
+    "run1.glp" \
+    "run((merge([a],[b],X),merge(X?,[c],Y)))." \
+    "Y = \[a, c, b\]"
+
+# ============================================
 # SUMMARY
 # ============================================
 
