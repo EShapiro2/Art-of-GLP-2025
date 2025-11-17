@@ -1470,9 +1470,13 @@ class BytecodeRunner {
           if (cx.currentStructure is _TentativeStruct) {
             final struct = cx.currentStructure as _TentativeStruct;
             final value = cx.clauseVars[op.varIndex];
+            if (cx.goalId >= 10000) print('DEBUG METAINT: UnifyWriter WRITE varIndex=${op.varIndex}, value=${value?.runtimeType}=$value, clauseVars=${cx.clauseVars}');
             if (value is VarRef) {
               // Subsequent use: extract varId, create writer VarRef (per spec 8.1)
               struct.args[cx.S] = VarRef(value.varId, isReader: false);
+            } else if (value is int) {
+              // Bare varId (from GetVariable or mode conversion) - create writer VarRef
+              struct.args[cx.S] = VarRef(value, isReader: false);
             } else if (value is ConstTerm || value is StructTerm) {
               // It's a ground term extracted from READ mode - use directly
               struct.args[cx.S] = value;

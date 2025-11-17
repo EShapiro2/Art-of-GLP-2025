@@ -253,9 +253,15 @@ class CodeGenerator {
       }
 
     } else if (term is StructTerm) {
-      // Structure in head: use two-pass approach to match hand-written bytecode
-      // Pass 1: Emit head_structure and extract all arguments (including nested structures) into temps/vars
-      ctx.emit(bc.HeadStructure(term.functor, term.arity, argSlot));
+      // FIX: For structures as direct HEAD arguments, extract first then match
+      // This avoids overlapping HeadStructure operations
+
+      // Step 1: Extract the argument into a temp register
+      final tempReg = ctx.allocateTemp();
+      ctx.emit(bc.GetVariable(tempReg, argSlot));  // Load argument into temp
+
+      // Step 2: Match the structure at the temp register (not argSlot!)
+      ctx.emit(bc.HeadStructure(term.functor, term.arity, tempReg));
 
       final nestedStructures = <int, Term>{}; // Map of tempReg -> nested term
 
