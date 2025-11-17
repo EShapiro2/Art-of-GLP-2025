@@ -59,6 +59,32 @@ There are three levels in the code organization:
 - **X1-Xn**: Temporary registers for local computation within a clause
 - **Y1-Yn**: Permanent registers stored in environment frames
 
+### 1.1 Argument Register Semantics
+
+**A1-An registers are heterogeneous term storage**, not just variable references. Each argument register can hold:
+
+1. **Variable Reference**: `VarRef(varId, isReader: bool)` — reference to two-cell heap variable
+   - `varId`: identifies the variable (maps to writer/reader cell pair in heap)
+   - `isReader: false` → writer access mode (write-once, goal can bind)
+   - `isReader: true` → reader access mode (read-only, suspends if unbound)
+   - Same `varId` can appear in multiple arguments with different access modes
+   - Enforces SRSW: each mode can only appear once per clause
+
+2. **Constant Term**: `ConstTerm(value)` — immediate value (atom, number, nil)
+   - No heap allocation required
+   - Stored directly in argument register
+
+3. **Structure Term**: `StructTerm(functor, args)` — compound term with nested arguments
+   - Built incrementally via put_structure + set_* instructions
+   - Arguments can be variables, constants, or nested structures
+
+**Implementation Requirement**:
+- Runtime must support `Map<int, Term>` or equivalent polymorphic storage for CallEnv
+- All Get* and Put* instructions operate on terms, not just variable IDs
+- Argument passing via Spawn/Call must preserve term types
+
+**WAM/FCP Alignment**: This matches the classical WAM design where argument registers are typed storage locations, and FCP's argument passing which supports arbitrary terms.
+
 ### Control Registers
 - **PC**: Program counter
 - **CP**: Continuation pointer (return address for deterministic calls)
@@ -236,11 +262,12 @@ All put_*/body construction instructions used for **goal spawning** are **heap-m
 **Exception**: `put_reader` and `put_writer` used for **guard argument setup** (in HEAD/GUARD phase) are **pure register loads** and do not mutate the heap. They simply copy variable references from clause variables (Xi) into argument registers (Ai) for guard evaluation.
 
 ### 7.1 put_structure f/n, Ai
-**Operation**: Create structure with functor f/n in argument Ai  
+**Operation**: Create structure with functor f/n in argument Ai
 **Behavior**:
 - Allocate structure header on heap at position H
 - Store functor f/n at heap
-- Set Ai to point to this structure
+- Build `StructTerm(f, args)` incrementally via subsequent set_* instructions
+- **Runtime**: Must populate `CallEnv.argBySlot[i] = StructTerm(f, args)`
 - Enter WRITE mode for subsequent writer/reader instructions
 - Increment H
 
@@ -258,13 +285,19 @@ All put_*/body construction instructions used for **goal spawning** are **heap-m
 - Mark as reader for suspension handling
 
 ### 7.4 put_constant c, Ai
-**Operation**: Place constant c in argument Ai  
+**Operation**: Place constant c in argument Ai
 **Behavior**:
-- Store constant value directly in Ai
+- Store `ConstTerm(c)` directly in argument register Ai
+- **Runtime**: Must populate `CallEnv.argBySlot[i] = ConstTerm(c)`
+- No heap allocation required for immediate constants
+
+**Example**: `put_constant(42, A1)` → A1 contains `ConstTerm(42)`
 
 ### 7.5 put_nil Ai
-**Operation**: Place empty list in argument Ai  
+**Operation**: Place empty list in argument Ai
 **Behavior**:
+- Store `ConstTerm(null)` in argument register Ai (nil represented as null)
+- **Runtime**: Must populate `CallEnv.argBySlot[i] = ConstTerm(null)`
 - Special case of put_constant for []
 
 ### 7.6 put_list Ai
@@ -723,6 +756,35 @@ The four opcodes handle all combinations of:
 2. **Mode conversion happens during argument loading**: When argument mode differs from clause expectation
 3. **Fresh variables enable reader views**: Allocating fresh variables provides isolation for reader semantics
 4. **Three-valued unification**: Success, suspend (on unbound reader), or fail
+
+### 12.0.1 Argument Term Types
+
+**Get* instructions must handle all term types in argument registers** (per Section 1.1):
+
+```
+arg = CallEnv.getArg(slot)
+
+if arg is VarRef(varId, isReader: bool):
+    // Handle variable (writer or reader access mode)
+    // Mode conversion may be needed
+
+if arg is ConstTerm(value):
+    // Handle constant - bind clause variable or verify match
+    // No suspension possible (constants are always bound)
+
+if arg is StructTerm(functor, args):
+    // Handle structure - unify with clause pattern
+    // May contain variables, constants, or nested structures
+```
+
+**GetWriterValue/GetReaderValue with constant arguments**:
+- When argument is `ConstTerm(c)`: bind clause variable to constant in σ̂w
+- When constant doesn't match expected value: soft-fail to next clause
+- No suspension (constants are always bound)
+
+**GetWriterValue/GetReaderValue with structure arguments**:
+- When argument is `StructTerm(f, args)`: unify structure with clause variable
+- Structure arguments may trigger recursive unification or mode conversion
 
 ---
 
