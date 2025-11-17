@@ -801,8 +801,7 @@ class BytecodeRunner {
         print('DEBUG: HeadStructure line 610 - GROUND TERM PATH');
         print('  op.argSlot = ${op.argSlot}');
         print('  arg = $arg');
-        print('  arg?.isWriter = ${arg?.isWriter}');
-        print('  arg?.isReader = ${arg?.isReader}');
+        print('  arg is VarRef = ${arg is VarRef}');
         print('  isClauseVar = $isClauseVar');
         if (isClauseVar && op.argSlot < 100) {
           // print('  clauseVars[${op.argSlot}] = ${cx.clauseVars[op.argSlot]}');
@@ -2519,42 +2518,10 @@ class BytecodeRunner {
         for (int i = 0; i < arity; i++) {
           Object? argValue;
 
-          // Check argWriters first (for unbound writers)
-          if (cx.argWriters.containsKey(i)) {
-            final writerId = cx.argWriters[i]!;
-            // print('[GUARD] Arg $i from argWriters: $writerId');
-            argValue = VarRef(writerId, isReader: false);
-          }
-          // Then check argReaders (contains BOTH bound writers AND actual readers)
-          else if (cx.argReaders.containsKey(i)) {
-            final varId = cx.argReaders[i]!;
-            // print('[GUARD] Arg $i from argReaders: $varId');
-
-            // CRITICAL FIX: Determine if this is a writer ID or reader ID
-            // Check if varId exists as a writer in the heap
-            final writerCell = cx.rt.heap.writer(varId);
-
-            if (writerCell != null) {
-              // It's a WRITER ID (from PutBoundConst storing bound constants)
-              // Treat as a writer variable
-              // print('[GUARD] Arg $i is WRITER ID (from PutBoundConst)');
-              argValue = VarRef(varId, isReader: false);
-
-              if (debug) {
-                // print('[GUARD] Slot $i: Writer ID $varId (bound: ${cx.rt.heap.isWriterBound(varId)})');
-              }
-            } else {
-              // It's a READER ID (from PutReader for actual readers)
-              // Treat as a reader variable
-              // print('[GUARD] Arg $i is READER ID (from PutReader)');
-              argValue = VarRef(varId, isReader: true);
-
-              if (debug) {
-                // Check if this reader's paired writer is bound
-                final writerId = cx.rt.heap.writerIdForReader(varId);
-                // print('[GUARD] Slot $i: Reader ID $varId (writer $writerId bound: ${writerId != null ? cx.rt.heap.isWriterBound(writerId) : false})');
-              }
-            }
+          // Get argument from argSlots (heterogeneous term storage)
+          final arg = cx.argSlots[i];
+          if (arg != null) {
+            argValue = arg; // Store Term directly (VarRef, ConstTerm, or StructTerm)
           }
           // Check clauseVars for HEAD variables
           else if (cx.clauseVars.containsKey(i)) {
@@ -2943,13 +2910,13 @@ class BytecodeRunner {
         if (arg == null) { pc++; continue; } // No argument at this slot
 
         // Note: valueOfWriter() dereferences automatically per FCP AM semantics
-        if (arg.isWriter) {
-          if (debug && (cx.goalId >= 4000 || cx.goalId == 100)) print('  HeadNil: arg is writer ${arg.writerId}');
+        if (arg is VarRef && !arg.isReader) {
+          if (debug && (cx.goalId >= 4000 || cx.goalId == 100)) print('  HeadNil: arg is writer ${arg.varId}');
           // Writer: check if already bound, else record tentative binding in σ̂w
-          if (cx.rt.heap.isWriterBound(arg.writerId!)) {
+          if (cx.rt.heap.isWriterBound(arg.varId)) {
             // Already bound - check if value matches []
-            final value = cx.rt.heap.valueOfWriter(arg.writerId!);  // Dereferenced automatically
-            if (debug && (cx.goalId >= 4000 || cx.goalId == 100)) print('  HeadNil: writer ${arg.writerId} value = $value');
+            final value = cx.rt.heap.valueOfWriter(arg.varId);
+            if (debug && (cx.goalId >= 4000 || cx.goalId == 100)) print('  HeadNil: writer ${arg.varId} value = $value');
             if (value is ConstTerm && value.value != 'nil') {
               if (debug && (cx.goalId >= 4000 || cx.goalId == 100)) print('  HeadNil: value does not match nil, failing');
               _softFailToNextClause(cx, pc);
@@ -2963,23 +2930,18 @@ class BytecodeRunner {
             }
           } else {
             // Unbound writer - record tentative binding in σ̂w
-            cx.sigmaHat[arg.writerId!] = ConstTerm('nil');
+            cx.sigmaHat[arg.varId] = ConstTerm('nil');
           }
-        } else if (arg.isReader) {
-          if (debug && (cx.goalId >= 4000 || cx.goalId == 100)) print('  HeadNil: arg is reader ${arg.readerId}');
+        } else if (arg is VarRef && arg.isReader) {
+          if (debug && (cx.goalId >= 4000 || cx.goalId == 100)) print('  HeadNil: arg is reader ${arg.varId}');
           // Reader: check if bound, else add to U and fail
-          final wid = cx.rt.heap.writerIdForReader(arg.readerId!);
+          final wid = cx.rt.heap.writerIdForReader(arg.varId);
           final bound = wid != null ? cx.rt.heap.isWriterBound(wid) : false;
           final value = (wid != null && bound) ? cx.rt.heap.valueOfWriter(wid) : null;
-          // print('[DEBUG HeadNil] Goal ${cx.goalId}, Reader R${arg.readerId}: wid=$wid, exists=${wid != null}, bound=$bound, value=$value');
 
           if (wid == null || !bound) {
-            // Find the final unbound variable in the chain (FCP: suspend on ultimate target)
-            final suspendOnVar = _finalUnboundVar(cx, arg.readerId!);
-            // if (suspendOnVar != arg.readerId) {
-            //   print('[DEBUG HeadNil] → Chain detected: R${arg.readerId} → R$suspendOnVar, suspending on final');
-            // }
-            // print('[DEBUG HeadNil] → SUSPENDING on unbound reader R$suspendOnVar');
+            // Find the final unbound variable in the chain
+            final suspendOnVar = _finalUnboundVar(cx, arg.varId);
             pc = _suspendAndFail(cx, suspendOnVar, pc);
             continue;
           } else {
@@ -3011,12 +2973,11 @@ class BytecodeRunner {
         final arg = _getArg(cx, op.argSlot);
         if (arg == null) { pc++; continue; } // No argument at this slot
 
-        if (arg.isWriter) {
+        if (arg is VarRef && !arg.isReader) {
           // Writer: create tentative structure in σ̂w
-          // Note: _getArg already dereferenced, so arg.writerId is the final value
-          if (cx.rt.heap.isWriterBound(arg.writerId!)) {
+          if (cx.rt.heap.isWriterBound(arg.varId)) {
             // Already bound - check if it's a list structure
-            final value = cx.rt.heap.valueOfWriter(arg.writerId!);
+            final value = cx.rt.heap.valueOfWriter(arg.varId);
             if (value is StructTerm && value.functor == '[|]' && value.args.length == 2) {
               cx.currentStructure = value;
               cx.S = 0;
@@ -3029,24 +2990,22 @@ class BytecodeRunner {
           } else {
             // Unbound writer - create tentative structure
             final struct = StructTerm('[|]', []);
-            cx.sigmaHat[arg.writerId!] = struct;
+            cx.sigmaHat[arg.varId] = struct;
             cx.currentStructure = struct;
             cx.S = 0;
             cx.mode = UnifyMode.write;
           }
-        } else if (arg.isReader) {
+        } else if (arg is VarRef && arg.isReader) {
           // Reader: check if bound, else add to U and fail
-          final wid = cx.rt.heap.writerIdForReader(arg.readerId!);
+          final wid = cx.rt.heap.writerIdForReader(arg.varId);
           final bound = wid != null ? cx.rt.heap.isWriterBound(wid) : false;
           final value = (wid != null && bound) ? cx.rt.heap.valueOfWriter(wid) : null;
-          // print('[DEBUG HeadList] Goal ${cx.goalId}, Reader R${arg.readerId}: wid=$wid, exists=${wid != null}, bound=$bound, value=$value');
 
           if (wid == null || !bound) {
-            final suspendOnVar = _finalUnboundVar(cx, arg.readerId!);
-            // print('[DEBUG HeadList] → SUSPENDING on unbound reader R$suspendOnVar');
+            final suspendOnVar = _finalUnboundVar(cx, arg.varId);
             pc = _suspendAndFail(cx, suspendOnVar, pc);
             continue;
-          } else {
+          } else{
             // Bound reader - check if it's a list structure
             // print('[DEBUG HeadList] → Bound reader, checking value is list');
             if (value is StructTerm && value.functor == '[|]' && value.args.length == 2) {
@@ -3072,7 +3031,7 @@ class BytecodeRunner {
           final varId = cx.rt.heap.allocateFreshVar();
           cx.rt.heap.addVariable(varId);
           cx.rt.heap.bindWriterConst(varId, 'nil'); // [] represented as 'nil'
-          cx.argReaders[op.argSlot] = varId;
+          cx.argSlots[op.argSlot] = VarRef(varId, isReader: true);
         }
         pc++;
         continue;
@@ -3084,7 +3043,7 @@ class BytecodeRunner {
         final varId = cx.rt.heap.allocateFreshVar();
         cx.rt.heap.addVariable(varId);
         cx.rt.heap.bindWriterConst(varId, op.value);
-        cx.argReaders[op.argSlot] = varId;
+        cx.argSlots[op.argSlot] = VarRef(varId, isReader: true);
         pc++;
         continue;
       }
@@ -3095,7 +3054,7 @@ class BytecodeRunner {
         final varId = cx.rt.heap.allocateFreshVar();
         cx.rt.heap.addVariable(varId);
         cx.rt.heap.bindWriterConst(varId, 'nil');
-        cx.argReaders[op.argSlot] = varId;
+        cx.argSlots[op.argSlot] = VarRef(varId, isReader: true);
         pc++;
         continue;
       }
@@ -3105,7 +3064,8 @@ class BytecodeRunner {
         // Equivalent to PutStructure('[|]', 2, op.argSlot)
         if (cx.inBody) {
           // Store target writer ID from environment
-          final targetWriterId = cx.env.w(op.argSlot);
+          final arg = cx.env.arg(op.argSlot);
+          final targetWriterId = (arg is VarRef && !arg.isReader) ? arg.varId : null;
           if (targetWriterId == null) {
             print('WARNING: PutList argSlot ${op.argSlot} has no writer in environment');
             pc++; continue;
