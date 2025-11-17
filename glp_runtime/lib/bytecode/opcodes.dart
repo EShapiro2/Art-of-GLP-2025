@@ -267,6 +267,41 @@ class GetReaderValue implements Op {
 /// If Si is non-empty, previous clauses suspended, so this fails
 class Otherwise implements Op {}
 
+/// Push: Save current structure processing state before entering nested structure
+/// Stores (S, mode, currentStructure) triple in clause variable Xi
+/// Following FCP AM design for nested structure handling
+class Push implements Op {
+  final int regIndex;  // Xi register to store state
+  Push(this.regIndex);
+
+  @override
+  String toString() => 'Push(X$regIndex)';
+}
+
+/// Pop: Restore structure processing state after completing nested structure
+/// Retrieves (S, mode, currentStructure) from clause variable Xi
+/// Must correspond to a previous Push instruction
+class Pop implements Op {
+  final int regIndex;  // Xi register to restore from
+  Pop(this.regIndex);
+
+  @override
+  String toString() => 'Pop(X$regIndex)';
+}
+
+/// UnifyStructure: Process nested structure at current S position
+/// Following FCP AM's unify_compound instruction
+/// Matches/creates structure at args[S], then enters that structure for processing
+class UnifyStructure implements Op {
+  final String functor;
+  final int arity;
+
+  UnifyStructure(this.functor, this.arity);
+
+  @override
+  String toString() => 'UnifyStructure($functor, $arity)';
+}
+
 /// IfWriter guard: succeeds if variable is a writer (not reader, not constant)
 /// Used for type checking in guards
 class IfWriter implements Op {

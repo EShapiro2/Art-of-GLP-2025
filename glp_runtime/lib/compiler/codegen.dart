@@ -343,17 +343,17 @@ class CodeGenerator {
         // Nil is atomic constant - same for HEAD and BODY modes
         ctx.emit(bc.UnifyConstant('nil'));
       } else {
-        // Non-empty list: extract-then-match pattern
-        final tempReg = ctx.allocateTemp();
-
+        // Non-empty list: use Push/UnifyStructure/Pop pattern
         if (inHead) {
-          // READ mode: extract value at S into temp
-          ctx.emit(bcv2.UnifyVariable(tempReg, isReader: false));  // Extract into temp
-          ctx.emit(bc.HeadStructure('.', 2, tempReg));
-          if (term.head != null) _generateStructureElement(term.head!, varTable, ctx, inHead: inHead);
-          if (term.tail != null) _generateStructureElement(term.tail!, varTable, ctx, inHead: inHead);
+          final saveReg = ctx.allocateTemp();
+          ctx.emit(bc.Push(saveReg));
+          ctx.emit(bc.UnifyStructure('.', 2));
+          if (term.head != null) _generateStructureElement(term.head!, varTable, ctx, inHead: true);
+          if (term.tail != null) _generateStructureElement(term.tail!, varTable, ctx, inHead: true);
+          ctx.emit(bc.Pop(saveReg));
         } else {
           // WRITE mode (BODY): building nested structure within argument structure
+          final tempReg = ctx.allocateTemp();
           ctx.emit(bc.PutStructure('.', 2, tempReg));
           if (term.head != null) _generateStructureElement(term.head!, varTable, ctx, inHead: inHead);
           if (term.tail != null) _generateStructureElement(term.tail!, varTable, ctx, inHead: inHead);
@@ -362,18 +362,18 @@ class CodeGenerator {
       }
 
     } else if (term is StructTerm) {
-      // Nested structure: extract into temp, then match
-      final tempReg = ctx.allocateTemp();
-
+      // Nested structure: use Push/UnifyStructure/Pop pattern
       if (inHead) {
-        // READ mode
-        ctx.emit(bcv2.UnifyVariable(tempReg, isReader: false));  // Extract into temp
-        ctx.emit(bc.HeadStructure(term.functor, term.arity, tempReg));
+        final saveReg = ctx.allocateTemp();
+        ctx.emit(bc.Push(saveReg));
+        ctx.emit(bc.UnifyStructure(term.functor, term.arity));
         for (final subArg in term.args) {
-          _generateStructureElement(subArg, varTable, ctx, inHead: inHead);
+          _generateStructureElement(subArg, varTable, ctx, inHead: true);
         }
+        ctx.emit(bc.Pop(saveReg));
       } else {
         // WRITE mode
+        final tempReg = ctx.allocateTemp();
         ctx.emit(bc.PutStructure(term.functor, term.arity, tempReg));
         for (final subArg in term.args) {
           _generateStructureElement(subArg, varTable, ctx, inHead: inHead);

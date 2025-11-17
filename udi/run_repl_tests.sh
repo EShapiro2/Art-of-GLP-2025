@@ -217,6 +217,20 @@ run_test "Metainterpreter: merge chain with shared vars" \
     "Y = \[a, c, b\]"
 
 # ============================================
+# METAINTERPRETER QUICKSORT TESTS
+# ============================================
+
+run_test "Metainterpreter: quicksort([],X)" \
+    "qsort.glp" \
+    "run(quicksort([],X))." \
+    "X = \[\]"
+
+run_test "Metainterpreter: quicksort([1],X)" \
+    "qsort.glp" \
+    "run(quicksort([1],X))." \
+    "X = \[1\]"
+
+# ============================================
 # SUMMARY
 # ============================================
 

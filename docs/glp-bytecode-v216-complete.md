@@ -364,6 +364,34 @@ When building structures in BODY mode that contain variables (non-ground structu
 - Reader variables: Use `set_reader Xi` instruction to place reader reference in structure
 - Fresh variables: Allocate new register with `set_writer Xi` in WRITE mode
 
+### 8.6 Push/Pop: Nested Structure State Management
+
+**Operations**: `push Xi`, `pop Xi`
+**Purpose**: Save/restore structure processing state (S, mode, currentStructure) when processing nested structures in HEAD mode
+**Following**: FCP AM design for nested structure handling
+
+**Behavior**:
+- `push Xi`: Store (S, mode, currentStructure) triple in register Xi
+- `pop Xi`: Restore (S, mode, currentStructure) from register Xi
+
+### 8.7 UnifyStructure: Nested Structure Processing
+
+**Operation**: `unify_structure f/n`
+**Purpose**: Process nested structure at current S position (FCP AM's unify_compound)
+**Behavior**:
+- READ mode: Match structure at args[S], enter matched structure (set S=0)
+- WRITE mode: Create nested _TentativeStruct at args[S], enter it (set S=0)
+
+### 8.8 Nested Structure Pattern
+
+Nested structures in HEAD arguments use Push/UnifyStructure/Pop pattern:
+```
+push X10                    // Save state
+unify_structure f/n         // Enter nested structure
+  <process nested args>
+pop X10                     // Restore state
+```
+
 **Example**: Building `merge([],[],X)` where X is a writer in register 5:
 ```
 put_structure 'merge', 3, A0    // Begin structure, enter WRITE mode

@@ -584,19 +584,13 @@ String _formatTerm(rt.Term? term, [GlpRuntime? runtime, Set<int>? visited]) {
           // Unbound reader in tail - show it
           return '[${elements.join(', ')} | R$readerId]';
         }
-      } else if (tail is rt.ConstTerm && tail.value == null) {
+      } else if (tail is rt.ConstTerm && (tail.value == 'nil' || tail.value == null)) {
         break;  // End of list
-      } else if (tail is rt.VarRef && runtime != null) {
-        // Writer in tail position
-        final writerId = tail.varId;
-        if (runtime.heap.isWriterBound(writerId)) {
-          current = runtime.heap.valueOfWriter(writerId);
-          if (current == null || current is! rt.StructTerm) break;
-        } else {
-          // Unbound writer in tail - show it
-          return '[${elements.join(', ')} | W$writerId]';
-        }
+      } else if (tail is rt.StructTerm && tail.functor == '.') {
+        // Tail is already a properly formed cons cell - continue with it
+        current = tail;
       } else {
+        // Any other term in tail position - not a proper list
         break;
       }
     }

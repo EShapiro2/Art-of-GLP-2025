@@ -311,6 +311,61 @@ class BytecodeRunner {
         continue;
       }
 
+      // Push: Save structure processing state
+      if (op is Push) {
+        cx.clauseVars[op.regIndex] = _StructureState(
+          cx.S,
+          cx.mode,
+          cx.currentStructure
+        );
+        pc++;
+        continue;
+      }
+
+      // Pop: Restore structure processing state
+      if (op is Pop) {
+        final state = cx.clauseVars[op.regIndex] as _StructureState;
+        cx.S = state.S;
+        cx.mode = state.mode;
+        cx.currentStructure = state.currentStructure;
+        pc++;
+        continue;
+      }
+
+      // UnifyStructure: Process nested structure at S position
+      if (op is UnifyStructure) {
+        if (cx.mode == UnifyMode.read) {
+          // READ mode: Match structure at args[S]
+          if (cx.currentStructure is StructTerm) {
+            final parent = cx.currentStructure as StructTerm;
+            if (cx.S < parent.args.length) {
+              final value = parent.args[cx.S];
+              if (value is StructTerm && value.functor == op.functor && value.args.length == op.arity) {
+                // Match! Enter this structure
+                cx.currentStructure = value;
+                cx.S = 0;
+              } else {
+                // Mismatch - fail to next clause
+                _softFailToNextClause(cx, pc);
+                pc = _findNextClauseTry(pc);
+                continue;
+              }
+            }
+          }
+        } else {
+          // WRITE mode: Create nested structure at args[S]
+          if (cx.currentStructure is _TentativeStruct) {
+            final parent = cx.currentStructure as _TentativeStruct;
+            final nested = _TentativeStruct(op.functor, op.arity, List.filled(op.arity, null));
+            parent.args[cx.S] = nested;
+            cx.currentStructure = nested;
+            cx.S = 0;
+          }
+        }
+        pc++;
+        continue;
+      }
+
       // IfWriter guard: succeeds if variable is a writer
       if (op is IfWriter) {
         final term = cx.clauseVars[op.varIndex];
@@ -1719,6 +1774,9 @@ class BytecodeRunner {
                     termArgs.add(VarRef(varId, isReader: true));
                   }
                 }
+              } else if (arg is _TentativeStruct) {
+                // Nested tentative structure - recursively convert
+                termArgs.add(_convertTentativeToStruct(arg, cx));
               } else if (arg == null) {
                 // Void/unbound - create fresh writer?
                 // For now, leave as null constant
@@ -3570,4 +3628,37 @@ class _ListStruct {
 
   @override
   String toString() => '[$head|$tail]';
+}
+
+/// Helper to save/restore structure processing state for Push/Pop
+class _StructureState {
+  final int S;
+  final UnifyMode mode;
+  final dynamic currentStructure;
+
+  _StructureState(this.S, this.mode, this.currentStructure);
+
+  @override
+  String toString() => 'StructureState(S=$S, mode=$mode, struct=$currentStructure)';
+}
+
+/// Helper function to recursively convert _TentativeStruct to StructTerm
+StructTerm _convertTentativeToStruct(_TentativeStruct tentative, RunnerContext cx) {
+  final termArgs = <Term>[];
+  for (final arg in tentative.args) {
+    if (arg is _TentativeStruct) {
+      // Recursively convert nested tentative structures
+      termArgs.add(_convertTentativeToStruct(arg, cx));
+    } else if (arg is Term) {
+      // Already a Term - use as-is
+      termArgs.add(arg);
+    } else if (arg == null) {
+      // Null -> ConstTerm(null)
+      termArgs.add(ConstTerm(null));
+    } else {
+      // Raw value -> ConstTerm
+      termArgs.add(ConstTerm(arg));
+    }
+  }
+  return StructTerm(tentative.functor, termArgs);
 }
