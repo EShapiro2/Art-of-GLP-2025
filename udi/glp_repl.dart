@@ -233,6 +233,8 @@ void main() async {
           final varName = entry.key;
           final writerId = entry.value;
           // Use single-ID heap methods (writerId == readerId in single-ID system)
+          final rawValue = runtime.heap.getValue(writerId);
+          print('DEBUG DISPLAY: $varName = W$writerId, isBound=${runtime.heap.isBound(writerId)}, rawValue=$rawValue');
           if (runtime.heap.isBound(writerId)) {
             // Dereference the value to follow binding chains (e.g., W1002 → R1002 → [])
             final varRef = rt.VarRef(writerId, isReader: false);
