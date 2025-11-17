@@ -69,19 +69,24 @@ There are three levels in the code organization:
    - `isReader: true` → reader access mode (read-only, suspends if unbound)
    - Same `varId` can appear in multiple arguments with different access modes
    - Enforces SRSW: each mode can only appear once per clause
+   - **Implementation**: Uses existing `VarRef` from `lib/runtime/terms.dart`
 
 2. **Constant Term**: `ConstTerm(value)` — immediate value (atom, number, nil)
    - No heap allocation required
    - Stored directly in argument register
+   - **Implementation**: Uses existing `ConstTerm` from `lib/runtime/terms.dart`
 
 3. **Structure Term**: `StructTerm(functor, args)` — compound term with nested arguments
    - Built incrementally via put_structure + set_* instructions
    - Arguments can be variables, constants, or nested structures
+   - **Implementation**: Uses existing `StructTerm` from `lib/runtime/terms.dart`
 
 **Implementation Requirement**:
-- Runtime must support `Map<int, Term>` or equivalent polymorphic storage for CallEnv
+- Runtime must support `Map<int, Term>` for argument register storage
+- `CallEnv` class must use `Map<int, Term> argBySlot` (not separate writer/reader ID maps)
 - All Get* and Put* instructions operate on terms, not just variable IDs
 - Argument passing via Spawn/Call must preserve term types
+- **Existing Code**: `lib/runtime/terms.dart` defines `Term`, `VarRef`, `ConstTerm`, `StructTerm`
 
 **WAM/FCP Alignment**: This matches the classical WAM design where argument registers are typed storage locations, and FCP's argument passing which supports arbitrary terms.
 
