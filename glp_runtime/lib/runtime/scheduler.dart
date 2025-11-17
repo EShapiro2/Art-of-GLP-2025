@@ -153,7 +153,10 @@ class Scheduler {
         goalHead: goalStr,
         onReduction: debug ? (goalId, head, body) {
           // Print reduction when it occurs (at Commit)
-          print('$goalId: $head :- $body');
+          // Strip /arity suffix from procedure names for standard GLP syntax
+          final cleanHead = head.replaceAllMapped(RegExp(r'(\w+)/\d+\('), (m) => '${m.group(1)}(');
+          final cleanBody = body.replaceAllMapped(RegExp(r'(\w+)/\d+\('), (m) => '${m.group(1)}(');
+          print('$goalId: $cleanHead :- $cleanBody');
           hadReduction = true;
           // Remove from suspended list if it reduced
           suspendedGoals.remove(goalId);
@@ -168,12 +171,16 @@ class Scheduler {
       // Show suspension/failure if no reduction occurred
       if (debug && !hadReduction) {
         if (result == RunResult.suspended) {
-          print('${act.id}: $goalStr → suspended');
+          // Strip /arity suffix for standard GLP syntax
+          final cleanGoal = goalStr.replaceAllMapped(RegExp(r'(\w+)/\d+\('), (m) => '${m.group(1)}(');
+          print('${act.id}: $cleanGoal → suspended');
           // Track this suspended goal
           suspendedGoals[act.id] = goalStr;
         } else if (result == RunResult.terminated) {
           // Terminated without reduction = failed
-          print('${act.id}: $goalStr → failed');
+          // Strip /arity suffix for standard GLP syntax
+          final cleanGoal = goalStr.replaceAllMapped(RegExp(r'(\w+)/\d+\('), (m) => '${m.group(1)}(');
+          print('${act.id}: $cleanGoal → failed');
           // Remove from suspended list if it was there
           suspendedGoals.remove(act.id);
         }

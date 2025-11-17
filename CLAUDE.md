@@ -476,3 +476,4 @@ You are part of an AI team building GLP. Claude Chat handles architecture and de
 - when suspecting a code to be incorrect, first check the spec to see if it is consistent with it
 - always work with correct and complete and clear spec. never move forward without such spec.
 - check the repl test suite before unit testing
+- always start with baseline tests and commit!
