@@ -343,7 +343,11 @@ class BytecodeRunner {
       }
 
       if (op is Label) { pc++; continue; }
-      if (op is ClauseTry) { cx.clearClause(); pc++; continue; }
+      if (op is ClauseTry) {
+        print('[DEBUG] PC $pc: ClauseTry - Starting new clause');
+        cx.clearClause();
+        pc++; continue;
+      }
       if (op is GuardFail) { pc++; continue; }
 
       // Otherwise guard: succeeds if Si is empty (all previous clauses failed, not suspended)
@@ -363,6 +367,7 @@ class BytecodeRunner {
 
       // Push: Save structure processing state
       if (op is Push) {
+        print('[DEBUG] PC $pc: Push(X${op.regIndex}) - Saving state: S=${cx.S}, mode=${cx.mode}, struct=${cx.currentStructure}');
         cx.clauseVars[op.regIndex] = _StructureState(
           cx.S,
           cx.mode,
@@ -375,6 +380,7 @@ class BytecodeRunner {
       // Pop: Restore structure processing state (FCP AM semantics)
       if (op is Pop) {
         final state = cx.clauseVars[op.regIndex] as _StructureState;
+        print('[DEBUG] PC $pc: Pop(X${op.regIndex}) - Current nested struct: ${cx.currentStructure}');
 
         // FCP AM: Pop saves the built nested structure to register
         // This makes it available for subsequent UnifyWriter/UnifyVariable
@@ -384,12 +390,15 @@ class BytecodeRunner {
         cx.S = state.S;
         cx.mode = state.mode;
         cx.currentStructure = state.currentStructure;
+        print('[DEBUG] PC $pc: Pop - Restored to: S=${cx.S}, mode=${cx.mode}, struct=${cx.currentStructure}');
+        print('[DEBUG] PC $pc: Pop - Saved to X${op.regIndex}: ${cx.clauseVars[op.regIndex]}');
         pc++;
         continue;
       }
 
       // UnifyStructure: Process nested structure at S position
       if (op is UnifyStructure) {
+        print('[DEBUG] PC $pc: UnifyStructure(${op.functor}/${op.arity}) - mode=${cx.mode}, S=${cx.S}');
         if (cx.mode == UnifyMode.read) {
           // READ mode: Match structure at args[S]
           if (cx.currentStructure is StructTerm) {
@@ -397,27 +406,56 @@ class BytecodeRunner {
             if (cx.S < parent.args.length) {
               Object? value = parent.args[cx.S];
 
+              print('[DEBUG] PC $pc: UnifyStructure - Raw value at S=${cx.S}: $value (type=${value.runtimeType})');
+
               // CRITICAL FIX: Dereference if it's a variable reference
               // This handles metainterpreter/reduce cases where nested structures
               // come through variable bindings
               if (value is VarRef) {
                 final varId = value.varId;
+                print('[DEBUG] PC $pc: UnifyStructure - VarRef detected: varId=$varId, isReader=${value.isReader}');
                 // Check sigma-hat first (tentative bindings)
                 if (cx.sigmaHat.containsKey(varId)) {
                   value = cx.sigmaHat[varId];
+                  print('[DEBUG] PC $pc: UnifyStructure - Dereferenced from σ̂w: $value');
                 }
                 // Then check heap bindings
-                else if (cx.rt.heap.isWriterBound(varId)) {
-                  value = cx.rt.heap.valueOfWriter(varId);
+                else if (cx.rt.heap.isBound(varId)) {
+                  value = cx.rt.heap.getValue(varId);
+                  print('[DEBUG] PC $pc: UnifyStructure - Dereferenced from heap: $value');
+                }
+                else {
+                  print('[DEBUG] PC $pc: UnifyStructure - VarRef is UNBOUND');
                 }
               }
 
               if (value is StructTerm && value.functor == op.functor && value.args.length == op.arity) {
                 // Match! Enter this structure
+                print('[DEBUG] PC $pc: UnifyStructure - MATCH! Entering nested structure: $value');
                 cx.currentStructure = value;
+                cx.S = 0;
+              } else if (value is VarRef && !value.isReader) {
+                // Mode conversion: unbound writer where structure expected
+                // Following HeadStructure behavior (spec 6.1 line 254)
+                // Switch to WRITE mode and build the structure
+                print('[DEBUG] PC $pc: UnifyStructure - MODE CONVERSION! Writer ${value.varId} → building ${op.functor}/${op.arity}');
+
+                // Create tentative structure
+                final nested = _TentativeStruct(op.functor, op.arity, List.filled(op.arity, null));
+
+                // Record binding in σ̂w (writer will be bound to this structure at commit)
+                // Store as Object? to avoid type issues (will be converted to StructTerm at commit)
+                cx.sigmaHat[value.varId] = nested;
+
+                // Switch to WRITE mode
+                cx.mode = UnifyMode.write;
+
+                // Enter the nested structure
+                cx.currentStructure = nested;
                 cx.S = 0;
               } else {
                 // Mismatch - fail to next clause
+                print('[DEBUG] PC $pc: UnifyStructure - MISMATCH! Expected ${op.functor}/${op.arity}, got: $value');
                 _softFailToNextClause(cx, pc);
                 pc = _findNextClauseTry(pc);
                 continue;
@@ -430,6 +468,7 @@ class BytecodeRunner {
             final parent = cx.currentStructure as _TentativeStruct;
             final nested = _TentativeStruct(op.functor, op.arity, List.filled(op.arity, null));
             parent.args[cx.S] = nested;
+            print('[DEBUG] PC $pc: UnifyStructure WRITE - Created nested ${op.functor}/${op.arity} at parent.args[${cx.S}]');
             cx.currentStructure = nested;
             cx.S = 0;
           }
@@ -2040,7 +2079,9 @@ class BytecodeRunner {
       // no_more_clauses: All clauses exhausted (spec 2.5)
       // If U non-empty: suspend; otherwise: fail definitively
       if (op is NoMoreClauses) {
+        print('[DEBUG] PC $pc: NoMoreClauses - U=${cx.U}');
         if (cx.U.isNotEmpty) {
+          print('[DEBUG] NoMoreClauses - SUSPENDING on readers: ${cx.U.toList()}');
           // print('[TRACE NoMoreClauses] Goal ${cx.goalId} suspending:');
 //           print('  U (blocked readers): ${cx.U.toList()}');
 //           print('  κ (resume PC): ${cx.kappa}');
@@ -2053,6 +2094,7 @@ class BytecodeRunner {
           cx.inBody = false;
           return RunResult.suspended;
         }
+        print('[DEBUG] NoMoreClauses - FAILING (no suspension, U is empty)');
         // U is empty - all clauses failed definitively (no suspension)
         if (debug) {
 //           print('>>> FAIL: Goal ${cx.goalId} (all clauses exhausted, U empty)');
@@ -2686,6 +2728,7 @@ class BytecodeRunner {
 
         final predicateName = op.procedureLabel;  // Actually the predicate name (e.g., '<', '>')
         final arity = op.arity;
+        print('[DEBUG] PC $pc: Guard(${predicateName}/$arity) - argSlots=${cx.argSlots}');
 
         if (debug) {
           // print('[GUARD] Evaluating: $predicateName/$arity');
@@ -2747,6 +2790,7 @@ class BytecodeRunner {
         final result = _evaluateGuard(predicateName, args, cx);
 
         if (result == GuardResult.success) {
+          print('[DEBUG] Guard - SUCCESS with args: $args');
           if (debug) {
             // print('[GUARD] SUCCESS - continuing');
           }
@@ -2754,6 +2798,7 @@ class BytecodeRunner {
           continue;
         } else {
           // FAIL - try next clause
+          print('[DEBUG] Guard - FAILED with args: $args');
           if (debug) {
             // print('[GUARD] FAIL - trying next clause');
           }
