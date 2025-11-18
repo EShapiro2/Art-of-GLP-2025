@@ -318,27 +318,9 @@ class CodeGenerator {
 
       final regIndex = varInfo.registerIndex!;
 
-      // Track variable occurrences in head
-      if (inHead && ctx.inHead) {
-        final baseVarName = term.name.endsWith('?') ? term.name.substring(0, term.name.length - 1) : term.name;
-        final isFirstOccurrence = !ctx.seenHeadVars.contains(baseVarName);
-
-        if (isFirstOccurrence) {
-          // First occurrence: use v2 unified instruction with syntactic mode
-          ctx.seenHeadVars.add(baseVarName);
-          ctx.emit(bcv2.UnifyVariable(regIndex, isReader: term.isReader));
-        } else {
-          // Subsequent occurrence: use v1 mode-specific instructions
-          if (term.isReader) {
-            ctx.emit(bc.UnifyReader(regIndex));
-          } else {
-            ctx.emit(bc.UnifyWriter(regIndex));
-          }
-        }
-      } else {
-        // BODY mode: always use UnifyVariable
-        ctx.emit(bcv2.UnifyVariable(regIndex, isReader: term.isReader));
-      }
+      // Always emit v2 UnifyVariable based on syntactic mode
+      // Occurrence tracking was causing mixed v1/v2 opcode generation
+      ctx.emit(bcv2.UnifyVariable(regIndex, isReader: term.isReader));
 
     } else if (term is ConstTerm) {
       // Constant at position S
