@@ -3,6 +3,7 @@
 ## 0. ISA Conventions
 - **σ̂w** denotes the goal-local tentative writer substitution; it exists only during HEAD/GUARD phases and is discarded at clause_next.
 - **U** denotes the goal-level suspension set (readers on which the goal is blocked).
+- **Suspension model**: On first unbound reader encountered in HEAD/GUARD, add to U and immediately try next clause (no clause-local accumulation).
 - **Phases per clause Ci**: HEAD_i ; GUARDS_i ; BODY_i.
 - **Registers**: A (arguments), X (temporaries). Env stack E.
 - **κ** denotes the clause-selection entry PC of the current procedure (the PC where the first clause of the procedure begins).
@@ -103,7 +104,7 @@ Never expect bytecode instructions for the `clause/2` wrapper itself. The wrappe
    - `isReader: false` → writer access mode (write-once, goal can bind)
    - `isReader: true` → reader access mode (read-only, suspends if unbound)
    - Same `varId` can appear in multiple arguments with different access modes
-   - Enforces SRSW: each mode can only appear once per clause
+   - Enforces SRSW: variables occur as reader/writer PAIRS with exactly one writer AND one reader per clause (exception: ground guard allows multiple readers)
    - **Implementation**: Uses existing `VarRef` from `lib/runtime/terms.dart`
 
 2. **Constant Term**: `ConstTerm(value)` — immediate value (atom, number, nil)
@@ -144,14 +145,15 @@ Note: The E, CP, and Y registers are used exclusively for deterministic environm
 ### 2.2 clause_next Cj
 **Phase**: clause head/guards exit on FAIL.
 **Effect**: discard σ̂w; jump to label of Cj.
-**Purpose**: Try next clause after current clause fails. U may already contain readers from HEAD/GUARD instructions that encountered unbound readers.
+**Purpose**: Try next clause after current clause fails.
+**Note**: U accumulates readers directly from HEAD/GUARD instructions (no clause-local Si in v2.16+).
 
 ### 2.3 try_next_clause
 **Status**: IMPLEMENTED but UNUSED - functionality overlaps with clause_next
 
 **Implementation**: Has handler in runner.dart (line 967) that calls `_softFailToNextClause()` and jumps to next `clause_try`.
 
-**Usage**: Never emitted by assembler or used in tests. The `clause_next` instruction (section 2.2) is preferred for all clause transitions as it handles both the Si union and the jump in a single instruction.
+**Usage**: Never emitted by assembler or used in tests. The `clause_next` instruction (section 2.2) is preferred for all clause transitions.
 
 **Semantic difference**: `try_next_clause` would be used WITHIN a clause when a guard fails, whereas `clause_next` is used at the END of a clause. In practice, all tests use `clause_next` exclusively.
 
@@ -407,7 +409,7 @@ headStruct('[|]', 2, 11)       // Match X11 against [|]/2
   - If value at S is reader R: verify R pairs with Xi
   - If value at S is unbound writer: bind it to reader Xi in σ̂w
   - If value at S is bound writer/constant: verify it equals Xi's paired writer value
-  - Add to Si if Xi's paired writer is unbound
+  - If Xi's paired writer is unbound: add to U and immediately try next clause
 - In WRITE mode:
   - If Xi is unbound (first use): allocate fresh variable ID, create `VarRef(newId, isReader: true)`, store at H and in Xi
   - If Xi contains VarRef (subsequent use): extract varId from existing VarRef, create `VarRef(varId, isReader: true)`, store at H
@@ -426,7 +428,7 @@ headStruct('[|]', 2, 11)       // Match X11 against [|]/2
 - In READ mode:
   - If value at S is constant c: succeed
   - If value at S is unbound writer W: bind W = c in σ̂w (writer MGU)
-  - If value at S is reader R with unbound paired writer: add R to Si (suspend)
+  - If value at S is reader R with unbound paired writer: add R to U and immediately try next clause
   - If value at S is reader R with bound paired writer ≠ c: fail
   - Otherwise: fail
 - In WRITE mode: write constant c at H
@@ -496,7 +498,7 @@ When processing nested structures in HEAD mode (e.g., `p(f(X,Y))` where `f(X,Y)`
    - Set `S = 0` (ready to process first argument of nested structure)
    - Continue to next instruction
 4. If mismatch:
-   - Soft-fail to next clause (discard σ̂w, clear Si, jump to next clause_try)
+   - Soft-fail to next clause (discard σ̂w, jump to next clause_try)
 
 **WRITE Mode Behavior** (building new structure):
 1. Create new tentative structure: `nested = _TentativeStruct(f, n, [null, ..., null])`
@@ -506,7 +508,12 @@ When processing nested structures in HEAD mode (e.g., `p(f(X,Y))` where `f(X,Y)`
 5. Continue to next instruction
 
 **Key Properties**:
-- Does NOT increment S (that happens after processing all nested arguments)
+- UnifyStructure does NOT increment S (parent's S remains unchanged)
+- Pop does NOT increment S (restores parent's saved S value)
+- After Pop, an explicit unify instruction (UnifyWriter Xi or UnifyVariable Xi) must follow to:
+  1. Place the nested structure from register Xi at parent position S
+  2. Increment S to the next sibling position
+- This follows FCP AM design where Pop is always followed by unify_val
 - Changes `currentStructure` to point to the nested structure
 - Resets S to 0 to begin processing nested structure's arguments
 - In WRITE mode, creates _TentativeStruct that will be converted to StructTerm at commit
@@ -518,35 +525,38 @@ When processing nested structures in HEAD mode (e.g., `p(f(X,Y))` where `f(X,Y)`
 
 Nested structures in HEAD arguments use the Push/UnifyStructure/Pop pattern to maintain proper structure processing state across nesting levels.
 
-**Pattern**:
+**Pattern** (following FCP AM):
 ```
-head_structure 'p', 1, A0         # Match outer structure p/1, enter it
-  push X10                        # Save (S=0, mode, p_struct)
+head_structure 'p', 1, A0         # Match outer structure p/1, enter it (S=0)
+  push X10                        # Save (S=0, mode, p_struct) to X10
   unify_structure 'f', 2          # Enter nested f/2 at position S=0
     unify_writer X0               # Process f's first arg, S becomes 1
     unify_writer X1               # Process f's second arg, S becomes 2
-  pop X10                         # Restore (S=0, mode, p_struct)
-                                  # After pop: S=0, mode=original, currentStructure=p_struct
-                                  # If p/1 had more args, S would be incremented for next arg
+  pop X10                         # Restore (S=0, mode, p_struct) from X10
+                                  # X10 now contains the built f/2 structure
+  unify_writer X10                # Place f/2 at S=0 and increment S to 1
+                                  # NOW S=1 for any subsequent args of p/1
 commit
 ```
 
 **Concrete Example** - Matching `clause(qsort([X|Xs], Sorted, Rest), Body)`:
 ```
-head_structure 'clause', 2, A0   # Match clause/2
-  push X10                        # Save state before entering nested qsort/3
-  unify_structure 'qsort', 3      # Enter qsort/3 at args[0]
-    push X11                      # Save state before entering list [X|Xs]
-    unify_structure '.', 2        # Enter list structure
-      unify_writer X0             # Match head X
-      unify_writer X1             # Match tail Xs
-    pop X11                       # Back to qsort/3 structure
-                                  # S now points to second arg of qsort
-    unify_writer X2               # Match Sorted
-    unify_writer X3               # Match Rest
-  pop X10                         # Back to clause/2 structure
-                                  # S now points to second arg of clause
-  unify_writer X4                 # Match Body
+head_structure 'clause', 2, A0   # Match clause/2, S=0
+  push X10                        # Save (S=0, mode, clause_struct) to X10
+  unify_structure 'qsort', 3      # Enter qsort/3 at S=0
+    push X11                      # Save (S=0, mode, qsort_struct) to X11
+    unify_structure '.', 2        # Enter list at S=0
+      unify_writer X0             # Match head X, S=1
+      unify_writer X1             # Match tail Xs, S=2
+    pop X11                       # Restore (S=0, mode, qsort_struct), X11=list
+    unify_writer X11              # Place list at S=0, S=1
+                                  # NOW S=1 (second arg of qsort)
+    unify_writer X2               # Match Sorted at S=1, S=2
+    unify_writer X3               # Match Rest at S=2, S=3
+  pop X10                         # Restore (S=0, mode, clause_struct), X10=qsort
+  unify_writer X10                # Place qsort at S=0, S=1
+                                  # NOW S=1 (second arg of clause)
+  unify_writer X4                 # Match Body at S=1, S=2
 commit
 ```
 
@@ -591,7 +601,7 @@ put_structure 'merge', 3, A0    // Begin structure, enter WRITE mode
 **Behavior**:
 - Update current goal's environment with new arguments from argument registers
 - **Update current goal's κ to the entry PC of procedure P** (critical for suspension/reactivation)
-- Clear all clause-local state (σ̂w, Si, U, clauseVars, inBody flag)
+- Clear all clause-local state (σ̂w, U, clauseVars, inBody flag)
 - Jump PC to the entry point of procedure P
 - Reuse current goal ID and process frame (no new goal created)
 - Decrement tail-recursion counter (initially 26)
@@ -689,7 +699,7 @@ guard <, 2           % Evaluate A? < X? with 2 arguments
 **Operation**: Succeeds if X is ground (contains no unbound variables)
 **Three-valued semantics**:
 1. If X is ground → **SUCCEED** (continue to next instruction, pc++)
-2. If X contains unbound readers (but no unbound writers) → **SUSPEND** (add unbound readers to Si, continue to next instruction, pc++)
+2. If X contains unbound readers (but no unbound writers) → **SUSPEND** (add first unbound reader to U, immediately try next clause)
 3. If X contains unbound writers → **FAIL** (soft-fail to next clause via clause_next)
 
 **Rationale**: Due to SRSW restriction, unbound readers may become ground when their paired writers are bound, so suspension is appropriate. Unbound writers cannot be awaited (unknown future binding), so failure is definitive.
@@ -700,7 +710,7 @@ guard <, 2           % Evaluate A? < X? with 2 arguments
 **Operation**: Succeeds if X is not an unbound variable
 **Three-valued semantics**:
 1. If X is bound (to any value, including structures with variables) → **SUCCEED** (continue, pc++)
-2. If X is an unbound reader → **SUSPEND** (add reader to Si, continue, pc++)
+2. If X is an unbound reader → **SUSPEND** (add reader to U, immediately try next clause)
 3. If X is an unbound writer → **FAIL** (soft-fail to next clause)
 
 **Difference from ground**: `known(X)` only tests whether X itself is bound, not whether X contains unbound variables internally. `ground(f(Y))` fails if Y is unbound, but `known(f(Y))` succeeds because f(Y) is a bound structure.
@@ -743,14 +753,14 @@ The following guards are planned for arithmetic operations. Unlike `evaluate/2` 
 **Operation**: Test if X is bound to a number
 **Three-valued semantics**:
 1. If X bound to number (int or double) → **SUCCEED**
-2. If X is unbound reader → **SUSPEND** (add to Si)
+2. If X is unbound reader → **SUSPEND** (add to U, immediately try next clause)
 3. If X bound to non-number → **FAIL**
 
 #### Planned: integer(X)
 **Operation**: Test if X is bound to an integer
 **Three-valued semantics**:
 1. If X bound to integer → **SUCCEED**
-2. If X is unbound reader → **SUSPEND** (add to Si)
+2. If X is unbound reader → **SUSPEND** (add to U, immediately try next clause)
 3. Otherwise (unbound writer, bound to non-integer) → **FAIL**
 
 #### Planned: Comparison Guards
@@ -760,7 +770,7 @@ The following guards are planned for arithmetic operations. Unlike `evaluate/2` 
 
 **Three-valued semantics**:
 1. Both X and Y bound to numbers AND condition holds → **SUCCEED**
-2. Either X or Y is unbound reader → **SUSPEND** (add unbound readers to Si)
+2. Either X or Y is unbound reader → **SUSPEND** (add first unbound reader to U, immediately try next clause)
 3. Both bound to numbers AND condition false → **FAIL**
 
 **Parser Limitation**: Currently, the parser does NOT support infix operators in guard position. Comparison guards would require:
@@ -867,9 +877,10 @@ If arg.isReader:
     value = heap.valueOfWriter(wid)
     clauseVars[Xi] = value  // Store dereferenced value
   Else:
-    Si.add(arg.readerId)    // Suspend on unbound reader
+    U.add(arg.readerId)     // Add to U and try next clause
+    clause_next            // Immediately try next clause
 ```
-Reader-to-writer requires the reader to be bound. If unbound, suspend.
+Reader-to-writer requires the reader to be bound. If unbound, add to U and try next clause.
 
 **Case 3: Argument is known term**
 ```
@@ -1338,13 +1349,15 @@ The heap manages writer and reader cells:
 
 ## 18. Interaction with Runtime Structures
 
-### Suspension Set Accumulation
-- **Si**: Clause-local suspension set (cleared at each `clause_try`)
-- **U**: Goal-level suspension set accumulated across all attempted clauses
-- **clause_next**: Unions Si into U before jumping to next clause (if Si non-empty)
-- **Important**: Both FAIL and SUSPEND cases execute `clause_next`, which unions Si to U
-  - This means U accumulates readers from ALL clauses, not just "SUSPEND_READY" clauses
-  - Empty Si (definitive fail) contributes nothing to U, but instruction still executes
+### Suspension Model (v2.16+)
+- **U**: Goal-level suspension set
+- **Suspension behavior**: On encountering first unbound reader in HEAD/GUARD:
+  1. Add reader to U immediately
+  2. Execute clause_next to try next clause
+  3. No clause-local accumulation (no Si)
+- **clause_next**: Discards σ̂w and jumps to next clause
+- **Important**: Goal suspends only after ALL clauses tried (U non-empty at `no_more_clauses`)
+- **Simpler than old model**: No need to union clause-local sets - suspension goes directly to U
 
 ### Reactivation Entry Point
 - **κ (kappa)**: Entry PC for the goal (typically first clause of predicate)
@@ -1370,7 +1383,7 @@ System predicates are external Dart functions callable from GLP bytecode via the
 - Look up predicate by name in SystemPredicateRegistry
 - Pass arguments as list of Terms
 - Return SystemResult: success, suspend, or failure
-- If suspend: adds unbound readers to Si (clause-local suspension set)
+- If suspend: adds first unbound reader to U and tries next clause
 
 **Phase**: Can be used in guards (Phase 1) or body (Phase 3)
 - In guards: pure test, no heap mutation allowed
@@ -1527,7 +1540,7 @@ Guards provide read-only tests that determine clause selection. They appear betw
 2. Guards execute left-to-right
 3. Guard SUCCESS: continue to next guard or COMMIT
 4. Guard FAILURE: discard σ̂w, try next clause
-5. Guard SUSPEND: add readers to Si, discard σ̂w, try next clause
+5. Guard SUSPEND: add first unbound reader to U, discard σ̂w, try next clause
 6. All guards succeed: COMMIT applies σ̂w, enter BODY
 
 ### 19.2 Arithmetic Expression Evaluation in Guards
@@ -1536,7 +1549,7 @@ Guards like `X? + 1 < Y? * 2` require expression evaluation:
 
 1. **Recursively evaluate** arithmetic subexpressions (+, -, *, /, mod)
 2. **If all operands ground**: compute numeric result
-3. **If any operand contains unbound readers**: suspend, add readers to Si
+3. **If any operand contains unbound readers**: add first unbound reader to U, try next clause
 4. **Apply comparison** to evaluated results
 
 **Note**: This uses the same arithmetic evaluator as evaluate/2 but with three-valued semantics (can suspend).
@@ -1546,7 +1559,7 @@ Guards like `X? + 1 < Y? * 2` require expression evaluation:
 qsort([X|Xs], Sorted) :- X? < Pivot? | partition(X?, Xs?, Less, Greater), ...
 ```
 
-If Pivot is unbound: guard suspends, adds Pivot's reader to Si, tries next clause.
+If Pivot is unbound: guard adds Pivot's reader to U, tries next clause.
 
 ### 19.3 Arithmetic Comparison Guards
 
@@ -1558,7 +1571,7 @@ These guards compare numeric expressions with three-valued semantics.
 **Behavior**:
 - Evaluate expressions in Xi and Xj
 - If both ground numbers: succeed if Xi < Xj, else fail
-- If unbound readers in either: suspend, add readers to Si
+- If unbound readers in either: add first unbound reader to U, try next clause
 - Type error (non-numeric): fail
 
 **Compilation**:
