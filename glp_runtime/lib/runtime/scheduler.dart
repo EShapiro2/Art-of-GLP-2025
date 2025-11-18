@@ -52,6 +52,54 @@ class Scheduler {
     } else if (current is VarRef && current.isReader) {
       return markReaders ? 'R${current.varId}?' : 'R${current.varId}';
     } else if (current is StructTerm) {
+      // Special formatting for list structures
+      if (current.functor == '.' && current.args.length == 2) {
+        final elements = <String>[];
+        var listTerm = current;
+        final visited = <int>{};
+
+        while (true) {
+          if (listTerm is! StructTerm || listTerm.functor != '.') break;
+
+          final head = listTerm.args[0];
+          final tail = listTerm.args[1];
+
+          // Format head element
+          String headStr = _formatTerm(head, markReaders: markReaders);
+
+          // Check for circular reference in head (if VarRef)
+          if (head is VarRef && visited.contains(head.varId)) {
+            headStr = '<circular>';
+          } else if (head is VarRef) {
+            visited.add(head.varId);
+          }
+
+          elements.add(headStr);
+
+          // Process tail
+          if (tail is ConstTerm && (tail.value == 'nil' || tail.value == null)) {
+            break; // Proper list ending
+          } else if (tail is StructTerm && tail.functor == '.') {
+            listTerm = tail;
+          } else if (tail is VarRef) {
+            // Unbound tail - improper list
+            if (visited.contains(tail.varId)) {
+              return '[${elements.join(', ')} | <circular>]';
+            }
+            visited.add(tail.varId);
+            final tailStr = _formatTerm(tail, markReaders: markReaders);
+            return '[${elements.join(', ')} | $tailStr]';
+          } else {
+            // Non-list tail
+            final tailStr = _formatTerm(tail, markReaders: markReaders);
+            return '[${elements.join(', ')} | $tailStr]';
+          }
+        }
+
+        return '[${elements.join(', ')}]';
+      }
+
+      // General structure formatting
       final args = current.args.map((a) => _formatTerm(a, markReaders: markReaders)).join(',');
       return '${current.functor}($args)';
     }
