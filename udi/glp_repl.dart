@@ -22,7 +22,7 @@ void main() async {
   // Get git commit info
   final gitCommit = await _getGitCommit();
   // Build timestamp (updated at compile time)
-  final buildTime = '2025-11-17T12:52:55Z (Debug output disabled for clean reduction trace)';
+  final buildTime = '2025-11-18T18:54:13Z (Fix: Inline Push/Pop for nested HEAD structures)';
 
   print('╔════════════════════════════════════════╗');
   print('║   GLP REPL - Interactive Interpreter   ║');
