@@ -3,9 +3,9 @@ import 'heap_fcp.dart';
 import 'suspension.dart';
 
 /// Suspension operations using FCP-exact shared suspension records
-/// Records stored directly in reader cells (no separate ROQ)
+/// Records stored in wrapper nodes in reader cells (no separate ROQ)
 class SuspendOps {
-  /// FCP-exact suspension: create ONE shared record, prepend to all reader cells
+  /// FCP-exact suspension: create ONE shared record, wrap in nodes for each reader
   /// Implements FCP emulate.h suspend_on lines 169-188
   static void suspendGoalFCP({
     required HeapFCP heap,
@@ -18,18 +18,23 @@ class SuspendOps {
     // print('  Resume PC: $kappa');
 
     // Create ONE shared suspension record
-    final record = SuspensionRecord(goalId, kappa);
+    final sharedRecord = SuspensionRecord(goalId, kappa);
 
-    // Prepend to each reader cell's suspension list
+    // Create wrapper node for each reader cell (independent next pointers)
     for (final varId in readerVarIds) {
       final (_, rAddr) = heap.varTable[varId]!;
       final cell = heap.cells[rAddr];
 
+      // Create wrapper node pointing to shared record
+      final node = SuspensionListNode(sharedRecord);
+
       // Prepend to existing list (or null if none)
-      record.next = cell.content is SuspensionRecord ? cell.content as SuspensionRecord : null;
+      node.next = cell.content is SuspensionListNode
+          ? cell.content as SuspensionListNode
+          : null;
 
       // REPLACE reader cell content with suspension list
-      cell.content = record;
+      cell.content = node;
 
       // print('  → Added to R$varId suspension list (addr=$rAddr)');
     }

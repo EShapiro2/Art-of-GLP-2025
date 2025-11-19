@@ -126,7 +126,7 @@ class Scheduler {
     return '$procName(${args.join(', ')})';
   }
 
-  List<int> drain({int maxCycles = 1000, bool debug = false}) {
+  List<int> drain({int maxCycles = 1000, bool debug = false, bool showBindings = true, bool debugOutput = false}) {
     final ran = <int>[];
     final suspendedGoals = <int, String>{}; // Track suspended goals by ID
     var cycles = 0;
@@ -198,6 +198,8 @@ class Scheduler {
         kappa: act.pc,
         env: env,
         goalHead: goalStr,
+        showBindings: showBindings,
+        debugOutput: debugOutput,
         onReduction: debug ? (goalId, head, body) {
           // Print reduction when it occurs (at Commit)
           // Strip /arity suffix from procedure names for standard GLP syntax

@@ -13,15 +13,15 @@ enum CellTag {
   ValueTag, // Bound to value
 }
 
-/// Heap cell - contains either Pointer, SuspensionRecord, or Term
+/// Heap cell - contains either Pointer, SuspensionListNode, or Term
 class HeapCell {
-  dynamic content;  // Pointer | SuspensionRecord | Term
+  dynamic content;  // Pointer | SuspensionListNode | Term
   CellTag tag;
 
   HeapCell(this.content, this.tag);
 
   bool get hasValue => tag == CellTag.ValueTag;
-  bool get hasSuspensions => content is SuspensionRecord;
+  bool get hasSuspensions => content is SuspensionListNode;
 }
 
 /// Pointer to another cell (just an address - List index)
@@ -79,9 +79,10 @@ class HeapFCP {
         final content = cell.content;
 
         // If bound to VarRef, follow the chain (variable→variable binding)
+        // IMPORTANT: Use reader address if VarRef is reader, writer address if writer
         if (content is VarRef) {
-          final (targetWAddr, _) = varTable[content.varId]!;
-          current = targetWAddr;
+          final (targetWAddr, targetRAddr) = varTable[content.varId]!;
+          current = content.isReader ? targetRAddr : targetWAddr;
           continue;
         }
 
@@ -168,7 +169,7 @@ class HeapFCP {
 
     // Process suspensions and return activated goals (FCP: every binding wakes goals)
     final activations = <GoalRef>[];
-    if (oldContent is SuspensionRecord) {
+    if (oldContent is SuspensionListNode) {
       print('[TRACE HeapFCP bindVariable] Processing suspensions for V$varId:');
       _walkAndActivate(oldContent, activations);
     }
@@ -176,14 +177,14 @@ class HeapFCP {
   }
 
   /// Walk suspension list and activate armed records (from commit.dart)
-  static void _walkAndActivate(SuspensionRecord? list, List<GoalRef> acts) {
+  static void _walkAndActivate(SuspensionListNode? list, List<GoalRef> acts) {
     var current = list;
     int count = 0;
 
     while (current != null) {
       if (current.armed) {
         acts.add(GoalRef(current.goalId!, current.resumePC));
-        current.disarm();  // Prevent re-activation
+        current.record.disarm();  // Disarm shared record - affects all nodes
         count++;
       }
       current = current.next;
@@ -205,20 +206,20 @@ class HeapFCP {
   }
 
   /// Get suspension list from reader cell (if any)
-  SuspensionRecord? getSuspensions(int varId) {
+  SuspensionListNode? getSuspensions(int varId) {
     final (_, rAddr) = varTable[varId]!;
     final cell = cells[rAddr];
-    return cell.content is SuspensionRecord ? cell.content as SuspensionRecord : null;
+    return cell.content is SuspensionListNode ? cell.content as SuspensionListNode : null;
   }
 
   /// Add suspension to reader cell (prepend to list)
-  void addSuspension(int varId, SuspensionRecord record) {
+  void addSuspension(int varId, SuspensionListNode node) {
     final (_, rAddr) = varTable[varId]!;
     final oldContent = cells[rAddr].content;
 
-    // Prepend new record to existing list
-    record.next = oldContent is SuspensionRecord ? oldContent : null;
-    cells[rAddr].content = record;  // REPLACE content
+    // Prepend new node to existing list
+    node.next = oldContent is SuspensionListNode ? oldContent : null;
+    cells[rAddr].content = node;  // REPLACE content
   }
 
   /// Process suspensions after binding (FCP commit-like operation for BODY bindings)
@@ -229,12 +230,12 @@ class HeapFCP {
 
     final activations = <GoalRef>[];
 
-    if (oldContent is SuspensionRecord) {
-      SuspensionRecord? current = oldContent;
+    if (oldContent is SuspensionListNode) {
+      SuspensionListNode? current = oldContent;
       while (current != null) {
         if (current.armed) {
           activations.add(GoalRef(current.goalId!, current.resumePC));
-          current.disarm();
+          current.record.disarm();
         }
         current = current.next;
       }

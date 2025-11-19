@@ -44,9 +44,11 @@ class CommitOps {
 
       // FCP line 226: CRITICAL - dereference by ADDRESS before binding
       // This prevents W1009→R1014→nil chains
+      // IMPORTANT: Use reader address if VarRef is reader, writer address if writer
       if (value is VarRef) {
-        final (targetWAddr, _) = heap.varTable[value.varId]!;
-        value = heap.derefAddr(targetWAddr);
+        final (targetWAddr, targetRAddr) = heap.varTable[value.varId]!;
+        final targetAddr = value.isReader ? targetRAddr : targetWAddr;
+        value = heap.derefAddr(targetAddr);
         // print('[TRACE Commit FCP] Dereferenced VarRef(${(entry.value as VarRef).varId}) → $value');
       }
 
@@ -58,10 +60,10 @@ class CommitOps {
       heap.cells[wAddr].tag = CellTag.ValueTag;
       heap.cells[rAddr].content = value;
       heap.cells[rAddr].tag = CellTag.ValueTag;
-      print('[DEBUG COMMIT] Bound varId $varId: W$varId[addr=$wAddr] = $value, R$varId[addr=$rAddr] = $value');
+      // print('[DEBUG COMMIT] Bound varId $varId: W$varId[addr=$wAddr] = $value, R$varId[addr=$rAddr] = $value');
 
       // FCP lines 245-254: Walk saved suspension list and activate
-      if (oldContent is SuspensionRecord) {
+      if (oldContent is SuspensionListNode) {
         // print('[TRACE Commit FCP] Processing suspension list for R$varId:');
         _walkAndActivate(oldContent, activations);
       }
@@ -95,14 +97,14 @@ class CommitOps {
   }
 
   /// Walk suspension list and activate armed records (FCP lines 247-253)
-  static void _walkAndActivate(SuspensionRecord? list, List<GoalRef> acts) {
+  static void _walkAndActivate(SuspensionListNode? list, List<GoalRef> acts) {
     var current = list;
     int count = 0;
 
     while (current != null) {
       if (current.armed) {
         acts.add(GoalRef(current.goalId!, current.resumePC));
-        current.disarm();  // Prevent re-activation
+        current.record.disarm();  // Disarm shared record - affects all nodes
         count++;
       }
       current = current.next;

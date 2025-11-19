@@ -22,7 +22,7 @@ void main() async {
   // Get git commit info
   final gitCommit = await _getGitCommit();
   // Build timestamp (updated at compile time)
-  final buildTime = '2025-11-18T18:54:13Z (Fix: Inline Push/Pop for nested HEAD structures)';
+  final buildTime = '2025-11-19T11:30:49Z (Fix: ROQ suspension list corruption with wrapper nodes)';
 
   print('╔════════════════════════════════════════╗');
   print('║   GLP REPL - Interactive Interpreter   ║');
@@ -37,7 +37,7 @@ void main() async {
   print('Compiled files: bin/*.glpc');
   print('');
   print('Input: filename.glp to load, or goal to execute');
-  print('Commands: :quit, :help, :trace');
+  print('Commands: :quit, :help, :trace, :binding, :debug, :limit');
   print('');
 
   final compiler = GlpCompiler();
@@ -49,6 +49,9 @@ void main() async {
 
   var goalId = 1;
   var debugTrace = true; // Toggle with :trace command
+  var showBindings = true; // Toggle with :binding command
+  var debugOutput = false; // Toggle with :debug command
+  var maxCycles = 10000; // Set with :limit command
 
   while (true) {
     stdout.write('GLP> ');
@@ -82,6 +85,34 @@ void main() async {
     if (trimmed == ':trace' || trimmed == ':t') {
       debugTrace = !debugTrace;
       print('Trace ${debugTrace ? "enabled" : "disabled"}');
+      continue;
+    }
+
+    if (trimmed == ':binding' || trimmed == ':b') {
+      showBindings = !showBindings;
+      print('Bindings ${showBindings ? "enabled" : "disabled"}');
+      continue;
+    }
+
+    if (trimmed == ':debug' || trimmed == ':d') {
+      debugOutput = !debugOutput;
+      print('Debug output ${debugOutput ? "enabled" : "disabled"}');
+      continue;
+    }
+
+    if (trimmed.startsWith(':limit')) {
+      final parts = trimmed.split(RegExp(r'\s+'));
+      if (parts.length != 2) {
+        print('Usage: :limit <number>');
+        continue;
+      }
+      final limit = int.tryParse(parts[1]);
+      if (limit == null || limit <= 0) {
+        print('Error: limit must be a positive integer');
+        continue;
+      }
+      maxCycles = limit;
+      print('Goal reduction limit set to $maxCycles');
       continue;
     }
 
@@ -147,7 +178,12 @@ void main() async {
         runtime.gq.enqueue(GoalRef(goalId, entryPC));
         goalId++;
 
-        final ran = scheduler.drain(maxCycles: 10000, debug: debugTrace);
+        final ran = scheduler.drain(
+          maxCycles: maxCycles,
+          debug: debugTrace,
+          showBindings: showBindings,
+          debugOutput: debugOutput,
+        );
         print('  → ${ran.length} goals');
 
         // For conjunctions, extract variables from the original query
@@ -208,7 +244,7 @@ void main() async {
 
       for (int i = 0; i < args.length; i++) {
         final arg = args[i];
-        _setupArgument(runtime, arg, i, argSlots, queryVarWriters);
+        _setupArgument(runtime, arg, i, argSlots, queryVarWriters, debugOutput: debugOutput);
       }
 
       // Set up goal environment
@@ -224,10 +260,15 @@ void main() async {
       final currentGoalId = goalId;
       goalId++;
 
-      final ran = scheduler.drain(maxCycles: 10000, debug: debugTrace);
+      final ran = scheduler.drain(
+        maxCycles: maxCycles,
+        debug: debugTrace,
+        showBindings: showBindings,
+        debugOutput: debugOutput,
+      );
 
       // Display variable bindings
-      print('[DEBUG REPL] queryVarWriters = $queryVarWriters');
+      if (debugOutput) print('[DEBUG REPL] queryVarWriters = $queryVarWriters');
       if (queryVarWriters.isNotEmpty) {
         for (final entry in queryVarWriters.entries) {
           final varName = entry.key;
@@ -235,7 +276,7 @@ void main() async {
           // Use single-ID heap methods (writerId == readerId in single-ID system)
           final rawValue = runtime.heap.getValue(writerId);
           final displayId = writerId >= 1000 ? writerId - 1000 : writerId;
-          print('DEBUG DISPLAY: $varName = X$displayId, isBound=${runtime.heap.isBound(writerId)}, rawValue=$rawValue');
+          if (debugOutput) print('DEBUG DISPLAY: $varName = X$displayId, isBound=${runtime.heap.isBound(writerId)}, rawValue=$rawValue');
           if (runtime.heap.isBound(writerId)) {
             // Dereference the value to follow binding chains (e.g., X2 → X2? → [])
             final varRef = rt.VarRef(writerId, isReader: false);
@@ -285,8 +326,15 @@ void printHelp() {
   print('GLP REPL Usage:');
   print('  filename.glp           Load and compile glp/<filename>');
   print('  goal.                  Execute a goal (must end with .)');
+  print('');
+  print('Commands:');
   print('  :help, :h              Show this help');
   print('  :quit, :q              Exit REPL');
+  print('  :trace, :t             Toggle trace output (reductions)');
+  print('  :binding, :b           Toggle σ̂w bindings display');
+  print('  :debug, :d             Toggle DEBUG output');
+  print('  :limit <n>             Set goal reduction limit to <n>');
+  print('  :bytecode, :bc         Show loaded bytecode');
   print('');
   print('File Organization:');
   print('  glp/           GLP source files (.glp)');
@@ -297,6 +345,8 @@ void printHelp() {
   print('  GLP> hello.                           # Execute goal');
   print("  GLP> execute('write', ['Hello']).");
   print('  GLP> merge([1,2,3], [a,b], Xs).');
+  print('  GLP> :limit 5000                      # Set reduction limit');
+  print('  GLP> :binding                         # Hide bindings');
   print('');
 }
 
@@ -324,8 +374,9 @@ void _setupArgument(
   Term arg,
   int argSlot,
   Map<int, rt.Term> argSlots,
-  Map<String, int> queryVarWriters,
-) {
+  Map<String, int> queryVarWriters, {
+  bool debugOutput = false,
+}) {
   if (arg is VarTerm) {
     // Variable: create fresh writer/reader pair (FCP: both cells created internally)
     final (writerId, readerId) = runtime.heap.allocateFreshPair();
@@ -366,7 +417,7 @@ void _setupArgument(
     final (writerId, readerId) = runtime.heap.allocateFreshPair();
 
     // Build structure term recursively
-    final structValue = _buildStructTerm(runtime, arg, queryVarWriters) as rt.StructTerm;
+    final structValue = _buildStructTerm(runtime, arg, queryVarWriters, debugOutput: debugOutput) as rt.StructTerm;
     runtime.heap.bindWriterStruct(writerId, structValue.functor, structValue.args);
 
     argSlots[argSlot] = rt.VarRef(readerId, isReader: true);
@@ -376,7 +427,7 @@ void _setupArgument(
 }
 
 // Build a structure term recursively
-rt.Term _buildStructTerm(GlpRuntime runtime, StructTerm struct, Map<String, int> queryVarWriters) {
+rt.Term _buildStructTerm(GlpRuntime runtime, StructTerm struct, Map<String, int> queryVarWriters, {bool debugOutput = false}) {
   final argTerms = <rt.Term>[];
 
   for (final arg in struct.args) {
@@ -390,20 +441,20 @@ rt.Term _buildStructTerm(GlpRuntime runtime, StructTerm struct, Map<String, int>
       // Note: arg.name does NOT include the '?' suffix, so use it directly
       final baseName = arg.name;
       final existingWriterId = queryVarWriters[baseName];
-      print('[DEBUG REPL] Structure arg: $baseName (isReader=${arg.isReader}), existing=$existingWriterId');
+      if (debugOutput) print('[DEBUG REPL] Structure arg: $baseName (isReader=${arg.isReader}), existing=$existingWriterId');
 
       if (arg.isReader && existingWriterId != null) {
         // Reader for existing writer - in single-ID, use same ID
-        print('[DEBUG REPL]   Reusing as reader: R$existingWriterId');
+        if (debugOutput) print('[DEBUG REPL]   Reusing as reader: R$existingWriterId');
         argTerms.add(rt.VarRef(existingWriterId, isReader: true));
       } else if (!arg.isReader && existingWriterId != null) {
         // Writer already exists - reuse it
-        print('[DEBUG REPL]   Reusing as writer: W$existingWriterId');
+        if (debugOutput) print('[DEBUG REPL]   Reusing as writer: W$existingWriterId');
         argTerms.add(rt.VarRef(existingWriterId, isReader: false));
       } else {
         // First occurrence - create fresh pair (FCP: both cells created internally)
         final (writerId, readerId) = runtime.heap.allocateFreshPair();
-        print('[DEBUG REPL]   Creating fresh: W$writerId/R$readerId');
+        if (debugOutput) print('[DEBUG REPL]   Creating fresh: W$writerId/R$readerId');
         if (!arg.isReader) {
           queryVarWriters[baseName] = writerId;
         }
@@ -425,7 +476,7 @@ rt.Term _buildStructTerm(GlpRuntime runtime, StructTerm struct, Map<String, int>
     } else if (arg is StructTerm) {
       // Nested structure - create bound writer/reader (FCP: both cells created internally)
       final (writerId, readerId) = runtime.heap.allocateFreshPair();
-      final structValue = _buildStructTerm(runtime, arg, queryVarWriters) as rt.StructTerm;
+      final structValue = _buildStructTerm(runtime, arg, queryVarWriters, debugOutput: debugOutput) as rt.StructTerm;
       runtime.heap.bindWriterStruct(writerId, structValue.functor, structValue.args);
       argTerms.add(rt.VarRef(readerId, isReader: true));
     } else {
