@@ -75,13 +75,7 @@ Result := X? // Y? :-
   integer(X?), integer(Y?), Y? =:= 0 |
   abort("Integer division by zero").
 
-% Clause 3: Type error - not integers
-Result := X? // Y? :-
-  number(X?), number(Y?),
-  (\+ integer(X?) ; \+ integer(Y?)) |
-  abort("Integer division requires integer operands").
-
-% Clause 4: Recursive evaluation
+% Clause 3: Recursive evaluation
 Result := X? // Y? :-
   otherwise |
   X1 := X?,
@@ -99,13 +93,7 @@ Result := X? mod Y? :-
   integer(X?), integer(Y?), Y? =:= 0 |
   abort("Modulo by zero").
 
-% Clause 3: Type error - not integers
-Result := X? mod Y? :-
-  number(X?), number(Y?),
-  (\+ integer(X?) ; \+ integer(Y?)) |
-  abort("Modulo requires integer operands").
-
-% Clause 4: Recursive evaluation
+% Clause 3: Recursive evaluation
 Result := X? mod Y? :-
   otherwise |
   X1 := X?,
