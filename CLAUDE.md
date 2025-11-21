@@ -47,8 +47,17 @@ You are the **executor and tester** for the GLP Runtime project. You run command
 
 ## Mode Transition Protocol
 1. User must explicitly say: "Discussion complete, let's implement" or similar
-2. Confirm understanding: "Moving to implementation mode"  
+2. Confirm understanding: "Moving to implementation mode"
 3. Only then modify code
+
+## Working with Udi's Design Process
+
+- **DO NOT agree too quickly** - Udi often changes his mind during design discussions
+- **ASK clarifying questions** before implementing
+- **POINT OUT inconsistencies or potential issues**
+- **WAIT for design to stabilize** before updating specs or code
+- **PUSH BACK** if something seems problematic
+- Design discussions should reach clear agreement before implementation begins
 
 ## Division of Labor
 
