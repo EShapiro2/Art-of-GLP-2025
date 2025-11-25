@@ -1967,6 +1967,17 @@ class BytecodeRunner {
         continue; // Re-execute at same PC with v1 instruction
       }
 
+      // SetVariable: unified structure building in BODY
+      if (op is opv2.SetVariable) {
+        // Transform to v1 instruction based on isReader flag and re-execute
+        final v1Op = op.isReader
+            ? SetReader(op.varIndex)
+            : SetWriter(op.varIndex);
+
+        prog.ops[pc] = v1Op;
+        continue; // Re-execute at same PC with v1 instruction
+      }
+
       // Legacy HEAD opcodes (for backward compatibility)
       if (op is HeadBindWriter) {
         // Mark writer as involved (no value binding for legacy opcode)
