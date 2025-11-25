@@ -2475,6 +2475,13 @@ class BytecodeRunner {
                     if (cx.onActivation != null) cx.onActivation!(a);
                   }
 
+                  // Per spec v2.16 section 7.1: Store VarRef to bound writer in argSlots
+                  final targetSlot = cx.clauseVars[-2];
+                  if (targetSlot is int && targetSlot >= 0 && targetSlot < 10) {
+                    cx.argSlots[targetSlot] = VarRef(parentWriterId, isReader: true);
+                    cx.clauseVars.remove(-2);
+                  }
+
                   // Clear structure building state
                   cx.currentStructure = null;
                   cx.mode = UnifyMode.read;
@@ -2496,31 +2503,27 @@ class BytecodeRunner {
 
       if (op is SetReader) {
         if (cx.inBody && cx.mode == UnifyMode.write && cx.currentStructure is StructTerm) {
-          // Check if writer already exists in clause variables
-          final existingWriterId = cx.clauseVars[op.varIndex];
-          final int writerId;
+          // Check what value exists in clause variables
+          final existingValue = cx.clauseVars[op.varIndex];
+          final struct = cx.currentStructure as StructTerm;
 
-          if (existingWriterId is VarRef) {
-            // Use existing writer from VarRef
-            writerId = existingWriterId.varId;
-          } else if (existingWriterId is int) {
-            // Legacy: bare int (use it directly)
-            writerId = existingWriterId;
+          // Handle different value types in clauseVars
+          if (existingValue is VarRef) {
+            // VarRef: use its varId as reader reference
+            struct.args[cx.S] = VarRef(existingValue.varId, isReader: true);
+          } else if (existingValue is int) {
+            // Legacy: bare int (use it as varId directly)
+            struct.args[cx.S] = VarRef(existingValue, isReader: true);
+          } else if (existingValue is Term) {
+            // Term (ConstTerm, StructTerm, etc.): embed directly in structure
+            struct.args[cx.S] = existingValue;
           } else {
-            // Allocate new variable only if uninitialized
+            // Uninitialized: allocate new variable
             final varId = cx.rt.heap.allocateFreshVar();
             cx.rt.heap.addVariable(varId);
-
-            // Store variable ID in clause variable
-            // CRITICAL FIX: Store VarRef, not bare ID
             cx.clauseVars[op.varIndex] = VarRef(varId, isReader: false);
-            writerId = varId;
+            struct.args[cx.S] = VarRef(varId, isReader: true);
           }
-
-          // Store VarRef (reader mode) in current structure at position S
-          // In FCP single-ID: use writerId directly as reader
-          final struct = cx.currentStructure as StructTerm;
-          struct.args[cx.S] = VarRef(writerId, isReader: true);
           cx.S++; // Move to next position
 
           // Check if structure is complete (all arguments filled)
@@ -2587,6 +2590,13 @@ class BytecodeRunner {
                     for (final a in acts) {
                       cx.rt.gq.enqueue(a);
                       if (cx.onActivation != null) cx.onActivation!(a);
+                    }
+
+                    // Per spec v2.16 section 7.1: Store VarRef to bound writer in argSlots
+                    final targetSlot = cx.clauseVars[-2];
+                    if (targetSlot is int && targetSlot >= 0 && targetSlot < 10) {
+                      cx.argSlots[targetSlot] = VarRef(parentWriterId, isReader: true);
+                      cx.clauseVars.remove(-2);
                     }
 
                     // Clear structure building state

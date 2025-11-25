@@ -88,15 +88,36 @@ void registerStandardBodyKernels(BodyKernelRegistry registry) {
   registry.register('ceil_kernel', 2, ceilKernel);
 }
 
-/// Helper to get numeric value from argument
+/// Helper to get numeric value from argument (with arithmetic evaluation)
 num? _getNum(GlpRuntime rt, Object? arg) {
   if (arg is num) return arg;
   if (arg is ConstTerm && arg.value is num) return arg.value as num;
   if (arg is VarRef) {
     final term = rt.heap.getValue(arg.varId);
-    if (term is ConstTerm && term.value is num) return term.value as num;
+    return _getNum(rt, term); // Recursively evaluate
+  }
+  if (arg is StructTerm) {
+    // Evaluate arithmetic expressions
+    return _evaluateArithmetic(rt, arg);
   }
   return null;
+}
+
+/// Evaluate arithmetic structure to numeric value
+num? _evaluateArithmetic(GlpRuntime rt, StructTerm struct) {
+  final args = struct.args.map((a) => _getNum(rt, a)).toList();
+  if (args.any((a) => a == null)) return null;
+
+  switch (struct.functor) {
+    case '+': return args[0]! + args[1]!;
+    case '-': return args[0]! - args[1]!;
+    case '*': return args[0]! * args[1]!;
+    case '/': return args[1] == 0 ? null : args[0]! / args[1]!;
+    case '//': return args[1] == 0 ? null : args[0]! ~/ args[1]!;
+    case 'mod': return args[1] == 0 ? null : args[0]! % args[1]!;
+    case 'neg': return -args[0]!;
+    default: return null;
+  }
 }
 
 /// Helper to bind result to output writer
