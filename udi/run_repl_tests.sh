@@ -162,6 +162,40 @@ run_test "Structure Demo" \
     "P = person"
 
 # ============================================
+# LIST OPERATIONS (From CP Book)
+# ============================================
+
+run_test "Append two lists" \
+    "append.glp" \
+    "append([a,b], [c,d], Zs)." \
+    "Zs = \[a, b, c, d\]"
+
+run_test "Append empty list" \
+    "append.glp" \
+    "append([], [x,y], Zs)." \
+    "Zs = \[x, y\]"
+
+run_test "Append to empty list" \
+    "append.glp" \
+    "append([a,b], [], Zs)." \
+    "Zs = \[a, b\]"
+
+run_test "Reverse list" \
+    "reverse.glp" \
+    "reverse([a,b,c], Ys)." \
+    "Ys = \[c, b, a\]"
+
+run_test "Reverse empty list" \
+    "reverse.glp" \
+    "reverse([], Ys)." \
+    "Ys = \[\]"
+
+run_test "Reverse single element" \
+    "reverse.glp" \
+    "reverse([x], Ys)." \
+    "Ys = \[x\]"
+
+# ============================================
 # SORTING TESTS
 # ============================================
 
