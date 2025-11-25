@@ -1946,25 +1946,10 @@ class BytecodeRunner {
       }
 
       // GetVariable: unified first-occurrence argument loading (native V2 handler)
-      // Handles opv2.GetVariable and legacy GetWriterVariable/GetReaderVariable
-      if (op is opv2.GetVariable || op is GetWriterVariable || op is GetReaderVariable) {
-        final int varIndex;
-        final int argSlot;
-        final bool isReaderMode;
-        if (op is opv2.GetVariable) {
-          varIndex = op.varIndex;
-          argSlot = op.argSlot;
-          isReaderMode = op.isReader;
-        } else if (op is GetWriterVariable) {
-          varIndex = op.varIndex;
-          argSlot = op.argSlot;
-          isReaderMode = false;
-        } else {
-          final gr = op as GetReaderVariable;
-          varIndex = gr.varIndex;
-          argSlot = gr.argSlot;
-          isReaderMode = true;
-        }
+      if (op is opv2.GetVariable) {
+        final varIndex = op.varIndex;
+        final argSlot = op.argSlot;
+        final isReaderMode = op.isReader;
 
         final arg = _getArg(cx, argSlot);
         if (arg == null) {
@@ -2011,25 +1996,10 @@ class BytecodeRunner {
       }
 
       // GetValue: unified subsequent-occurrence argument unification (native V2 handler)
-      // Handles opv2.GetValue and legacy GetWriterValue/GetReaderValue
-      if (op is opv2.GetValue || op is GetWriterValue || op is GetReaderValue) {
-        final int varIndex;
-        final int argSlot;
-        final bool isReaderMode;
-        if (op is opv2.GetValue) {
-          varIndex = op.varIndex;
-          argSlot = op.argSlot;
-          isReaderMode = op.isReader;
-        } else if (op is GetWriterValue) {
-          varIndex = op.varIndex;
-          argSlot = op.argSlot;
-          isReaderMode = false;
-        } else {
-          final gr = op as GetReaderValue;
-          varIndex = gr.varIndex;
-          argSlot = gr.argSlot;
-          isReaderMode = true;
-        }
+      if (op is opv2.GetValue) {
+        final varIndex = op.varIndex;
+        final argSlot = op.argSlot;
+        final isReaderMode = op.isReader;
 
         final arg = _getArg(cx, argSlot);
         if (arg == null) {
@@ -2172,21 +2142,9 @@ class BytecodeRunner {
       }
 
       // SetVariable: unified structure building in BODY (native V2 handler)
-      // Handles both opv2.SetVariable and legacy SetWriter/SetReader
-      if (op is opv2.SetVariable || op is SetWriter || op is SetReader) {
-        // Extract varIndex and isReader from opcode
-        final int varIndex;
-        final bool isReaderMode;
-        if (op is opv2.SetVariable) {
-          varIndex = op.varIndex;
-          isReaderMode = op.isReader;
-        } else if (op is SetWriter) {
-          varIndex = op.varIndex;
-          isReaderMode = false;
-        } else {
-          varIndex = (op as SetReader).varIndex;
-          isReaderMode = true;
-        }
+      if (op is opv2.SetVariable) {
+        final varIndex = op.varIndex;
+        final isReaderMode = op.isReader;
 
         if (cx.inBody && cx.mode == UnifyMode.write && cx.currentStructure is StructTerm) {
           // Check if writer already exists in clause variables
@@ -2636,26 +2594,10 @@ class BytecodeRunner {
       }
 
       // PutVariable: unified writer/reader argument placement (native V2 handler)
-      // Handles opv2.PutVariable and legacy PutWriter/PutReader
-      if (op is opv2.PutVariable || op is PutWriter || op is PutReader) {
-        // Extract varIndex, argSlot, and isReader from opcode
-        final int varIndex;
-        final int argSlot;
-        final bool isReaderMode;
-        if (op is opv2.PutVariable) {
-          varIndex = op.varIndex;
-          argSlot = op.argSlot;
-          isReaderMode = op.isReader;
-        } else if (op is PutWriter) {
-          varIndex = op.varIndex;
-          argSlot = op.argSlot;
-          isReaderMode = false;
-        } else {
-          final pr = op as PutReader;
-          varIndex = pr.varIndex;
-          argSlot = pr.argSlot;
-          isReaderMode = true;
-        }
+      if (op is opv2.PutVariable) {
+        final varIndex = op.varIndex;
+        final argSlot = op.argSlot;
+        final isReaderMode = op.isReader;
 
         if (debug) print('  [G${cx.goalId}] PC=$pc PutVariable varIndex=$varIndex argSlot=$argSlot isReader=$isReaderMode');
         final value = cx.clauseVars[varIndex];
