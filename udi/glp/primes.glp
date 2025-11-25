@@ -1,7 +1,8 @@
 % primes.glp - Sieve of Eratosthenes
 %
-% FUTURE TEST: Requires := arithmetic operator and mod/=:=/=\= guards
+% FUTURE TEST: Requires mod operator and =:=/=\= guards (not yet implemented)
 % From Concurrent Prolog course (handout 4)
+% NOTE: This file cannot load until mod/=:=/=\= are added to the parser
 
 % ===== DIRECT EXECUTION =====
 
