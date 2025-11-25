@@ -1945,6 +1945,28 @@ class BytecodeRunner {
         continue; // Re-execute at same PC with v1 instruction
       }
 
+      // GetVariable: unified first-occurrence argument loading
+      if (op is opv2.GetVariable) {
+        // Transform to v1 instruction based on isReader flag and re-execute
+        final v1Op = op.isReader
+            ? GetReaderVariable(op.varIndex, op.argSlot)
+            : GetWriterVariable(op.varIndex, op.argSlot);
+
+        prog.ops[pc] = v1Op;
+        continue; // Re-execute at same PC with v1 instruction
+      }
+
+      // GetValue: unified subsequent-occurrence argument unification
+      if (op is opv2.GetValue) {
+        // Transform to v1 instruction based on isReader flag and re-execute
+        final v1Op = op.isReader
+            ? GetReaderValue(op.varIndex, op.argSlot)
+            : GetWriterValue(op.varIndex, op.argSlot);
+
+        prog.ops[pc] = v1Op;
+        continue; // Re-execute at same PC with v1 instruction
+      }
+
       // Legacy HEAD opcodes (for backward compatibility)
       if (op is HeadBindWriter) {
         // Mark writer as involved (no value binding for legacy opcode)
