@@ -503,7 +503,22 @@ run_test "Factorial factorial(5) non-tail-recursive" \
     "F = 120"
 
 # ============================================
-# FUTURE TESTS: NEEDS MOD PARSER
+# METAINTERPRETER + ARITHMETIC (Working!)
+# reduce((X?:=T), true) :- X:=T?. enabled these
+# ============================================
+
+run_test "Meta: run(factorial(5,F))" \
+    "factorial.glp" \
+    "run(factorial(5, F))." \
+    "F = 120"
+
+run_test "Meta: run(multiply(3,[1,2,3,4],Ys))" \
+    "multiply.glp" \
+    "run(multiply(3, [1,2,3,4], Ys))." \
+    "Ys = \\[3, 6, 9, 12\\]"
+
+# ============================================
+# FUTURE TESTS
 # ============================================
 
 # Helper for future tests - shows them as skipped
@@ -512,6 +527,7 @@ run_future_test() {
     local file="$2"
     local query="$3"
     local expected="$4"
+    local reason="$5"
 
     FUTURE=$((FUTURE + 1))
     echo "────────────────────────────────────────"
@@ -519,55 +535,41 @@ run_future_test() {
     echo "  File: $file"
     echo "  Query: $query"
     echo "  Expected: $expected"
-    echo "  ⏳ SKIPPED (needs mod operator in parser)"
+    echo "  ⏳ SKIPPED ($reason)"
 }
 
 FUTURE=0
 
-run_future_test "Primes up to 20 (needs mod parser)" \
+run_future_test "Primes up to 20" \
     "primes.glp" \
     "primes(20, Ps)." \
-    "Ps = [2, 3, 5, 7, 11, 13, 17, 19]"
+    "Ps = [2, 3, 5, 7, 11, 13, 17, 19]" \
+    "needs mod operator in parser"
 
-# ============================================
-# FUTURE TESTS: METAINTERPRETER + ARITHMETIC
-# These test run/reduce with arithmetic predicates
-# ============================================
-
-run_future_test "Meta: Fibonacci run(fib(10,F))" \
-    "fib.glp" \
-    "run(fib(10, F))." \
-    "F = 55"
-
-run_future_test "Meta: Factorial run(factorial(5,F))" \
-    "factorial.glp" \
-    "run(factorial(5, F))." \
-    "F = 120"
-
-run_future_test "Meta: Sum list run(sum([1,2,3,4,5],S))" \
+# Accumulator pattern: reduce returns true but doesn't unify Acc with result
+run_future_test "Meta: run(sum([1,2,3,4,5],S))" \
     "sum_list.glp" \
     "run(sum([1,2,3,4,5], S))." \
-    "S = 15"
+    "S = 15" \
+    "accumulator head unification"
 
-run_future_test "Meta: Inner product run(ip(...))" \
+run_future_test "Meta: run(ip([1,2,3],[4,5,6],S))" \
     "inner_product.glp" \
     "run(ip([1,2,3], [4,5,6], S))." \
-    "S = 32"
+    "S = 32" \
+    "accumulator head unification"
 
-run_future_test "Meta: Multiply stream run(multiply(...))" \
-    "multiply.glp" \
-    "run(multiply(3, [1,2,3,4], Ys))." \
-    "Ys = [3, 6, 9, 12]"
-
-run_future_test "Meta: Hanoi run(hanoi(2,a,c,M))" \
+run_future_test "Meta: run(hanoi(2,a,c,M))" \
     "hanoi.glp" \
     "run(hanoi(2, a, c, M))." \
-    "M = ((a,b),(a,c),(b,c))"
+    "M = ((a,b),(a,c),(b,c))" \
+    "tuple head unification"
 
-run_future_test "Meta: Primes run(primes(10,Ps))" \
+run_future_test "Meta: run(primes(10,Ps))" \
     "primes.glp" \
     "run(primes(10, Ps))." \
-    "Ps = [2, 3, 5, 7]"
+    "Ps = [2, 3, 5, 7]" \
+    "needs mod operator"
 
 # ============================================
 # SUMMARY
@@ -580,7 +582,7 @@ echo "════════════════════════�
 echo "Total:  $TOTAL tests"
 echo "Passed: $PASS tests ($(( PASS * 100 / TOTAL ))%)"
 echo "Failed: $FAIL tests"
-echo "Future: $FUTURE tests (needs mod operator in parser)"
+echo "Future: $FUTURE tests (see reasons above)"
 echo ""
 
 if [ $FAIL -eq 0 ]; then
