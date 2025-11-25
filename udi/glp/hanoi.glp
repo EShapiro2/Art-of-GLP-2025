@@ -59,7 +59,8 @@ reduce(free(b, c, a), true).
 reduce(free(c, a, b), true).
 reduce(free(c, b, a), true).
 
-% Note: := is handled directly by the runtime, no reduce clause needed
+% Handle := in metainterpreter
+reduce((X?:=T), true) :- X:=T?.
 
 % ===== TESTS =====
 % Direct: hanoi(2, a, c, Moves)

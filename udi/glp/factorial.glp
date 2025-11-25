@@ -35,7 +35,8 @@ reduce(factorial(N, F?),
         F := N? * F1?)) :-
   N? > 1 | true.
 
-% Note: := is handled directly by the runtime, no reduce clause needed
+% Handle := in metainterpreter
+reduce((X?:=T), true) :- X:=T?.
 
 % ===== TESTS =====
 % Direct: factorial(5, F) should give F = 120

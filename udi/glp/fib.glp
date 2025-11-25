@@ -39,7 +39,8 @@ reduce(fib(N, F?),
         F := F1? + F2?)) :-
   N? > 1 | true.
 
-% Note: := is handled directly by the runtime, no reduce clause needed
+% Handle := in metainterpreter
+reduce((X?:=T), true) :- X:=T?.
 
 % ===== TESTS =====
 % Direct: fib(10, F) should give F = 55

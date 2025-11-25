@@ -30,7 +30,8 @@ reduce(sum_acc([X|Xs], Acc, S?),
        (Acc1 := Acc? + X?,
         sum_acc(Xs?, Acc1?, S))).
 
-% Note: := is handled directly by the runtime, no reduce clause needed
+% Handle := in metainterpreter
+reduce((X?:=T), true) :- X:=T?.
 
 % ===== TESTS =====
 % Direct: sum([1,2,3,4,5], S) should give S = 15
