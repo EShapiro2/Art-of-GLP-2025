@@ -195,6 +195,65 @@ run_test "Reverse single element" \
     "reverse([x], Ys)." \
     "Ys = \[x\]"
 
+run_test "Copy list" \
+    "copy.glp" \
+    "copy([a,b,c], Ys)." \
+    "Ys = \[a, b, c\]"
+
+run_test "Copy empty list" \
+    "copy.glp" \
+    "copy([], Ys)." \
+    "Ys = \[\]"
+
+run_test "Ordered merge" \
+    "opmerge.glp" \
+    "opmerge([1,3,5], [2,4,6], Zs)." \
+    "Zs = \[1, 2, 3, 4, 5, 6\]"
+
+run_test "Ordered merge with duplicates" \
+    "opmerge.glp" \
+    "opmerge([1,2,3], [2,3,4], Zs)." \
+    "Zs = \[1, 2, 3, 4\]"
+
+run_test "Ordered merge empty first" \
+    "opmerge.glp" \
+    "opmerge([], [1,2], Zs)." \
+    "Zs = \[1, 2\]"
+
+run_test "Fair stable merge" \
+    "fsmerge.glp" \
+    "fsmerge([a,b,c], [x,y,z], Zs)." \
+    "Zs = \[a, x, b, y, c, z\]"
+
+run_test "Fair stable merge unequal" \
+    "fsmerge.glp" \
+    "fsmerge([a,b], [x,y,z], Zs)." \
+    "Zs = \[a, x, b, y, z\]"
+
+# ============================================
+# LOGIC GATES (Circuit Simulation)
+# ============================================
+
+run_test "AND gate" \
+    "gates.glp" \
+    "and([one,zero,one], [one,one,zero], Out)." \
+    "Out = \[one, zero, zero\]"
+
+run_test "OR gate" \
+    "gates.glp" \
+    "or([one,zero,one], [one,one,zero], Out)." \
+    "Out = \[one, one, one\]"
+
+run_test "AND gate all ones" \
+    "gates.glp" \
+    "and([one,one], [one,one], Out)." \
+    "Out = \[one, one\]"
+
+run_test "OR gate all zeros" \
+    "gates.glp" \
+    "or([zero,zero], [zero,zero], Out)." \
+    "Out = \[zero, zero\]"
+
 # ============================================
 # SORTING TESTS
 # ============================================
