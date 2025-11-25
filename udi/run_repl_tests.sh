@@ -445,6 +445,46 @@ run_future_test "Primes up to 20" \
     "Ps = [2, 3, 5, 7, 11, 13, 17, 19]"
 
 # ============================================
+# FUTURE TESTS: METAINTERPRETER + ARITHMETIC
+# These test run/reduce with arithmetic predicates
+# ============================================
+
+run_future_test "Meta: Fibonacci run(fib(10,F))" \
+    "fib.glp" \
+    "run(fib(10, F))." \
+    "F = 55"
+
+run_future_test "Meta: Factorial run(factorial(5,F))" \
+    "factorial.glp" \
+    "run(factorial(5, F))." \
+    "F = 120"
+
+run_future_test "Meta: Sum list run(sum([1,2,3,4,5],S))" \
+    "sum_list.glp" \
+    "run(sum([1,2,3,4,5], S))." \
+    "S = 15"
+
+run_future_test "Meta: Inner product run(ip(...))" \
+    "inner_product.glp" \
+    "run(ip([1,2,3], [4,5,6], S))." \
+    "S = 32"
+
+run_future_test "Meta: Multiply stream run(multiply(...))" \
+    "multiply.glp" \
+    "run(multiply(3, [1,2,3,4], Ys))." \
+    "Ys = [3, 6, 9, 12]"
+
+run_future_test "Meta: Hanoi run(hanoi(2,a,c,M))" \
+    "hanoi.glp" \
+    "run(hanoi(2, a, c, M))." \
+    "M = ((a,b),(a,c),(b,c))"
+
+run_future_test "Meta: Primes run(primes(10,Ps))" \
+    "primes.glp" \
+    "run(primes(10, Ps))." \
+    "Ps = [2, 3, 5, 7]"
+
+# ============================================
 # SUMMARY
 # ============================================
 
