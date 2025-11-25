@@ -283,6 +283,21 @@ run_test "Insertion sort two elements" \
     "insertion_sort([3,4],X)." \
     "X = \[3, 4\]"
 
+run_test "Bubble sort" \
+    "bsort.glp" \
+    "sort([3,1,4,1,5], Ys)." \
+    "Ys = \[1, 1, 3, 4, 5\]"
+
+run_test "Bubble sort empty" \
+    "bsort.glp" \
+    "sort([], Ys)." \
+    "Ys = \[\]"
+
+run_test "Bubble sort single" \
+    "bsort.glp" \
+    "sort([7], Ys)." \
+    "Ys = \[7\]"
+
 # ============================================
 # QUICKSORT ADDITIONAL TESTS
 # ============================================
