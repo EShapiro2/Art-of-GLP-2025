@@ -478,9 +478,32 @@ run_test "Factorial factorial(2)" \
     "F = 2"
 
 # ============================================
-# FUTURE TESTS: NON-TAIL-RECURSIVE ARITHMETIC
-# These need reader reactivation chain fix
-# Pattern: F := recursive_result? + something
+# NON-TAIL-RECURSIVE ARITHMETIC (Now Working!)
+# Reader reactivation chain fix enabled these
+# ============================================
+
+run_test "Fibonacci fib(3) non-tail-recursive" \
+    "fib.glp" \
+    "fib(3, F)." \
+    "F = 2"
+
+run_test "Fibonacci fib(10) non-tail-recursive" \
+    "fib.glp" \
+    "fib(10, F)." \
+    "F = 55"
+
+run_test "Factorial factorial(3) non-tail-recursive" \
+    "factorial.glp" \
+    "factorial(3, F)." \
+    "F = 6"
+
+run_test "Factorial factorial(5) non-tail-recursive" \
+    "factorial.glp" \
+    "factorial(5, F)." \
+    "F = 120"
+
+# ============================================
+# FUTURE TESTS: NEEDS MOD PARSER
 # ============================================
 
 # Helper for future tests - shows them as skipped
@@ -496,30 +519,10 @@ run_future_test() {
     echo "  File: $file"
     echo "  Query: $query"
     echo "  Expected: $expected"
-    echo "  ⏳ SKIPPED (needs reader reactivation chain fix)"
+    echo "  ⏳ SKIPPED (needs mod operator in parser)"
 }
 
 FUTURE=0
-
-run_future_test "Fibonacci fib(3) - non-tail-recursive" \
-    "fib.glp" \
-    "fib(3, F)." \
-    "F = 2"
-
-run_future_test "Fibonacci fib(10) - non-tail-recursive" \
-    "fib.glp" \
-    "fib(10, F)." \
-    "F = 55"
-
-run_future_test "Factorial factorial(3) - non-tail-recursive" \
-    "factorial.glp" \
-    "factorial(3, F)." \
-    "F = 6"
-
-run_future_test "Factorial factorial(5) - non-tail-recursive" \
-    "factorial.glp" \
-    "factorial(5, F)." \
-    "F = 120"
 
 run_future_test "Primes up to 20 (needs mod parser)" \
     "primes.glp" \
@@ -577,7 +580,7 @@ echo "════════════════════════�
 echo "Total:  $TOTAL tests"
 echo "Passed: $PASS tests ($(( PASS * 100 / TOTAL ))%)"
 echo "Failed: $FAIL tests"
-echo "Future: $FUTURE tests (needs reader reactivation fix)"
+echo "Future: $FUTURE tests (needs mod operator in parser)"
 echo ""
 
 if [ $FAIL -eq 0 ]; then
