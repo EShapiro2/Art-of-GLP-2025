@@ -142,16 +142,23 @@ class Parser {
       }
     }
 
-    // Check for assignment: Var := Expr
-    if (_check(TokenType.VARIABLE)) {
+    // Check for assignment (Var := Expr) or univ (Var =.. Expr)
+    if (_check(TokenType.VARIABLE) || _check(TokenType.READER)) {
       final varToken = _peek();
-      // Look ahead for :=
+      final isReader = varToken.type == TokenType.READER;
+      // Look ahead for := or =..
       if (tokens.length > _current + 1 && tokens[_current + 1].type == TokenType.ASSIGN) {
         _advance(); // consume variable
         _advance(); // consume :=
-        final varTerm = VarTerm(varToken.lexeme, false, varToken.line, varToken.column);
+        final varTerm = VarTerm(varToken.lexeme, isReader, varToken.line, varToken.column);
         final expr = _parseExpression();
         return Goal(':=', [varTerm, expr], varToken.line, varToken.column);
+      } else if (tokens.length > _current + 1 && tokens[_current + 1].type == TokenType.UNIV) {
+        _advance(); // consume variable
+        _advance(); // consume =..
+        final varTerm = VarTerm(varToken.lexeme, isReader, varToken.line, varToken.column);
+        final expr = _parseTerm();
+        return Goal('=..', [varTerm, expr], varToken.line, varToken.column);
       }
     }
 
