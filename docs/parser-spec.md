@@ -1,5 +1,16 @@
 # GLP Parser Specification - Arithmetic Expressions
 
+## Goal Syntax Principle
+
+**The syntax of body goals and queries is identical.**
+
+Any term that can appear as a top-level query can also appear as a goal in a clause body, and vice versa. This includes:
+- Regular predicate calls: `foo(X, Y)`
+- Infix predicates: `X =.. [foo, a, b]`, `X := Y`
+- Arithmetic comparisons: `X > Y`, `X =:= Y`
+
+If the parser accepts a term as a query but rejects the same term in a clause body, that is a parser bug.
+
 ## Overview
 
 This document specifies the parsing of arithmetic expressions in GLP source code. Arithmetic expressions use infix notation in source but are transformed to prefix (structure) notation in the AST for bytecode generation.
