@@ -536,6 +536,31 @@ run_test "Meta: run(hanoi(2,a,c,M))" \
     "→ 54 goals"
 
 # ============================================
+# UNIV (=..) TESTS - Structure decomposition/composition
+# Uses stdlib/univ.glp which is auto-loaded
+# ============================================
+
+run_test "Univ: compose tuple from list [foo]" \
+    "hello.glp" \
+    "T =.. [foo]." \
+    "T = foo()"
+
+run_test "Univ: compose tuple from list [bar, x, y]" \
+    "hello.glp" \
+    "T =.. [bar, x, y]." \
+    "T = bar(x, y)"
+
+run_test "Univ: decompose foo(a, b) to list" \
+    "hello.glp" \
+    "foo(a, b) =.. L." \
+    "L = \[foo, a, b\]"
+
+run_test "Univ: decompose bar(1, 2, 3) to list" \
+    "hello.glp" \
+    "bar(1, 2, 3) =.. L." \
+    "L = \[bar, 1, 2, 3\]"
+
+# ============================================
 # FUTURE TESTS
 # ============================================
 
