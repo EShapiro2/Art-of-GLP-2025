@@ -4,10 +4,11 @@
 1. **READ CLAUDE.md** - Always read this file first
 2. **INSTALL DART** - Run: `curl -fsSL https://dart.dev/get-dart | sh` or check if `/tmp/dart-sdk/bin/dart` exists
 3. **SET DART PATH** - Use `DART=/tmp/dart-sdk/bin/dart` or add to PATH
-4. **IDENTIFY CURRENT MODE** - Discussion or Implementation
-5. **FOLLOW MODE RULES** - Never mix modes
-6. **ASK FOR CURRENT STATE** - Request latest code/errors from user
-7. **READ SPECS AS NEEDED** - Don't read all specs upfront, only when relevant to task
+4. **MOUNT FCP** - Clone FCP repo: `git clone --depth 1 https://github.com/EShapiro2/FCP.git /tmp/FCP`
+5. **IDENTIFY CURRENT MODE** - Discussion or Implementation
+6. **FOLLOW MODE RULES** - Never mix modes
+7. **ASK FOR CURRENT STATE** - Request latest code/errors from user
+8. **READ SPECS AS NEEDED** - Don't read all specs upfront, only when relevant to task
 
 ### Dart Installation (if needed)
 ```bash
@@ -24,8 +25,8 @@ dart --version
 
 ### FCP Reference Repository
 The FCP (Flat Concurrent Prolog) implementation is available for reference:
+- **Location**: `/tmp/FCP` (cloned at startup)
 - **GitHub**: https://github.com/EShapiro2/FCP
-- **Local mount** (if available): Check `/mnt/user/FCP` or ask user to mount
 - **Paper**: `/home/user/GLP/docs/1-s2.0-0743106689900113-main.pdf`
 
 ## Core Rules
