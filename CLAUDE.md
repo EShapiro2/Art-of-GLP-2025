@@ -639,6 +639,13 @@ You are part of an AI team building GLP. Claude Chat handles architecture and de
 
 When the user says `#remember <something>`, add that information to this CLAUDE.md file so it persists across sessions.
 
+## Bugs and Limitations - NO WORKAROUNDS
+
+When a bug, limitation, or error is uncovered:
+1. **DO NOT work around it** - no temporary fixes or alternative approaches
+2. **REPORT it** - clearly describe what was found
+3. **DISCUSS how to fix it** - wait for agreement on the proper solution
+
 ## Git Collaboration Protocol (Multiple Claude Code Sessions)
 
 1. **Main branch** (`main`) is the source of truth - contains all merged, stable work
