@@ -536,19 +536,10 @@ Claude B: work → push → branch-B ──────────────�
 
 **To merge Claude's work into main:**
 ```bash
-# Step 1: Make sure you're on main
 git checkout main
-
-# Step 2: Pull latest main (in case other work was merged)
 git pull origin main
-
-# Step 3: Fetch Claude's branch
 git fetch origin claude/<branch-name>
-
-# Step 4: Merge Claude's branch into main
 git merge origin/claude/<branch-name>
-
-# Step 5: Push to main
 git push origin main
 ```
 
@@ -560,7 +551,6 @@ git push origin main
 
 **To verify merge:**
 ```bash
-# After merging, verify tests pass
 cd glp_runtime && dart test
 cd ../udi && bash run_repl_tests.sh
 ```
@@ -569,21 +559,17 @@ cd ../udi && bash run_repl_tests.sh
 
 **"not something we can merge" error:**
 ```bash
-# You forgot to fetch - do this first:
 git fetch origin claude/<branch-name>
-# Then merge:
 git merge origin/claude/<branch-name>
 ```
 
 **"fatal: refusing to merge unrelated histories":**
 ```bash
-# This shouldn't happen, but if it does:
 git merge origin/claude/<branch-name> --allow-unrelated-histories
 ```
 
 **Merge conflicts:**
 ```bash
-# If conflicts occur, resolve them manually, then:
 git add -A
 git commit -m "Merge claude/<branch-name> into main"
 git push origin main
@@ -591,9 +577,7 @@ git push origin main
 
 **Divergent branches (Claude needs to update from main):**
 ```bash
-# Claude should run:
 git pull origin main --no-rebase
-# Then resolve any conflicts and push to their branch
 ```
 
 ## Error Response Template
