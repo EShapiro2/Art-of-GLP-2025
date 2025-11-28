@@ -3488,8 +3488,11 @@ class BytecodeRunner {
         // Test if X is a list (empty [] or non-empty [H|T])
         if (args.isEmpty) return GuardResult.failure;
         final val = getValue(args[0]);
-        // Empty list: ConstTerm('nil')
+        // Empty list: ConstTerm('nil') or raw String 'nil'
         if (val is ConstTerm && val.value == 'nil') {
+          return GuardResult.success;
+        }
+        if (val is String && val == 'nil') {
           return GuardResult.success;
         }
         // Non-empty list: StructTerm('.', [head, tail]) - compiler uses '.' as cons functor
