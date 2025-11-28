@@ -40,10 +40,16 @@ class Parser {
       if (_peek().type == TokenType.ATOM && _peek().lexeme == name) {
         // Same predicate name
         couldBeSameProcedure = true;
-      } else if (name == ':=' && _peek().type == TokenType.VARIABLE) {
+      } else if (name == ':=' && (_peek().type == TokenType.VARIABLE || _peek().type == TokenType.READER)) {
         // := clauses start with variable (e.g., "Result := X + Y")
         // Look ahead to see if it's followed by :=
         if (_current + 1 < tokens.length && tokens[_current + 1].type == TokenType.ASSIGN) {
+          couldBeSameProcedure = true;
+        }
+      } else if (name == '=..' && (_peek().type == TokenType.VARIABLE || _peek().type == TokenType.READER)) {
+        // =.. clauses start with variable (e.g., "X? =.. Y")
+        // Look ahead to see if it's followed by =..
+        if (_current + 1 < tokens.length && tokens[_current + 1].type == TokenType.UNIV) {
           couldBeSameProcedure = true;
         }
       }
@@ -204,16 +210,22 @@ class Parser {
     throw CompileError('Expected goal', 0, 0, phase: 'parser');
   }
 
-  // Atom: functor(arg1, arg2, ...) or Var := Expr (for clause heads)
+  // Atom: functor(arg1, arg2, ...) or Var := Expr or Var =.. Expr (for clause heads)
   Atom _parseAtom() {
-    // Check for := pattern: Var := Expr
-    if (_check(TokenType.VARIABLE)) {
+    // Check for := or =.. pattern: Var := Expr or Var =.. Expr
+    if (_check(TokenType.VARIABLE) || _check(TokenType.READER)) {
       final varToken = _advance();
+      final isReader = varToken.type == TokenType.READER;
       if (_match(TokenType.ASSIGN)) {
         // Parse as ':='(Var, Expr)
-        final varTerm = VarTerm(varToken.lexeme, false, varToken.line, varToken.column);
+        final varTerm = VarTerm(varToken.lexeme, isReader, varToken.line, varToken.column);
         final expr = _parseTerm();
         return Atom(':=', [varTerm, expr], varToken.line, varToken.column);
+      } else if (_match(TokenType.UNIV)) {
+        // Parse as '=..'(Var, Expr)
+        final varTerm = VarTerm(varToken.lexeme, isReader, varToken.line, varToken.column);
+        final expr = _parseTerm();
+        return Atom('=..', [varTerm, expr], varToken.line, varToken.column);
       } else {
         // Not an assignment - put variable back by rewinding
         _current--;
@@ -235,23 +247,35 @@ class Parser {
       _consume(TokenType.RPAREN, 'Expected ")" after arguments');
     }
 
+    // Check if this is followed by =.. (e.g., foo(a,b) =.. L)
+    if (_match(TokenType.UNIV)) {
+      // Convert the already-parsed atom to a StructTerm
+      final leftTerm = StructTerm(functorToken.lexeme, args, functorToken.line, functorToken.column);
+      final rightTerm = _parseTerm();
+      return Atom('=..', [leftTerm, rightTerm], functorToken.line, functorToken.column);
+    }
+
     return Atom(functorToken.lexeme, args, functorToken.line, functorToken.column);
   }
 
-  // Goal: same as Atom, or assignment (Var := Expr)
+  // Goal: same as Atom, or assignment (Var := Expr) or univ (Var =.. Expr)
   Goal _parseGoal() {
-    // Check for assignment: Var := Expr
+    // Check for assignment or univ: Var := Expr or Var =.. Expr
     if (_check(TokenType.VARIABLE) || _check(TokenType.READER)) {
       final varToken = _advance();
+      final isReader = varToken.type == TokenType.READER;
       if (_match(TokenType.ASSIGN)) {
         // Parse as ':='(Var, Expr)
-        final varTerm = varToken.type == TokenType.READER
-            ? VarTerm(varToken.lexeme, true, varToken.line, varToken.column)
-            : VarTerm(varToken.lexeme, false, varToken.line, varToken.column);
+        final varTerm = VarTerm(varToken.lexeme, isReader, varToken.line, varToken.column);
         final expr = _parseTerm();
         return Goal(':=', [varTerm, expr], varToken.line, varToken.column);
+      } else if (_match(TokenType.UNIV)) {
+        // Parse as '=..'(Var, Expr)
+        final varTerm = VarTerm(varToken.lexeme, isReader, varToken.line, varToken.column);
+        final expr = _parseTerm();
+        return Goal('=..', [varTerm, expr], varToken.line, varToken.column);
       } else {
-        // Not an assignment - this is an error in goal position
+        // Not an assignment or univ - this is an error in goal position
         throw CompileError(
           'Expected predicate name or assignment, got variable "${varToken.lexeme}"',
           varToken.line,
@@ -274,6 +298,14 @@ class Parser {
       }
 
       _consume(TokenType.RPAREN, 'Expected ")" after arguments');
+    }
+
+    // Check if this is followed by =.. (e.g., foo(a,b) =.. L)
+    if (_match(TokenType.UNIV)) {
+      // Convert the already-parsed atom to a StructTerm
+      final leftTerm = StructTerm(functorToken.lexeme, args, functorToken.line, functorToken.column);
+      final rightTerm = _parseTerm();
+      return Goal('=..', [leftTerm, rightTerm], functorToken.line, functorToken.column);
     }
 
     return Goal(functorToken.lexeme, args, functorToken.line, functorToken.column);

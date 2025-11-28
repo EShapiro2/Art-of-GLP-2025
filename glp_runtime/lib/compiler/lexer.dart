@@ -65,6 +65,13 @@ class Lexer {
         }
         return _makeToken(TokenType.GREATER, startLine, startColumn);
       case '=':
+        if (_match('.')) {
+          if (_match('.')) {
+            final lexeme = source.substring(_current - 3, _current);
+            return Token(TokenType.UNIV, lexeme, startLine, startColumn);
+          }
+          throw CompileError('Expected ".." after "=."', startLine, startColumn, phase: 'lexer');
+        }
         if (_match('<')) {
           final lexeme = source.substring(_current - 2, _current);
           return Token(TokenType.LESS_EQUAL, lexeme, startLine, startColumn);
