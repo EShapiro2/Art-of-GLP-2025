@@ -26,8 +26,9 @@ dart --version
 ### FCP Reference Repository
 The FCP (Flat Concurrent Prolog) implementation is available for reference:
 - **Location**: `/tmp/FCP` (cloned at startup)
+- **Reference Release**: `/tmp/FCP/Savannah` - this is the authoritative FCP release for GLP
+- **Key Docs**: `/tmp/FCP/Savannah/efcp/Logix/CONSTANTS.txt` - term syntax definitions
 - **GitHub**: https://github.com/EShapiro2/FCP
-- **Paper**: `/home/user/GLP/docs/1-s2.0-0743106689900113-main.pdf`
 
 ## Core Rules
 
