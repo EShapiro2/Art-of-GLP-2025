@@ -424,7 +424,7 @@ Term _dartListToGlpList(List<Object?> items) {
   for (var i = items.length - 1; i >= 0; i--) {
     final item = items[i];
     final termItem = item is Term ? item : ConstTerm(item);
-    result = StructTerm('[|]', [termItem, result]);
+    result = StructTerm('.', [termItem, result]); // '.' is the cons functor
   }
   return result;
 }
@@ -439,8 +439,8 @@ List<Object?>? _glpListToDartList(GlpRuntime rt, Object? list) {
     if (current is ConstTerm && current.value == 'nil') {
       return result;
     }
-    // Non-empty list [H|T]
-    if (current is StructTerm && current.functor == '[|]' && current.args.length == 2) {
+    // Non-empty list [H|T] - compiler uses '.' as cons functor
+    if (current is StructTerm && current.functor == '.' && current.args.length == 2) {
       result.add(_deref(rt, current.args[0]));
       current = _deref(rt, current.args[1]);
     } else {

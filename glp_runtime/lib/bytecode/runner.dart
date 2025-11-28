@@ -3492,8 +3492,8 @@ class BytecodeRunner {
         if (val is ConstTerm && val.value == 'nil') {
           return GuardResult.success;
         }
-        // Non-empty list: StructTerm('[|]', [head, tail])
-        if (val is StructTerm && val.functor == '[|]' && val.args.length == 2) {
+        // Non-empty list: StructTerm('.', [head, tail]) - compiler uses '.' as cons functor
+        if (val is StructTerm && val.functor == '.' && val.args.length == 2) {
           return GuardResult.success;
         }
         return GuardResult.failure;
@@ -3502,8 +3502,8 @@ class BytecodeRunner {
         // Test if X is a structure/tuple (not atom, number, or list)
         if (args.isEmpty) return GuardResult.failure;
         final val = getValue(args[0]);
-        // Tuple: StructTerm with functor != '[|]'
-        if (val is StructTerm && val.functor != '[|]') {
+        // Tuple: StructTerm with functor != '.' (not a list cons cell)
+        if (val is StructTerm && val.functor != '.') {
           return GuardResult.success;
         }
         return GuardResult.failure;
