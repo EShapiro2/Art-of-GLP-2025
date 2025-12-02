@@ -50,7 +50,7 @@ void main() async {
   // Load stdlib files for system predicates
   final stdlibFiles = ['assign.glp', 'univ.glp', 'unify.glp'];
   for (final filename in stdlibFiles) {
-    final stdlibPath = '../stdlib/$filename';
+    final stdlibPath = '../glp/stdlib/$filename';
     final stdlibFile = File(stdlibPath);
     if (stdlibFile.existsSync()) {
       try {
