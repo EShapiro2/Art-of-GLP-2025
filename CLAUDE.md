@@ -36,6 +36,7 @@ dart --version
 - `apt-get install dart` → package not found
 - `busybox unzip` → command not found
 - Dart 3.2.0 or earlier → SDK version mismatch (project needs ^3.9.4)
+- `tail`, `head`, `grep` shell commands → not available (use full output or Dart tools)
 
 ### FCP Reference Repository
 The FCP (Flat Concurrent Prolog) implementation is available for reference:
@@ -81,7 +82,7 @@ You are the **executor and tester** for the GLP Runtime project. You run command
 ## Key Context
 - **Project**: GLP (Grassroots Logic Programs) - a secure concurrent logic programming language
 - **Implementation Language**: Dart
-- **Current State**: 78 REPL tests + 25 unit tests passing (as of Nov 2025)
+- **Current State**: 101 REPL tests + 25 unit tests passing (as of Dec 2025)
 - **User Expertise**: Deep understanding of GLP semantics but does not write code
 - **Working Directory**: `/home/user/GLP/` (Linux) or `/Users/udi/GLP/` (Mac)
 
@@ -299,8 +300,8 @@ bash run_repl_tests.sh       # Compare to baseline
 
 **Report both results:**
 ```
-Unit tests: 86/89 passing
-REPL tests: 13/18 passing
+Unit tests: 25/25 passing
+REPL tests: 101/101 passing
 ```
 
 **For specific test:**
@@ -319,8 +320,8 @@ dart test test/specific_test.dart
 ### 1. Test Before Changing
 ```bash
 # ALWAYS run BOTH test suites first
-dart test                 # Unit tests - should be ~86/89 passing
-bash run_repl_tests.sh    # REPL tests - note baseline
+dart test                 # Unit tests - should be 25 passing
+bash run_repl_tests.sh    # REPL tests - should be 101 passing
 ```
 If tests failing BEFORE changes, STOP and inform user.
 
@@ -468,7 +469,8 @@ PC 44: Proceed
 ## Known Working Tests
 These must continue passing:
 ```bash
-dart test  # Should show ~170 passing
+dart test  # Should show 25 passing
+bash run_repl_tests.sh  # Should show 101 passing
 ```
 
 REPL tests:
@@ -486,7 +488,7 @@ REPL tests:
 ```bash
 git status          # Ensure clean state
 git log -1 --oneline  # Note current commit
-dart test | tail -n 5  # Baseline test count
+dart test  # Run baseline tests (note: tail/head commands not available)
 ```
 
 ### Creating Safety Checkpoints
@@ -616,7 +618,7 @@ The operation failed with the following error:
 
 [Complete error message]
 
-Current test status: X/170 passing
+Current test status: X/25 unit tests, Y/101 REPL tests
 
 The error appears to be [brief description].
 
