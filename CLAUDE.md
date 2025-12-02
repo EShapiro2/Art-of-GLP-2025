@@ -52,6 +52,17 @@ The FCP (Flat Concurrent Prolog) implementation is available for reference:
 - **READ THE SPEC FIRST** - Check bytecode/runtime specs before any code changes
 - **NEVER REMOVE CONTENT** - Never delete anything without explicit user approval
 
+### Handling Unexpected GLP Behavior
+When encountering unexpected behavior of GLP, **STOP!** Find out:
+1. Is the unexpected behavior consistent with the spec?
+2. If so, is the spec clear?
+3. If inconsistent with the spec, we have a bug.
+
+Present your findings and discuss what to do next:
+- Improve the spec
+- Fix the bug
+- Add explanations to the docs so that the behavior becomes expected
+
 ### Communication Style  
 - **BE TERSE** - Brief, direct responses
 - **NO LONG EXPLANATIONS** - Get to the point
