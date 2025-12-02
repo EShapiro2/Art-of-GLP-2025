@@ -171,9 +171,7 @@ class AnnotatedClause {
 
 /// Semantic analyzer for GLP programs
 class Analyzer {
-  final bool skipSRSW;
-
-  Analyzer({this.skipSRSW = false});
+  Analyzer();
 
   AnnotatedProgram analyze(Program program) {
     final annotatedProcs = <AnnotatedProcedure>[];
@@ -217,10 +215,8 @@ class Analyzer {
       }
     }
 
-    // Verify SRSW constraint (unless skipped for system predicates)
-    if (!skipSRSW) {
-      varTable.verifySRSW();
-    }
+    // Verify SRSW constraint - all GLP code must satisfy SRSW
+    varTable.verifySRSW();
 
     // Assign register indices
     _assignRegisters(varTable);

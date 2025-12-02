@@ -394,6 +394,8 @@ This protocol is required when debugging GLP programs. Do not skip steps. Stop a
 
 ### GLP-Specific Knowledge
 - **SRSW Constraint**: Single-Reader/Single-Writer - each variable occurs at most once per clause
+- **SRSW is MANDATORY**: All GLP code must pass SRSW checking. NEVER invent or use a `skipSRSW` option.
+- **Anonymous variable `_`**: A writer that nobody reads - exempt from SRSW checking. Use in abort clauses where result is never bound.
 - **Three-Phase Execution**: HEAD (tentative unification) → GUARDS (pure tests) → BODY (mutations)
 - **Suspension Mechanism**: Goals suspend on unbound readers, reactivate when writers are bound
 - **Writer MGU**: Only binds writers, never readers; never binds writer to writer
