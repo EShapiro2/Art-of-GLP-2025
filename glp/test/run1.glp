@@ -30,13 +30,11 @@ run8(Ys?) :- run(merge(a,[],Ys)).
 
 runA(X?) :- merge([],[],X).
 
-merge([],[],[]).
-
-
+% Note: merge/3 is defined in merge.glp, not duplicated here
 
 % run999 removed - SRSW violation (Ys has no writer)
 
-p(_).
+% Note: p/1 is defined in p.glp, not duplicated here
 
 
 % clause.glp - Clause database for metainterpreter

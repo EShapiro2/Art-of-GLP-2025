@@ -1,8 +1,9 @@
 % ip_direct.glp - Inner product (direct execution only)
-ip(Xs, Ys, S?) :- ip_acc(Xs?, Ys?, 0, S).
+% Renamed to ipd to avoid conflict with inner_product.glp
+ipd(Xs, Ys, S?) :- ipd_acc(Xs?, Ys?, 0, S).
 
-ip_acc([], [], Acc, Acc?).
-ip_acc([X|Xs], [Y|Ys], Acc, S?) :-
+ipd_acc([], [], Acc, Acc?).
+ipd_acc([X|Xs], [Y|Ys], Acc, S?) :-
   number(Acc?) |
   Acc1 := Acc? + (X? * Y?),
-  ip_acc(Xs?, Ys?, Acc1?, S).
+  ipd_acc(Xs?, Ys?, Acc1?, S).
