@@ -518,29 +518,29 @@ run_test "Factorial factorial(5) non-tail-recursive" \
 # reduce((X?:=T), true) :- X:=T?. enabled these
 # ============================================
 
-run_test "Meta: run(factorial(5,F))" \
+run_test "Meta: run_fact(factorial(5,F))" \
     "factorial.glp" \
-    "run(factorial(5, F))." \
+    "run_fact(factorial(5, F))." \
     "F = 120"
 
-run_test "Meta: run(multiply(3,[1,2,3,4],Ys))" \
+run_test "Meta: run_mult(multiply(3,[1,2,3,4],Ys))" \
     "multiply.glp" \
-    "run(multiply(3, [1,2,3,4], Ys))." \
+    "run_mult(multiply(3, [1,2,3,4], Ys))." \
     "Ys = \\[3, 6, 9, 12\\]"
 
-run_test "Meta: run(sum([1,2,3,4,5],S))" \
+run_test "Meta: run_sum(sum([1,2,3,4,5],S))" \
     "sum_list.glp" \
-    "run(sum([1,2,3,4,5], S))." \
+    "run_sum(sum([1,2,3,4,5], S))." \
     "S = 15"
 
-run_test "Meta: run(ip([1,2,3],[4,5,6],S))" \
+run_test "Meta: run_ip(ip([1,2,3],[4,5,6],S))" \
     "inner_product.glp" \
-    "run(ip([1,2,3], [4,5,6], S))." \
+    "run_ip(ip([1,2,3], [4,5,6], S))." \
     "S = 32"
 
-run_test "Meta: run(hanoi(2,a,c,M))" \
+run_test "Meta: run_hanoi(hanoi(2,a,c,M))" \
     "hanoi.glp" \
-    "run(hanoi(2, a, c, M))." \
+    "run_hanoi(hanoi(2, a, c, M))." \
     "→ 54 goals"
 
 # ============================================
@@ -711,9 +711,9 @@ run_future_test() {
     echo "  SKIPPED ($reason)"
 }
 
-run_future_test "Meta: run(primes(10,Ps))" \
+run_future_test "Meta: run_primes(primes(10,Ps))" \
     "primes.glp" \
-    "run(primes(10, Ps))." \
+    "run_primes(primes(10, Ps))." \
     "Ps = [2, 3, 5, 7]" \
     "needs reduce clause for := in primes.glp"
 

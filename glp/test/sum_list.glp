@@ -16,24 +16,24 @@ sum_acc([X|Xs], S?, Acc) :-
 
 % ===== METAINTERPRETER =====
 
-run(true).
-run((A, B)) :- run(A?), run(B?).
-run(A) :- otherwise | reduce(A?, B), run(B?).
+run_sum(true).
+run_sum((A, B)) :- run_sum(A?), run_sum(B?).
+run_sum(A) :- otherwise | reduce_sum(A?, B), run_sum(B?).
 
 % ===== REDUCE CLAUSES =====
 
 % sum/2
-reduce(sum(Xs, S?), sum_acc(Xs?, S, 0)).
+reduce_sum(sum(Xs, S?), sum_acc(Xs?, S, 0)).
 
 % sum_acc/3 - reversed args
-reduce(sum_acc([], Acc?, Acc), true).
-reduce(sum_acc([X|Xs], S?, Acc),
+reduce_sum(sum_acc([], Acc?, Acc), true).
+reduce_sum(sum_acc([X|Xs], S?, Acc),
        (Acc1 := Acc? + X?,
         sum_acc(Xs?, S, Acc1?))).
 
 % Handle := in metainterpreter
-reduce((X?:=T), true) :- X:=T?.
+reduce_sum((X?:=T), true) :- X:=T?.
 
 % ===== TESTS =====
 % Direct: sum([1,2,3,4,5], S) should give S = 15
-% Meta:   run(sum([1,2,3,4,5], S)) should give S = 15
+% Meta:   run_sum(sum([1,2,3,4,5], S)) should give S = 15

@@ -139,7 +139,7 @@ run_test "Multiplication" \
 
 run_test "Sum small list" \
     "sum_direct.glp" \
-    "sum([1,2,3], S)." \
+    "sumd([1,2,3], S)." \
     "S = 6"
 
 # ============================================
@@ -214,12 +214,12 @@ run_test "Hanoi(1)" \
 
 run_test "Meta: factorial(3)" \
     "factorial.glp" \
-    "run(factorial(3, F))." \
+    "run_fact(factorial(3, F))." \
     "F = 6"
 
 run_test "Meta: sum small" \
     "sum_list.glp" \
-    "run(sum([1,2], S))." \
+    "run_sum(sum([1,2], S))." \
     "S = 3"
 
 # ============================================

@@ -36,38 +36,38 @@ filter(P, [X|Xs], [X?|Ys?]) :-
 
 % ===== METAINTERPRETER =====
 
-run(true).
-run((A, B)) :- run(A?), run(B?).
-run(A) :- otherwise | reduce(A?, B), run(B?).
+run_primes(true).
+run_primes((A, B)) :- run_primes(A?), run_primes(B?).
+run_primes(A) :- otherwise | reduce_primes(A?, B), run_primes(B?).
 
 % ===== REDUCE CLAUSES =====
 
 % primes/2
-reduce(primes(N, Ps?),
+reduce_primes(primes(N, Ps?),
        (integers(2, N?, Is),
         sieve(Is?, Ps))).
 
 % integers/3
-reduce(integers(From, To, [From?]), true) :-
+reduce_primes(integers(From, To, [From?]), true) :-
   From? =:= To? | true.
-reduce(integers(From, To, [From?|Xs?]),
+reduce_primes(integers(From, To, [From?|Xs?]),
        (From1 := From? + 1,
         integers(From1?, To?, Xs))) :-
   From? < To? | true.
 
 % sieve/2
-reduce(sieve([], []), true).
-reduce(sieve([P|Xs], [P?|Ys?]),
+reduce_primes(sieve([], []), true).
+reduce_primes(sieve([P|Xs], [P?|Ys?]),
        (filter(P?, Xs?, Zs),
         sieve(Zs?, Ys))) :-
   ground(P?) | true.
 
 % filter/3
-reduce(filter(_, [], []), true).
-reduce(filter(P, [X|Xs], Ys?),
+reduce_primes(filter(_, [], []), true).
+reduce_primes(filter(P, [X|Xs], Ys?),
        filter(P?, Xs?, Ys)) :-
   ground(P?), ground(X?), X? mod P? =:= 0 | true.
-reduce(filter(P, [X|Xs], [X?|Ys?]),
+reduce_primes(filter(P, [X|Xs], [X?|Ys?]),
        filter(P?, Xs?, Ys)) :-
   ground(P?), ground(X?), X? mod P? =\= 0 | true.
 
@@ -75,4 +75,4 @@ reduce(filter(P, [X|Xs], [X?|Ys?]),
 
 % ===== TESTS =====
 % Direct: primes(20, Ps) should give Ps = [2,3,5,7,11,13,17,19]
-% Meta:   run(primes(20, Ps)) should give same result
+% Meta:   run_primes(primes(20, Ps)) should give same result

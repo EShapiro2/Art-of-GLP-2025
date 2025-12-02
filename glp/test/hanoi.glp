@@ -29,40 +29,40 @@ free(c, b, a).
 
 % ===== METAINTERPRETER =====
 
-run(true).
-run((A, B)) :- run(A?), run(B?).
-run(A) :- otherwise | reduce(A?, B), run(B?).
+run_hanoi(true).
+run_hanoi((A, B)) :- run_hanoi(A?), run_hanoi(B?).
+run_hanoi(A) :- otherwise | reduce_hanoi(A?, B), run_hanoi(B?).
 
 % ===== REDUCE CLAUSES =====
 
 % Base case: 0 disks
-reduce(hanoi(0, From, To, (From?, To?)), true).
+reduce_hanoi(hanoi(0, From, To, (From?, To?)), true).
 
 % Recursive case: N > 0 disks
-reduce(hanoi(N, From, To, (Before?, (From?, To?), After?)),
+reduce_hanoi(hanoi(N, From, To, (Before?, (From?, To?), After?)),
        (N1 := N? - 1,
         free(From?, To?, Free),
         hanoi1(N1?, Free?, From?, To?, Before, After))) :-
   N? > 0, ground(From?), ground(To?) | true.
 
 % Auxiliary reduction
-reduce(hanoi1(N1, Free, From, To, Before?, After?),
+reduce_hanoi(hanoi1(N1, Free, From, To, Before?, After?),
        (hanoi(N1?, From?, Free?, Before),
         hanoi(N1?, Free?, To?, After))) :-
   ground(N1?), ground(Free?) | true.
 
 % free/3 facts reduce to true
-reduce(free(a, b, c), true).
-reduce(free(a, c, b), true).
-reduce(free(b, a, c), true).
-reduce(free(b, c, a), true).
-reduce(free(c, a, b), true).
-reduce(free(c, b, a), true).
+reduce_hanoi(free(a, b, c), true).
+reduce_hanoi(free(a, c, b), true).
+reduce_hanoi(free(b, a, c), true).
+reduce_hanoi(free(b, c, a), true).
+reduce_hanoi(free(c, a, b), true).
+reduce_hanoi(free(c, b, a), true).
 
 % Handle := in metainterpreter
-reduce((X?:=T), true) :- X:=T?.
+reduce_hanoi((X?:=T), true) :- X:=T?.
 
 % ===== TESTS =====
 % Direct: hanoi(2, a, c, Moves)
-% Meta:   run(hanoi(2, a, c, Moves))
+% Meta:   run_hanoi(hanoi(2, a, c, Moves))
 % Should give moves to transfer 2 disks from peg a to peg c

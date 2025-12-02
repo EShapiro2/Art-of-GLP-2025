@@ -18,26 +18,26 @@ factorial(N, F?) :-
 
 % ===== METAINTERPRETER =====
 
-run(true).
-run((A, B)) :- run(A?), run(B?).
-run(A) :- otherwise | reduce(A?, B), run(B?).
+run_fact(true).
+run_fact((A, B)) :- run_fact(A?), run_fact(B?).
+run_fact(A) :- otherwise | reduce_fact(A?, B), run_fact(B?).
 
 % ===== REDUCE CLAUSES =====
 
 % Base cases
-reduce(factorial(0, 1), true).
-reduce(factorial(1, 1), true).
+reduce_fact(factorial(0, 1), true).
+reduce_fact(factorial(1, 1), true).
 
 % Recursive case
-reduce(factorial(N, F?),
+reduce_fact(factorial(N, F?),
        (N1 := N? - 1,
         factorial(N1?, F1),
         F := N? * F1?)) :-
   N? > 1 | true.
 
 % Handle := in metainterpreter
-reduce((X?:=T), true) :- X:=T?.
+reduce_fact((X?:=T), true) :- X:=T?.
 
 % ===== TESTS =====
 % Direct: factorial(5, F) should give F = 120
-% Meta:   run(factorial(5, F)) should give F = 120
+% Meta:   run_fact(factorial(5, F)) should give F = 120
