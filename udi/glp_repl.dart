@@ -55,7 +55,7 @@ void main() async {
     if (stdlibFile.existsSync()) {
       try {
         final stdlibSource = stdlibFile.readAsStringSync();
-        final stdlibCompiler = GlpCompiler(skipSRSW: true);
+        final stdlibCompiler = GlpCompiler();
         final stdlibProg = stdlibCompiler.compile(stdlibSource);
         loadedPrograms['__stdlib_${filename}__'] = stdlibProg;
         print('Loaded stdlib: $filename (${stdlibProg.ops.length} ops)');
