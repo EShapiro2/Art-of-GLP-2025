@@ -91,6 +91,9 @@ void registerStandardBodyKernels(BodyKernelRegistry registry) {
   // Structure manipulation
   registry.register('list_to_tuple', 2, listToTupleKernel);
   registry.register('tuple_to_list', 2, tupleToListKernel);
+
+  // Identity/copy
+  registry.register('copy', 2, copyKernel);
 }
 
 /// Helper to get numeric value from argument (with arithmetic evaluation)
@@ -522,4 +525,16 @@ BodyKernelResult tupleToListKernel(GlpRuntime rt, List<Object?> args) {
 
   final list = _dartListToGlpList(items);
   return _bindResult(rt, args[1], list);
+}
+
+/// copy(Source?, Target) - Copy value from source to target
+/// Used as base case for := when right-hand side is already a number
+BodyKernelResult copyKernel(GlpRuntime rt, List<Object?> args) {
+  if (args.length != 2) {
+    print('[ABORT] copy/2: expected 2 arguments, got ${args.length}');
+    return BodyKernelResult.abort;
+  }
+
+  final source = _deref(rt, args[0]);
+  return _bindResult(rt, args[1], source!);
 }

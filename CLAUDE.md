@@ -692,6 +692,10 @@ X? =.. [Y|Ys] :- list(Ys?) | list_to_tuple([Y|Ys], X).
 
 3. **Test file patterns**: The test suite uses a specific format - see `run_repl_tests.sh` for the `run_test` function.
 
+4. **CRITICAL - Reader/Writer modes in clause heads**: A reader in the head can ONLY be bound to a writer in the goal. If an argument of a goal is expected to be a reader or a ground term (non-variable), then the corresponding head argument MUST be a writer, not a reader!
+   - WRONG: `Result := N? :- number(N?) | ...` - N? is reader, but goal `X := 3` has ground term 3
+   - RIGHT: `Result := N :- number(N?) | ...` - N is writer, can receive ground term 3
+
 ### Common Mistakes to Avoid
 
 1. **Don't create fresh variables when clauseVars already has a value** - check first
