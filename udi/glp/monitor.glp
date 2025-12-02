@@ -14,14 +14,10 @@ mon([subtract(N)|Ops], Sum) :-
     Sum1 := Sum? - N?,
     mon(Ops?, Sum1?).
 
-% Extract variable V from value(V), bind it to Sum in body
-mon([value(V)|Ops], Sum) :-
+% value(Sum?) reads Sum into pattern - caller's var unifies with it
+mon([value(Sum?)|Ops], Sum) :-
     ground(Sum?) |
-    unify(V?, Sum?),
     mon(Ops?, Sum?).
-
-% Helper: unify two values
-unify(X, X).
 
 mon([], _).
 
