@@ -1376,6 +1376,9 @@ class BytecodeRunner {
             if (clauseVarValue is VarRef) {
               // Subsequent use: create VarRef with appropriate mode
               struct.args[cx.S] = VarRef(clauseVarValue.varId, isReader: isReaderMode);
+            } else if (clauseVarValue is int) {
+              // Bare varId (from get_reader_variable etc.) - create VarRef with requested mode
+              struct.args[cx.S] = VarRef(clauseVarValue, isReader: isReaderMode);
             } else if (clauseVarValue is Term) {
               if (isReaderMode) {
                 // Reader mode with ground term: create fresh var, bind it
@@ -1567,21 +1570,54 @@ class BytecodeRunner {
 
         if (!isReaderMode) {
           // GetWriterVariable logic: Load argument into clause WRITER variable
+          // IMPORTANT: Check if clauseVars[varIndex] already has a writer from
+          // an earlier occurrence (e.g., inside a structure via UnifyVariable).
+          // If so, bind that writer to the argument value via sigmaHat.
+          final existing = cx.clauseVars[varIndex];
+
           if (arg is VarRef && !arg.isReader) {
-            cx.clauseVars[varIndex] = arg.varId;
+            if (existing is VarRef && !existing.isReader) {
+              // Both are writers - bind arg writer to existing writer's reader
+              cx.sigmaHat[arg.varId] = VarRef(existing.varId, isReader: true);
+            } else if (existing is int) {
+              // existing is bare writer varId - bind arg to reader of it
+              cx.sigmaHat[arg.varId] = VarRef(existing, isReader: true);
+            } else {
+              cx.clauseVars[varIndex] = arg.varId;
+            }
           } else if (arg is VarRef && arg.isReader) {
             final wid = cx.rt.heap.writerIdForReader(arg.varId);
             if (wid != null && cx.rt.heap.isWriterBound(wid)) {
               final value = cx.rt.heap.valueOfWriter(wid);
-              cx.clauseVars[varIndex] = value;
+              if (existing is VarRef && !existing.isReader) {
+                cx.sigmaHat[existing.varId] = value;
+              } else if (existing is int) {
+                cx.sigmaHat[existing] = value;
+              } else {
+                cx.clauseVars[varIndex] = value;
+              }
             } else {
               final suspendOnVar = _finalUnboundVar(cx, arg.varId);
               pc = _suspendAndFail(cx, suspendOnVar, pc); continue;
             }
           } else if (arg is ConstTerm) {
-            cx.clauseVars[varIndex] = arg;
+            if (existing is VarRef && !existing.isReader) {
+              // Already have a writer from earlier occurrence - bind it
+              cx.sigmaHat[existing.varId] = arg;
+            } else if (existing is int) {
+              // Bare writer varId - bind it
+              cx.sigmaHat[existing] = arg;
+            } else {
+              cx.clauseVars[varIndex] = arg;
+            }
           } else if (arg is StructTerm) {
-            cx.clauseVars[varIndex] = arg;
+            if (existing is VarRef && !existing.isReader) {
+              cx.sigmaHat[existing.varId] = arg;
+            } else if (existing is int) {
+              cx.sigmaHat[existing] = arg;
+            } else {
+              cx.clauseVars[varIndex] = arg;
+            }
           }
         } else {
           // GetReaderVariable logic: Load argument into clause READER variable
