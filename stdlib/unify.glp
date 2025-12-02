@@ -1,13 +1,13 @@
 % GLP System Predicate: = (Unification)
 %
-% Unifies two terms.
+% Binds the second argument (writer) to the first argument's value.
 %
 % Usage:
-%   X = Y     - Unify X with Y
-%   foo = bar - Succeeds if foo equals bar
-%   X = 3     - Binds X to 3
+%   3 = X     - Binds X to 3
+%   Y? = X    - Binds X to Y's value
 %
-% Definition: The first argument is read, the second is written.
-% When both are ground, they must be equal.
+% Semantics:
+%   X? = Y succeeds if Y is a writer.
+%   X? can be a reader or a ground term (non-var).
 
-X? = X.
+X? = Y.
