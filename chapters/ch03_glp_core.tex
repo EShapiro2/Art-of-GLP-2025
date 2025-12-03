@@ -1,0 +1,273 @@
+% chapters/ch03_glp_core.tex - GLP Core Concepts
+
+\chapter{GLP Core Concepts}
+\label{ch:glp-core}
+
+This chapter introduces the core concepts that distinguish \GLP from standard logic programs: reader/writer pairs, the Single-Reader/Single-Writer discipline, and writer unification.
+
+\section{Reader/Writer Pairs}
+
+In standard logic programs, variables are ``write-once''---once unified with a value, they retain that value. But any part of the computation can perform this unification. In distributed settings, this creates problems: if two processes try to unify the same variable with different values, we have a conflict.
+
+\GLP solves this with \emph{reader/writer pairs}. For each variable $X$:
+\begin{itemize}
+\item The \emph{writer} $X$ is the only entity that can assign a value
+\item The \emph{paired reader} $X?$ provides read-only access to that value
+\end{itemize}
+
+Think of it like a promise and a future:
+\begin{itemize}
+\item The writer is a \emph{promise}---a commitment to eventually provide a value
+\item The reader is a \emph{future}---a placeholder that will receive the value
+\end{itemize}
+
+When the writer $X$ is assigned a term $T$, the message $X? := T$ is sent to wherever $X?$ occurs. This is \emph{point-to-point communication}, not broadcast.
+
+\begin{example}[Reader/Writer Communication]
+Consider:
+\begin{verbatim}
+producer(X) :- X = hello.
+consumer(X?) :- print(X?).
+\end{verbatim}
+
+If we run \verb|producer(X), consumer(X?)|:
+\begin{enumerate}
+\item The producer has the writer $X$
+\item The consumer has the reader $X?$
+\item When the producer executes $X = \text{hello}$, the value flows to the consumer
+\item The consumer prints ``hello''
+\end{enumerate}
+\end{example}
+
+\begin{formal}{GLP Syntax}
+\begin{fdef}[Reader/Writer Variables]
+We denote:
+\begin{itemize}
+\item $V$ --- the set of all writers
+\item $V?$ --- the set of all readers
+\item $\calV = V \cup V?$ --- all variables
+\end{itemize}
+
+For each writer $X \in V$, there exists a paired reader $X? \in V?$.
+
+The $?$ operator is idempotent on non-writers: $(X?)? = X?$ for $X? \in V?$, and $T? = T$ for non-variable $T$.
+
+We use $\calA_?$ and $\calG_?$ for atoms and goals over $\calV$ (containing both readers and writers).
+\end{fdef}
+\end{formal}
+
+\section{The Single-Reader/Single-Writer Requirement}
+
+The fundamental discipline in \GLP is \emph{Single-Reader/Single-Writer (SRSW)}:
+\begin{quote}
+Any variable---reader or writer---may occur at most once in any state of a computation.
+\end{quote}
+
+Why single-writer? If a writer occurs twice, two parts of the computation might try to assign it different values---a conflict.
+
+Why single-reader? If a reader occurs twice and the writer is assigned a term containing another writer, both reader occurrences would gain access to that inner writer---violating single-writer for the inner variable.
+
+The SRSW discipline is maintained through:
+\begin{enumerate}
+\item \textbf{SRSW syntactic restriction on clauses}: Variables occur as reader/writer pairs, with exactly one of each
+\item \textbf{SRSW invariant}: Goal reduction preserves SRSW
+\end{enumerate}
+
+\begin{example}[SRSW Compliance]
+This clause is SRSW-compliant:
+\begin{verbatim}
+copy(X?, Y) :- Y = X?.
+\end{verbatim}
+The writer $Y$ occurs once (in head). Its paired reader $Y?$ would occur once (but doesn't appear as we're assigning, not reading). Variable $X$ has its reader $X?$ occurring twice? No---once in head, once in body---but wait, these are both readers. Let's reconsider...
+
+Actually: $X?$ in the head is an input (reader), and $X?$ in the body is used in assignment. The clause has one occurrence of the reader $X?$ being passed in, and uses it.
+
+A better example of SRSW compliance:
+\begin{verbatim}
+transform([X|Xs], [Y?|Ys?]) :-
+    process(X?, Y),
+    transform(Xs?, Ys).
+\end{verbatim}
+
+Here each variable pair occurs exactly once:
+\begin{itemize}
+\item $X$ (writer in head), $X?$ (reader in body)
+\item $Xs$ (writer in head), $Xs?$ (reader in body)
+\item $Y$ (writer in body), $Y?$ (reader in head)
+\item $Ys$ (writer in body), $Ys?$ (reader in head)
+\end{itemize}
+\end{example}
+
+\begin{formal}{SRSW Syntactic Restriction}
+\begin{fdef}[SRSW Clause]
+A clause satisfies the \emph{SRSW syntactic restriction} if for every variable name $X$:
+\begin{itemize}
+\item The writer $X$ occurs at most once in the clause
+\item The paired reader $X?$ occurs at most once in the clause
+\end{itemize}
+\end{fdef}
+
+This restriction excludes programs like $X = X$ (two occurrences of writer $X$) but enables efficient point-to-point communication without distributed atomic unification.
+\end{formal}
+
+\section{What SRSW Excludes}
+
+The SRSW discipline excludes some familiar patterns:
+
+\mypara{Equality} The clause \verb|equal(X, X)| has two occurrences of $X$---not allowed.
+
+\mypara{Copying} Direct variable copying \verb|copy(X, X)| is forbidden. Instead, use message passing.
+
+\mypara{Multiple readers} Having the same reader in multiple places violates SRSW.
+
+These restrictions might seem severe, but they buy us something valuable: simple, efficient distributed execution without complex unification protocols.
+
+\section{Writer Unification}
+
+In standard LP, unification can bind any variable. In \GLP, unification can only bind \emph{writers}. This leads to three possible outcomes:
+
+\begin{enumerate}
+\item \textbf{Success}: The terms unify using only writer bindings
+\item \textbf{Suspension}: The terms would unify, but require binding a reader
+\item \textbf{Failure}: The terms cannot be unified at all
+\end{enumerate}
+
+\begin{example}[Writer Unification Outcomes]
+\begin{itemize}
+\item \verb|f(X, a)| and \verb|f(b, Y)| --- succeeds with $\{X := b, Y := a\}$
+\item \verb|f(X?, a)| and \verb|f(b, Y)| --- suspends (needs to bind reader $X?$)
+\item \verb|f(X, a)| and \verb|f(b, c)| --- fails ($a \ne c$)
+\end{itemize}
+\end{example}
+
+Suspension is the key to synchronization in \GLP. A goal waiting for a value simply suspends until the writer provides it.
+
+\begin{formal}{Writer Substitution and Writer MGU}
+\begin{fdef}[Writer and Reader Substitution]
+A substitution $\sigma$ is a \emph{writer substitution} if:
+\begin{enumerate}
+\item It only binds writers: $V_\sigma \subset V$
+\item It does not bind writers to writers: if $X \ne X\sigma$ then $X\sigma \notin V$
+\item It does not form cycles through readers: $X?$ does not occur in $X\sigma$
+\end{enumerate}
+
+A substitution is a \emph{reader substitution} if $V_\sigma \subset V?$.
+
+For writer substitution $\sigma$, its \emph{reader counterpart} $\sigma?$ is defined by $X?\sigma? = X\sigma$ for every $X \in V_\sigma$.
+\end{fdef}
+
+\begin{fdef}[Suspension Set, Writer Unification]
+The \emph{suspension set} of a regular substitution $\sigma$ is $W_\sigma := \{X? \in V? : X?\sigma \notin \calV\}$.
+
+The \emph{writer unification} of two terms:
+\begin{enumerate}
+\item \emph{succeeds with $\sigma$} if they have a writer mgu $\sigma$
+\item else \emph{suspends on $W_\sigma$} if they have a regular mgu $\sigma$
+\item else \emph{fails}
+\end{enumerate}
+\end{fdef}
+
+Note: If a writer mgu exists, it is unique (not just unique up to renaming), since it excludes writer-to-writer assignments.
+\end{formal}
+
+\section{No Writer-to-Writer Binding}
+
+An additional restriction: writers cannot be bound to writers.
+
+Why? A reader/writer pair $X?/X$ is a communication channel from $X$ to $X?$. If two writers $X$ and $Y$ are unified, the SRSW requirement means no occurrences of either remain to instantiate them. Their paired readers $X?$ and $Y?$ would be \emph{abandoned}---forever waiting for values that will never come.
+
+The combination of WxW restriction and SRSW ensures that communication channels are properly closed: no reader is left abandoned.
+
+\section{Renaming for GLP}
+
+When using a clause, we rename its variables to avoid conflicts with the current goal. In \GLP, renaming must respect variable pairing:
+
+\begin{formal}{GLP Renaming}
+\begin{fdef}[GLP Renaming]
+Two GLP terms $T$, $T'$ have a variable in common if for some writer $X$, either $X$ or $X?$ occurs in both.
+
+A \emph{GLP renaming} is a renaming $\sigma: \calV \to \calV$ such that for each $X \in V$:
+\begin{itemize}
+\item $X\sigma \in V$ (writers map to writers)
+\item $X?\sigma = (X\sigma)?$ (pairing is preserved)
+\end{itemize}
+\end{fdef}
+\end{formal}
+
+\section{Guards and Committed Choice}
+
+\GLP uses \emph{committed choice} instead of backtracking. Once a clause is selected, the computation commits to it. But how is the clause selected?
+
+Each clause can have a \emph{guard}---a condition that must be satisfied before the clause applies. Guards appear after the head, separated by \verb=|=:
+
+\begin{verbatim}
+abs(X, Y) :- X >= 0 | Y = X.
+abs(X, Y) :- X < 0 | Y is -X.
+\end{verbatim}
+
+The first clause with a succeeding guard is chosen. Guards are \emph{tests}---they don't modify state.
+
+The \verb|ground(X)| guard is special: it tests whether \verb|X| contains no variables. When true, it allows relaxing SRSW for that variable in the clause, since a ground term can safely be duplicated.
+
+\section{The Merge Program Revisited}
+
+Let us revisit the merge program with our new understanding:
+
+\Program{GLP Fair Stream Merger}
+\begin{verbatim}
+merge([X|Xs],Ys,[X?|Zs?]) :- merge(Ys?,Xs?,Zs).
+merge(Xs,[Y|Ys],[Y?|Zs?]) :- merge(Xs?,Ys?,Zs).
+merge([],[],[]).
+\end{verbatim}
+
+\mypara{SRSW Analysis} In the first clause:
+\begin{itemize}
+\item $X$: writer in head (pattern \verb|[X|Xs]|), reader $X?$ in output
+\item $Xs$: writer in head, reader $Xs?$ in recursive call
+\item $Ys$: writer in head, reader $Ys?$ in recursive call
+\item $Zs$: writer in recursive call, reader $Zs?$ in output
+\end{itemize}
+
+Each variable occurs exactly once as writer and once as reader. SRSW satisfied.
+
+\mypara{Communication Flow} When the first input stream has element $X$:
+\begin{enumerate}
+\item $X$ is extracted from the input (writer instantiated)
+\item $X?$ is placed in the output (reader receives value)
+\item $Zs$ is created for the rest of the output
+\item $Zs?$ is placed in the output, awaiting future values
+\end{enumerate}
+
+The output stream is constructed incrementally as inputs arrive.
+
+\section{Summary}
+
+\GLP extends logic programs with:
+\begin{itemize}
+\item \textbf{Reader/Writer pairs}: Separating read and write access to variables
+\item \textbf{SRSW discipline}: Each variable occurs at most once
+\item \textbf{Writer unification}: Only writers can be bound; readers cause suspension
+\item \textbf{No WxW binding}: Writers cannot be bound to writers
+\item \textbf{Committed choice}: First applicable clause, no backtracking
+\end{itemize}
+
+These restrictions enable efficient distributed execution while preserving the logical foundations of logic programming.
+
+\section{Exercises}
+
+\begin{enumerate}
+\item[$\star$] For each clause, determine whether it satisfies SRSW:
+\begin{enumerate}
+\item \verb|id(X, X).|
+\item \verb|pair(X, Y, p(X?, Y?)).|
+\item \verb|swap(p(X,Y), p(Y?,X?)).|
+\end{enumerate}
+
+\item[$\star$] Trace the communication in \verb|merge([1,2], [a,b], Z)| step by step.
+
+\item[$\star\star$] Why does the merge program swap arguments in the recursive call? What would happen without the swap?
+
+\item[$\star\star$] Design a \GLP clause for \verb|duplicate(X?, Y, Z)| that sends the value of $X$ to both $Y$ and $Z$. (Hint: you cannot directly duplicate a reader.)
+
+\item[$\star\star\star$] Prove that if a goal satisfies SRSW and is reduced with an SRSW clause, the resulting goal also satisfies SRSW.
+\end{enumerate}

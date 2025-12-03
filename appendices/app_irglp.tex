@@ -1,0 +1,49 @@
+% appendices/app_irglp.tex - Implementation-Ready Specification
+
+\chapter{Implementation-Ready GLP}
+\label{app:irglp}
+
+This appendix presents a deterministic, implementation-ready specification for \GLP, suitable for workstation and smartphone implementations.
+
+\section{Overview}
+
+The nondeterministic transition system of Chapter~\ref{ch:glp-computation} is a \emph{specification}. For implementation, we need deterministic choices for:
+\begin{enumerate}
+\item Goal selection: which atom to reduce next
+\item Message delivery: when to apply pending assignments
+\item Suspension handling: how to track and reactivate suspended goals
+\end{enumerate}
+
+\section{Goal Scheduling}
+
+Goals are maintained in a ready queue. Selection is round-robin with priority for activated goals.
+
+\section{Suspension and Activation}
+
+When a goal suspends on reader $X?$:
+\begin{enumerate}
+\item The goal is moved to a wait set indexed by $X?$
+\item When $X?$ receives a value, all goals in its wait set are activated
+\item Activated goals are added to the front of the ready queue
+\end{enumerate}
+
+\section{Message Delivery}
+
+Messages are delivered when:
+\begin{enumerate}
+\item A goal requiring the message becomes active
+\item The message is in the pending set
+\end{enumerate}
+
+\section{Deterministic Transition System}
+
+[Formal specification to be developed]
+
+\section{Smartphone Implementation}
+
+For smartphone deployment, additional considerations:
+\begin{enumerate}
+\item Network communication via message passing
+\item Dynamic shared-variable tables
+\item Pull-based rather than push-based communication
+\end{enumerate}

@@ -1,0 +1,87 @@
+% chapters/ch05_streams.tex - Streams
+
+\chapter{Streams}
+\label{ch:streams}
+
+Streams---incrementally constructed, potentially unbounded lists---are the fundamental data structure for \GLP programming. This chapter introduces stream programming techniques.
+
+\section{What is a Stream?}
+
+A stream is a list that may not be fully constructed yet. The tail might be a reader variable, awaiting a future value:
+
+\begin{verbatim}
+[1, 2, 3 | Tail?]
+\end{verbatim}
+
+This represents a stream with known elements 1, 2, 3, and an unknown continuation $Tail?$.
+
+\section{Generating Streams}
+
+\Program{Natural Numbers Generator}
+\begin{verbatim}
+nats(N, [N? | Ns?]) :-
+    N1 is N + 1,
+    nats(N1?, Ns).
+\end{verbatim}
+
+This generates an infinite stream of natural numbers starting from $N$.
+
+\section{Consuming Streams}
+
+\Program{Stream Printer}
+\begin{verbatim}
+print_stream([X? | Xs?]) :-
+    print(X?),
+    print_stream(Xs?).
+print_stream([]).
+\end{verbatim}
+
+\section{Transforming Streams}
+
+\Program{Stream Map}
+\begin{verbatim}
+map(F?, [], []).
+map(F?, [X? | Xs?], [Y? | Ys?]) :-
+    call(F?, X?, Y),
+    map(F?, Xs?, Ys).
+\end{verbatim}
+
+\section{Filtering Streams}
+
+\Program{Stream Filter}
+\begin{verbatim}
+filter(P?, [], []).
+filter(P?, [X? | Xs?], Ys?) :-
+    ( call(P?, X?) -> Ys = [X? | Ys1?], filter(P?, Xs?, Ys1)
+    ; filter(P?, Xs?, Ys)
+    ).
+\end{verbatim}
+
+\section{The Merge Program}
+
+We revisit merge as the paradigmatic stream combinator:
+
+\Program{Fair Stream Merger}
+\begin{verbatim}
+merge([X|Xs],Ys,[X?|Zs?]) :- merge(Ys?,Xs?,Zs).
+merge(Xs,[Y|Ys],[Y?|Zs?]) :- merge(Xs?,Ys?,Zs).
+merge([],[],[]).
+\end{verbatim}
+
+\section{Stream Networks}
+
+Streams can be connected to form processing networks. This is explored in the next chapter.
+
+\section{Exercises}
+
+\begin{enumerate}
+\item[$\star$] Write a \verb|take(N, Stream, Prefix)| that extracts the first $N$ elements.
+
+\item[$\star$] Write a \verb|drop(N, Stream, Suffix)| that skips the first $N$ elements.
+
+\item[$\star\star$] Write a \verb|zip(Xs, Ys, Pairs)| that combines two streams into pairs.
+
+\item[$\star\star$] Write a \verb|scan(Op, Init, Xs, Ys)| that computes running totals.
+
+\item[$\star\star\star$] Implement the Sieve of Eratosthenes as a stream network.
+\end{enumerate}

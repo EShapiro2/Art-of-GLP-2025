@@ -1,0 +1,26 @@
+% chapters/ch13_plain_meta.tex - Plain Metaprogramming
+
+\chapter{Metaprogramming}
+\label{ch:plain-meta}
+
+This chapter introduces metaprogramming---programs that manipulate programs.
+
+\section{Programs as Data}
+
+In logic programming, programs are data: clauses are terms, goals are terms. This enables powerful metaprogramming.
+
+\section{The Vanilla Meta-Interpreter}
+
+\begin{verbatim}
+solve(true).
+solve((A, B)) :- solve(A), solve(B).
+solve(A) :- clause(A, B), solve(B).
+\end{verbatim}
+
+\section{Enhanced Meta-Interpreters}
+
+\section{Program Transformation}
+
+\section{Exercises}
+
+[To be developed]

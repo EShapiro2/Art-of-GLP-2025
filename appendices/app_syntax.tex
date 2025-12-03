@@ -1,0 +1,83 @@
+% appendices/app_syntax.tex - Syntax Reference
+
+\chapter{GLP Syntax Reference}
+\label{app:syntax}
+
+This appendix provides a complete formal syntax definition for \GLP.
+
+\section{Lexical Elements}
+
+\subsection{Identifiers}
+
+\begin{itemize}
+\item \textbf{Variables}: Start with uppercase letter or underscore
+\item \textbf{Constants}: Start with lowercase letter
+\item \textbf{Numbers}: Integer or floating-point literals
+\end{itemize}
+
+\subsection{Reader/Writer Notation}
+
+\begin{itemize}
+\item Writer: plain variable name, e.g., \verb|X|
+\item Reader: variable name with \verb|?| suffix, e.g., \verb|X?|
+\end{itemize}
+
+\section{Terms}
+
+\begin{verbatim}
+term ::= variable
+       | constant
+       | number
+       | functor(term, ..., term)
+       | [term | term]            % list
+       | []                        % empty list
+\end{verbatim}
+
+\section{Atoms and Goals}
+
+\begin{verbatim}
+atom ::= predicate(term, ..., term)
+       | term = term              % unification
+       | term is expression       % arithmetic
+
+goal ::= atom
+       | atom, goal               % conjunction
+       | (goal)                   % grouping
+\end{verbatim}
+
+\section{Clauses}
+
+\begin{verbatim}
+clause ::= atom.                  % fact
+         | atom :- goal.          % rule
+         | atom :- guard | goal.  % guarded rule
+\end{verbatim}
+
+\section{Guards}
+
+\begin{verbatim}
+guard ::= guard_atom
+        | guard_atom, guard       % conjunction
+
+guard_atom ::= ground(term)
+             | var(term)
+             | term == term       % identity
+             | term \== term      % non-identity
+             | arithmetic_comparison
+\end{verbatim}
+
+\section{Programs}
+
+\begin{verbatim}
+program ::= clause
+          | clause program
+\end{verbatim}
+
+\section{SRSW Requirements}
+
+For a clause to satisfy SRSW:
+\begin{enumerate}
+\item Each writer variable occurs at most once
+\item Each reader variable occurs at most once
+\item Variables occur in reader/writer pairs
+\end{enumerate}

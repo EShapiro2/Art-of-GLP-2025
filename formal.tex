@@ -1,0 +1,65 @@
+% formal.tex - Formal Track Infrastructure
+%
+% This file defines the infrastructure for the "formal track" of the book.
+% Formal content appears in shaded boxes that readers can optionally skip.
+
+%% ============================================
+%% Counter for Formal Boxes
+%% ============================================
+
+\newcounter{formalbox}[chapter]
+\renewcommand{\theformalbox}{\thechapter.\arabic{formalbox}}
+
+%% ============================================
+%% Formal Box Environment
+%% ============================================
+
+% The formal environment creates a shaded box for rigorous content.
+% Readers who prefer intuition can skip these boxes entirely.
+
+\newenvironment{formal}[1]{%
+  \refstepcounter{formalbox}%
+  \begin{mdframed}[
+    backgroundcolor=gray!10,
+    linewidth=1pt,
+    linecolor=gray!50,
+    innertopmargin=10pt,
+    innerbottommargin=10pt,
+    innerleftmargin=10pt,
+    innerrightmargin=10pt,
+    skipabove=\baselineskip,
+    skipbelow=\baselineskip
+  ]
+  \noindent\textbf{Formal \theformalbox: #1}\par\smallskip
+}{%
+  \end{mdframed}
+}
+
+%% ============================================
+%% Theorem Environments for Formal Track
+%% ============================================
+
+% These environments are used inside formal boxes for definitions,
+% propositions, theorems, and lemmas with formal proofs.
+
+\newtheorem{fdef}{Definition}[chapter]
+\newtheorem{fprop}[fdef]{Proposition}
+\newtheorem{fthm}[fdef]{Theorem}
+\newtheorem{flem}[fdef]{Lemma}
+\newtheorem{fcor}[fdef]{Corollary}
+
+%% ============================================
+%% Margin Indicator for Formal Content
+%% ============================================
+
+% Use \formalmargin at the start of formal sections to place
+% a "FORMAL" indicator in the margin.
+
+\newcommand{\formalmargin}{\marginnote{\textsc{formal}}}
+
+%% ============================================
+%% Proof Environment Customization
+%% ============================================
+
+% Ensure proofs work well inside formal boxes
+\renewcommand{\qedsymbol}{$\blacksquare$}
