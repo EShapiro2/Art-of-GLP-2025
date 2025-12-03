@@ -1,0 +1,344 @@
+\section{Additional Programming Techniques}\label{appendix:additional-techniques}
+
+This appendix presents GLP programs that were referenced in the main text, as well as additional programs that demonstrate the language's capabilities.
+
+
+\subsection{Channel Abstractions}
+
+Bidirectional channels are fundamental to concurrent communication in GLP. We represent a channel as the term \verb|ch(In?,Out)| where \verb|In?| is the input stream reader and \verb|Out| is the output stream writer. The following predicates encapsulate channel operations and are defined as guard predicates through unit clauses:
+
+\Program{Channel Operations}\label{program:channel-operations}
+\begin{verbatim}
+send(X,ch(In,[X?|Out?]),ch(In?,Out)).
+receive(X?,ch([X|In],Out?),ch(In?,Out)).
+new_channel(ch(Xs?,Ys),ch(Ys?,Xs)).
+\end{verbatim}
+
+The \verb|send| predicate adds a message to the output stream, \verb|receive| removes a message from the input stream, and \verb|new_channel| creates a pair of channels where each channel's input is paired with the other's output. When used as guards in clause heads, these predicates enable readable code that abstracts the underlying stream mechanics:
+
+\Program{Stream-Channel Relay}\label{program:relay}
+\begin{verbatim}
+relay(In,Out?,Ch) :- 
+    In?=[X|In1], send(X?,Ch?,Ch1) | relay(In1?,Out,Ch1?).
+relay(In,Out?,Ch) :- 
+    receive(X,Ch?,Ch1), Out=[X?|Out1?] | relay(In?,Out1,Ch1?).
+\end{verbatim}
+
+The relay reads from its input stream and sends to the channel in the first clause, while the second clause receives from the channel and writes to the output stream. The channel state threads through the recursive calls, maintaining the bidirectional communication link.
+
+\subsection{Stream Tagging for Source Identification}
+
+When multiple input streams merge into a single stream, the source identity of each message is lost. Stream tagging preserves this information by wrapping each message with its source identifier:
+
+\Program{Stream Tagging}\label{program:tag-stream}
+\begin{verbatim}
+tag_stream(Name, [M|In], [msg(Name?, M?)|Out]) :-
+    tag_stream(Name?, In?, Out?).
+tag_stream(_, [], []).
+\end{verbatim}
+
+The procedure recursively processes the input stream, wrapping each message \verb|M| in a \verb|msg(Name, M)| term that includes the source name. The tagged stream can then be safely merged with other tagged streams while preserving source information, essential for multiplexed message processing where receivers must determine message origin.
+
+\subsection{Stream Observation}
+
+For non-ground data requiring observation without consumption, the observer technique forwards communication bidirectionally while producing a replicable audit stream:
+
+\Program{Concurrent Observer}\label{program:observer}
+\begin{verbatim}
+observe(X?, Y, Z) :- observe(Y?, X, Z).
+observe(X, X?, X?) :- ground(X) | true.
+observe(Xs, [Y1?|Ys1?], [Y2?|Ys2?]) :-
+    Xs? = [X|Xs1] |
+    observe(X?, Y1, Y2),
+    observe(Xs1?, Ys1, Ys2).
+\end{verbatim}
+
+\subsection{Cooperative Stream Production}
+
+While the single-writer constraint prevents competitive concurrent updates, GLP enables sophisticated cooperative techniques where multiple producers coordinate through explicit handover:
+
+\Program{Cooperative Producers}\label{program:cooperative}
+\begin{verbatim}
+producer_a(control(Xs,Next)) :-
+    produce_batch_a(Xs,Xs1,Done),
+    handover(Done?,Xs1,Next).
+
+producer_b(control(Xs,Next)) :-
+    produce_batch_b(Xs,Xs1,Done),
+    handover(Done?,Xs1,Next).
+
+handover(done,Xs,control(Xs,Next)).
+
+produce_batch_a([a,b,c|Xs],Xs,done).
+produce_batch_b([d,e,f|Xs],Xs,done).
+\end{verbatim}
+
+The \verb|control(Xs,Next)| term encapsulates both the stream tail writer and the continuation for transferring control, enabling round-robin production, priority-based handover, or dynamic producer pools.
+
+These examples demonstrate GLP as a powerful concurrent programming language where reader/writer pairs provide natural synchronization, the single-writer constraint ensures race-free concurrent updates, and stream-based communication enables scalable concurrent architectures.
+
+\subsection{Network Switch}
+
+For three agents \verb|p, q ,r| and three channels  with them \verb|Chp, Chq, Chr|, it is initialized with 
+\verb|network((p,Chp?),(q,Chq?),(r,Chr?))|.
+
+\Program{3-Way Network Switch}\label{program:3-way-network-switch}
+\begin{verbatim}
+% P to Q forwarding
+network((P,ChP),(Q,ChQ),(R,ChR)) :-
+    ground(Q), receive(ChP?,msg(Q,X),ChP1), send(ChQ?,X?,ChQ1) |
+    network((P,ChP1?),(Q,ChQ1?),(R,ChR?)).
+
+% P to R forwarding  
+network((P,ChP),(Q,ChQ),(R,ChR)) :-
+    ground(R), receive(ChP?,msg(R,X),ChP1), send(ChR?,X?,ChR1) |
+    network((P,ChP1?),(Q,ChQ?),(R,ChR1?)).
+
+% Q to P forwarding
+network((P,ChP),(Q,ChQ),(R,ChR)) :-
+    ground(P), receive(ChQ?,msg(P,X),ChQ1), send(ChP?,X?,ChP1) |
+    network((P,ChP1?),(Q,ChQ1?),(R,ChR?)).
+
+% Q to R forwarding
+network((P,ChP),(Q,ChQ),(R,ChR)) :-
+    ground(R), receive(ChQ?,msg(R,X),ChQ1), send(ChR?,X?,ChR1) |
+    network((P,ChP?),(Q,ChQ1?),(R,ChR1?)).
+
+% R to P forwarding
+network((P,ChP),(Q,ChQ),(R,ChR)) :-
+    ground(P), receive(ChR?,msg(P,X),ChR1), send(ChP?,X?,ChP1) |
+    network((P,ChP1?),(Q,ChQ?),(R,ChR1?)).
+
+% R to Q forwarding
+network((P,ChP),(Q,ChQ),(R,ChR)) :-
+    ground(Q), receive(ChR?,msg(Q,X),ChR1), send(ChQ?,X?,ChQ1) |
+    network((P,ChP?),(Q,ChQ1?),(R,ChR1?)).
+\end{verbatim}
+
+\subsection{Implementation Correctness Properties}
+
+\begin{proposition}[Goal State Integrity]\label{proposition:goal-integrity}
+For any configuration $(R_p, V_p, M_p)$ where $R_p = (A_p, S_p, F_p)$ in an IRmaGLP run, every goal of agent $p$ appears in exactly one of $A_p$, $S_p$, or $F_p$. Furthermore, $F_p$ is monotonically increasing: once a goal enters $F_p$, it remains there.
+\end{proposition}
+
+\begin{proof}
+By induction on transition steps. Initially all goals are in $A_p$. The Reduce transaction (Definition~\ref{definition:IRmaGLP-reduce}) moves goals between sets atomically: from $A_p$ to $S_p$ on suspension, from $S_p$ to $A_p$ on reactivation, and to $F_p$ on failure. No transition removes goals from $F_p$.
+\end{proof}
+
+\begin{proposition}[SRSW Preservation in Implementation]\label{proposition:impl-srsw}
+If the initial configuration of IRmaGLP satisfies SRSW, then for any reachable configuration and any variable $Y$, at most one agent holds $Y$ locally (in their resolvent) and at most one agent holds $Y'$ locally.
+\end{proposition}
+
+\begin{proof}
+The variable table $V_p$ tracks all non-local variable references. When agent $p$ exports a variable $Y$ through the export helper (Definition~\ref{definition:IRmaGLP-local-state}), $Y$ is added to $V_p$ marking it as created by $p$ but referenced externally. The Communicate and Network transactions maintain exclusivity by transferring variables between agents rather than duplicating them. The export helper's relay mechanism for requested readers preserves the single-reader property through fresh variable pairs.
+\end{proof}
+
+\begin{proposition}[Suspension Correctness]\label{proposition:suspension-correct}
+If goal $G$ is suspended on reader set $W$ at agent $p$, then $G$ transitions to active exactly when either: (1) some $X? \in W$ receives a value through a Communicate transaction, or (2) some $X? \in W$ is abandoned.
+\end{proposition}
+
+\begin{proof}
+The reactivate helper (Definition~\ref{definition:IRmaGLP-local-state}) is called precisely when assignments arrive or abandonment occurs. It removes $(G, W)$ from $S_p$ if $X? \in W$, adding $G$ to the tail of $A_p$. No other operation modifies suspended goals.
+\end{proof}
+
+\subsection{Replication of Non-Ground Terms}
+
+While the main text demonstrated distribution of ground terms to multiple consumers, many applications require replicating incrementally-constructed terms that may contain uninstantiated readers. The following replicator procedure handles nested lists and other structured terms, provided the input contains no writers. This technique suspends when encountering readers and resumes as values become available, enabling incremental replication of partially instantiated data structures.
+
+\Program{Non-Ground Term Replicator}\label{program:replicator}
+\begin{verbatim}
+replicate(X, X?,..., X?) :- 
+    ground(X) | true.                          % Ground terms can be shared
+replicate(Xs, [Y1?|Ys1?],..., [Yn?|Ysn?]) :-   % List recursion on both parts
+    Xs? = [X|Xs1] |
+    replicate(X?, Y1,..., Yn),
+    replicate(Xs1?, Ys1,..., Ysn).
+\end{verbatim}
+
+The replicator operates recursively on list structures, creating multiple copies that maintain the same incremental construction behavior as the original. When the input list head becomes available, all replica heads receive the replicated value simultaneously. This technique extends naturally to tuples through conversion to lists of arguments, enabling replication of arbitrary term structures that contain readers but no writers.
+
+\subsection{Interlaced Streams as Distributed Blocklace}
+
+A blocklace represents a partially-ordered generalization of the blockchain where each block contains references to multiple preceding blocks, forming a directed acyclic graph. This structure maintains the essential properties of blockchains while enabling concurrent block creation without consensus. GLP's concurrent programming model naturally realizes blocklace structures through interlaced streams, where multiple concurrent processes maintain individual streams while observing and referencing each other's progress.
+
+\Program{Interlaced Streams (Blocklace)}\label{program:interlaced-streams}
+\begin{verbatim}
+% Three agents maintaining interlaced streams
+% Initial goal:
+%   p(streams(P_stream, [Q_stream?, R_stream?])),
+%   q(streams(Q_stream, [P_stream?, R_stream?])),
+%   r(streams(R_stream, [P_stream?, Q_stream?]))
+
+streams(MyStream, Others) :-
+    produce_payloads(Payloads),
+    interlace(Payloads?, MyStream, [], Others?).
+
+interlace([Payload|Payloads], [block(Payload?,Tips?)|Stream?], PrevTips, Others) :-
+    collect_new_tips(Others?, Tips, Others1),
+    interlace(Payloads?, Stream, Tips?, Others1?).
+interlace([], [], _, _).
+
+% Using reader(X) to identify fresh tips not yet incorporated
+collect_new_tips([[Block|Bs]|Others], [Block?|Tips?], [Bs?|Others1?]) :-
+    reader(Bs) |  % Bs unbound means Block is the current tip
+    collect_new_tips(Others?, Tips, Others1).
+collect_new_tips([[B|Bs]|Others], Tips?, [[Bs]?|Others1?]) :-
+    % Skip B as it's already been referenced
+    collect_new_tips([[Bs]?|Others?], Tips, Others1).
+collect_new_tips([], [], []).
+\end{verbatim}
+
+Each concurrent process maintains its own stream of blocks containing application payloads and references to the most recent blocks observed from other processes. The `reader(X)` guard predicate identifies unprocessed blocks by detecting unbound tail variables, enabling each process to reference exactly those blocks it has not previously incorporated. This creates a distributed acyclic graph structure where the partial ordering reflects the causal relationships between blocks produced by different processes.
+
+The interlaced streams technique demonstrates how GLP's reader/writer synchronization mechanism naturally implements sophisticated distributed data structures. The resulting blocklace provides eventual consistency guarantees similar to CRDTs while maintaining the integrity and non-repudiation properties of blockchain structures. This technique has applications in distributed consensus protocols, collaborative editing systems, and Byzantine fault-tolerant dissemination networks.
+
+
+\subsection{Metainterpreters}
+
+Program development is essentially a single-agent endeavour:  The programmer trying to write and debug a GLP program.  As in Concurrent Prolog, a key strength of GLP is metainterpretation:  The ability to write GLP interpreters with various functions in GLP.  This allows writing a GLP program development environment and a GLP operating system within GLP itself~\cite{sterling1994art,safra1988meta,shapiro1982algorithmic,lichtenstein1988concurrent,silverman1988logix}, as well as writing a GLP operating system in GLP~\cite{shapiro1984systems}. These two scenarios are the focus of this section:
+a programmer developing a program and running it with enhanced metainterpreters that support the various needs of program development, and an operating system written in GLP that supports the execution, monitoring and and control of GLP programs.
+
+\mypara{Plain metainterpreter}
+Next we show a plain \GLP metainterpreter.
+It follows the standard granularity of logic programming metainterpreters, using the predicate \verb|reduce| to encode each program clause. This approach avoids the need for explicit renaming and, in the case of concurrent logic programs such as GLP also guard evaluation, while maintaining explicit goal reduction and body evaluation. The encoding is such that if in a call to \verb|reduce| a given goal unifies with its first argument then the body is returned in its second argument. Here we show it together with a \verb|reduce| encoding of \verb|merge|.
+
+\Program{\GLP plain metainterpreter}\label{program:meta}
+\begin{small}
+\begin{verbatim}
+run(true).  % halt 
+run((A,B)) :- run(A?), run(B?). % fork 
+run(A) :- known(A) | reduce(A?,B), run(B?) %  reduce 
+
+reduce(merge([X|Xs],Ys,[X?|Zs?]),merge(Xs?,Ys?,Zs)). 
+reduce(merge(Xs,[Y|Ys],[Y?|Zs?]),merge(Xs?,Ys?,Zs)).
+reduce(merge([],[],[]),true). 
+\end{verbatim}
+\end{small}
+ 
+ 
+For example, when called with an initial goal:
+\begin{small}
+\begin{verbatim}
+run((merge([1,2,3],[4,5],Xs), merge([a,b],[c,d,e],Ys), merge(Xs?,Ys?,Zs)).
+\end{verbatim}
+\end{small}
+after two forks using the second clause of \verb|run|, its goal would become:
+\begin{small}
+\begin{verbatim}
+run((merge([1,2,3],[4,5],Xs)), run(merge([a,b],[c,d,e],Ys)), run(merge(Xs?,Ys?,Zs)).
+\end{verbatim}
+\end{small}
+and its finite run would produce some merge of the four input lists.
+
+
+\mypara{Fail-safe metainterpreter}
+%
+The operational semantics of Logic Programs and GLP specifies that a run is aborted once a goal fails.  Following this rule would make impossible the writing in GLP of a metainterpreter that identifies and diagnoses failure.  The following metainterpreter addresses this by assuming that the  representation of the interpreted program ends with the clause:
+\begin{verbatim}
+reduce(A,failed(A)) :- otherwise | true.
+\end{verbatim}
+Returning the failed goal \verb|A| as the term \verb|failed(A)| for further processing, the simplest being just reporting the failure, as in the following metainterpreter:
+
+\Program{\GLP fail-safe metainterpreter}\label{program:meta-failsafe}
+\begin{small}
+\begin{verbatim}
+run(true,[]).  % halt 
+run((A,B),Zs?) :- run(A?,Xs), run(B?,Ys), merge(Xs?,Ys?,Zs). % fork
+run(fail(A),[fail(A?)]).    % report failure 
+run(A,Xs?) :- known(A) | reduce(A?,B), run(B?,Xs) %  reduce 
+\end{verbatim}
+\end{small}
+
+Failure reports can be used to debug a program, but do not prevent a faulty run from running forever.  
+
+\mypara{Metainterpreter with run control}
+%
+Here we augment the metainterpreter with run control, via which a run can be suspended, resumed, and aborted. 
+As control messages are intended to be ground, the control stream of a run can be distributed to all metainterpreter instances that participate in its execution.
+
+\Program{\GLP metainterpreter with run control}\label{program:meta-control}
+\begin{small}
+\begin{verbatim}
+run(true,_).  % halt 
+run((A,B),Cs) :- distribute(Cs?,Cs1,Cs2), run(A?,Cs1?), run(B?,Cs1). % fork
+run(A,[suspend|Cs]) :- suspended_run(A,Cs?).   % suspend
+run(A,Cs) :- known(A) |        % reduce
+        distribute(Cs?,Cs1,Cs2), reduce(A?,B,Cs1?), run(B?,Xs,Cs2?). 
+
+suspended_run(A,[resume|Cs]) :- run(A,Cs?).  
+suspended_run(A,[abort|Cs]).
+\end{verbatim}
+\end{small}
+The metainterpreter suspends reductions as soon as the control stream is bound to \verb=[suspend|Cs?]=, upon which the run can be resumed or aborted by binding \verb|Cs| accordingly. 
+Combining Programs \ref{program:meta-failsafe} and \ref{program:meta-control} would allow the programmer to abort the run as soon as a goal fails.
+But we wish to introduce additional capabilities before integrating them all.
+
+
+\mypara{Termination detection} The following metainterpreter allows the detection of the termination of a concurrent GLP program.  It uses the `short-circuit' technique, in which a chain of paired variables extends while goals fork, contracts when goals terminate, and closes when all goals have terminated.
+
+\Program{\GLP termination-detecting metainterpreter}\label{program:meta-control}
+\begin{small}
+\begin{verbatim}
+run(true,L,L?).  % halt 
+run((A,B),Cs,L,R?) :-  run(A?,Cs1?,L?,M), run(B?,Cs1,M?,R). % fork
+run(A,L,R?) :- known(A) |        % reduce
+        reduce(A?,B,Cs1?), run(B?,Xs,Cs2?,L?,R). 
+\end{verbatim}
+\end{small}
+
+When called with \verb|run(A,done,R)|, the reader \verb|R?| will be bound to \verb|done| iff the run terminates.  
+
+
+\mypara{Collecting a snapshot of an aborted run}
+The short-circuit technique can be used to extend the metainterpreter with run control to collect a snapshot of the run, if aborted before termination.  Upon abort,  
+the resolvent is passed from left to right in the short circuit, with each metainterpreter instance adding their interpreted goal to the growing resolvent.
+We only show the \verb|suspended_run| procedure:
+
+\Program{\GLP metainterpreter with run control and snapshot collection}\label{program:meta-control-abort-snapshot}
+\begin{small}
+\begin{verbatim}
+suspended_run(A,[resume|Cs],L,R?) :- run(A,Cs?,L?,R).
+suspended_run(A,[abort|_],L,[A?|L?]).
+\end{verbatim}
+\end{small}
+
+When called with \verb|run(A,Cs?,[],R)|, if \verb|Cs| is bound to \verb|[suspend,abort]|, the reader \verb|R?| will be bound to the current resolvent of the run (which could be empty if the run has already terminated before
+
+Note that taking a snapshot of a suspended run and then resuming it requires extra effort, as two copies of the goal are needed,  a `frozen' one for the snapshot, and a `live' one to continue the run.  Addressing this is necessary for interactive debugging, to allow a developer to watch a program under development as it runs.  We discuss it below.
+
+
+\mypara{Producing a trace of a run} Tracing a run of a program and then single-stepping through its critical sections are basic debugging techniques, but applying them to concurrent programs is both difficult and less useful due to their nondeterminism.  Here is a metainterpreter that produces a trace of the run, which can then be used by a retracing  metainterpreter to single-step through the very same run, making the same nondeterministic scheduling choices.
+It assumes that each program clause \verb= A:- D | B= is represented by a unit clause
+\verb=reduce(A,B,I) :- G | true=, with $I$ being the serial number of the clause in the program.
+
+\Program{\GLP a tracing metainterpreter}\label{program:metatree}
+\begin{small}
+\begin{verbatim}
+run(true,true).  % halt 
+run((A,B),(TA?,TB?)) :- run(A?,TA), run(B?,TB). % fork 
+run(A,((I?:Time?):-TB?)) :- known(A) | 
+    time(Time), reduce(A?,B,I), run(B?, TB).
+\end{verbatim}
+\end{small}
+
+
+As another example, here is a \GLP metainterpreter, inspired by~\cite{shapiro1984systems}, that can suspend, resume, and abort a \GLP run and produce a dump of the processes of the aborted run. It employs the guard predicate \verb|otherwise|, which succeeds if and only if all previous clauses in the procedure fail (as opposed to suspend). This enables default case handling when no other clause applies.
+
+\Program{\GLP metainterpreter with runtime control}\label{program:runtime}
+\begin{small}
+\begin{verbatim}
+run(true,Cs,L?,L).  % halt and close the dump
+run((A,B),Cs,L?,R) :- run(A?,Cs?,L,M?), run(B?,Cs?,M,R?). % fork 
+run(A,Cs,L?,R) :- otherwise, unknown(Cs) | reduce(A?,B), run(B?,Cs,L,R?) %  reduce 
+run(A,[abort|Cs],[A?|R?],R). % abort and dump 
+run(A,[suspend|Cs],L?,R) :- suspended_run(A?,Cs?,L,R?). % suspend
+
+suspended_run(A,[resume|Cs],L?,R) :-  run(A?,Cs?,L,R?).  % resume
+suspended_run(A,[C|Cs],L?,R) :- otherwise | run(A?,[C?|Cs?],L,R?).
+\end{verbatim}
+\end{small}
+
+Its first argument is the process (goal) to be executed, its second argument \verb|Cs| is the observed interrupt stream, and its last two arguments form a `difference-list', a standard logic programming technique~\cite{sterling1994art} by which a list can be accumulated in a distributed way (the program is not fail-stop resilient; it can be extended to be so). 
+ 
+
+

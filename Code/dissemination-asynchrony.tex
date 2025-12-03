@@ -1,0 +1,45 @@
+\begin{figure}[tp]
+\begin{algorithm}[H]
+	\caption{\textbf{Grassroots Cordial Dissemination for Asynchrony}\\ Code for agent $p$, including Algorithm \ref{alg:blocklace}}	\label{alg:CD}
+	%\small
+	%\begin{changemargin}{0cm}{-1.5cm}
+	\begin{algorithmic}[1] \scalefont{0.93}
+	\alglinenoPop{counter} 
+		
+   
+\vspace{0.5em}
+	\Upon{decision to send $b \in \textit{blocklace}$ to $q$}   \label{alg:BDA-b-to-q}   \Comment{Decision made externally} 
+       \State  \textbf{reliably\_send}  $b$ to $q$   \Comment{2. \textbf{Send-$b$-to-$q$}}
+	 \EndUpon
+
+  
+\vspace{0.5em}
+
+	\Upon{$\textbf{receive } b$}   \label{alg:BDA-receive}   \Comment{3. \textbf{Receive-$b$}}
+	    \State $\textit{blocklace}\gets \textit{blocklace} \cup \{b\}$  \label{alg:BDA-receive}
+	 \EndUpon
+
+  
+	   	 \vspace{0.5em}	
+     	\Upon{\textbf{eventually}}
+      %(\textit{timer})$}
+      \label{alg:disseminate-timeout}
+	            \Comment{4. \textbf{Cordially-Send-$b$-to-$q$}}
+        \For{all $b\in \textit{blocklace}, q \in P :  \textit{friend}(q) \wedge \textit{follows}(q, b.\textit{creator}) \wedge \lnot\textit{agentObserves}(q,b)$}
+	    \State \textbf{reliably\_send}  $b$ to  $q$  \label{alg:send-package}
+	    \EndFor
+ %    	\State $\textbf{reset}(\textit{timer})$ \label{alg:reset-upon-send-package}
+	    \EndUpon
+
+           
+		\alglinenoPush{counter}
+	\end{algorithmic}
+	
+          
+	
+	%\end{changemargin}
+% 	\vspace{-5em}
+\end{algorithm}
+\vspace{-2em}
+\end{figure}
+

@@ -1,0 +1,28 @@
+\section{Related Work}\label{section:related-work}
+
+Grassroots platforms require agents to verify cryptographic identity and protocol compatibility upon contact, form authenticated channels, and coalesce spontaneously without global coordination. The language must support multiple concurrent platform instances and metaprogramming for tooling development. We examine how existing systems address these requirements.
+
+
+\mypara{Distributed actor and process languages}
+Actor-based languages (Erlang/OTP~\cite{armstrong2013programming}, Akka~\cite{akka2022}, Pony~\cite{clebsch2015deny}) and active object languages~\cite{boer2017survey,boer2024active} provide message-passing concurrency and fault isolation. However, their security models operate at the transport layer (TLS in Akka Remote~\cite{akka2022}, Erlang's cookie-based authentication~\cite{armstrong2013programming}) rather than integrating cryptographic identity and code attestation into language primitives. Orleans~\cite{orleans2022} assumes trusted runtime environments, lacking the attestation mechanisms required for grassroots platforms where participants must verify code integrity without central coordination.
+
+\mypara{Capability security}
+E~\cite{miller2006robust} provides capability-based security through unforgeable object references with automatic encryption. While ensuring object uniqueness and access control, E does not address verifying real-world identity or protocol implementation attestation—distinct requirements for grassroots platforms.
+
+\mypara{Linear types and session types}
+Linear types~\cite{wadler1990linear} ensure single-use of resources, similar to GLP's single-writer constraint. However, GLP's SRSW mechanism provides bidirectional pairing—each writer has exactly one reader—enabling authenticated channels without type-level tracking. Session types~\cite{honda1993types} specify communication protocols statically, with implementations in Links~\cite{cooper2007links,lindley2017lightweight}, Rust~\cite{jespersen2015session}, Scala~\cite{scalas2016lightweight}, and Go~\cite{castro2019distributed}. While these verify protocol conformance at compile time, GLP's reader/writer synchronization enforces protocol dynamically through suspension and resumption, and runtime attestation enables participants to verify protocol compatibility when establishing connections between independently-deployed agents.
+
+\mypara{Concurrent coordination languages}
+Concurrent ML~\cite{reppy1999concurrent} provides first-class synchronous channels and events. The Join Calculus~\cite{fournet1996reflexive} offers pattern-based synchronization through join patterns. GLP's SRSW variables provide asynchronous communication through reader/writer pairs with the monotonicity property (Proposition~\ref{proposition:GLP-monotonicity}) ensuring suspended goals remain reducible once readers are instantiated. However, neither provides mechanisms for cryptographic identity verification or authenticated channel establishment required for grassroots platforms.
+
+
+\mypara{Blockchain programming languages}
+Smart contract languages like Solidity~\cite{mukhopadhyay2018ethereum} and Move~\cite{move2022} provide deterministic execution and asset safety but assume blockchain infrastructure for identity and consensus. While Scilla~\cite{scilla2018} separates computation from communication similar to GLP's message-passing model, it targets on-chain state transitions rather than peer-to-peer authenticated channels. GLP achieves blockchain security properties (Section~\ref{subsection:blockchain-security}) through the language-level SRSW invariant and attestations, without requiring global consensus.
+
+
+\mypara{Authorization languages}
+OPA/Rego~\cite{opa2021} and Cedar~\cite{hicks2023cedar} provide declarative policy specification but are specialized for policy evaluation. They consume authentication tokens as inputs but do not integrate attestation as first-class primitives for verifying remote code execution.
+
+\mypara{Concurrent logic programming}
+Concurrent logic programming languages~\cite{shapiro1989family} extend logic programming with shared variables for process synchronization. Concurrent Prolog~\cite{shapiro1987concurrent} introduced reader/writer variables, while PARLOG~\cite{clark1986parlog} and GHC~\cite{ueda1986guarded} used mode declarations. Unlike these, GLP enforces Single-Reader/Single-Writer (SRSW) restriction where each variable occurs at most once, establishing secure point-to-point channels through exclusive reader/writer pairs. This enables authenticated messaging while eliminating distributed atomic unification~\cite{kleinman1990distributed}. GLP's homoiconic nature inherits logic programming's metaprogramming capabilities~\cite{safra1988meta,lichtenstein1988concurrent,shapiro1984systems}, essential for platform tooling development.
+

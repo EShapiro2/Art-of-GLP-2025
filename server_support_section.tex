@@ -1,0 +1,45 @@
+\section{Server-Side Support for GLP}
+
+GLP's vision is grounded in decentralisation: agents operate autonomously on smartphones, communicate directly with peers, and are not subject to centralised control or coordination. Ideally, such a system would function without any server-side infrastructure. However, two practical constraints of contemporary Internet and mobile infrastructure make some form of server-side support essential at present:
+
+\begin{itemize}
+    \item \textbf{Network address translation (NAT)} and firewalls frequently prevent smartphones from establishing direct peer-to-peer connections without assistance.
+    \item \textbf{TEE attestation APIs} provided by Google and Apple require backend server mediation to securely verify the integrity and authenticity of the GLP app running on a remote device.
+\end{itemize}
+
+To address these limitations while preserving GLP's decentralised ethos, we adopt a compromise architecture: GLP agents may rely on external servers for limited, auditable roles that enable connectivity and trust bootstrapping, but these servers need not be centralised. Multiple independent or federated servers can provide the necessary support, and no server gains access to private agent data, program logic, or communication content.
+
+\subsection{NAT Traversal Support}
+
+In typical mobile deployments, GLP agents are often behind NATs or firewalls that block incoming connections. To establish direct communication, agents can use standard Internet protocols:
+
+\begin{itemize}
+    \item \textbf{STUN} (Session Traversal Utilities for NAT) allows agents to discover their public IP address and port mappings.
+    \item \textbf{TURN} (Traversal Using Relays around NAT) enables fallback relaying of encrypted messages when direct peer-to-peer paths are unavailable.
+    \item \textbf{TURNS}, the secure variant of TURN, ensures relay traffic is encrypted in transit.
+\end{itemize}
+
+GLP agents may attempt peer-to-peer connectivity using STUN-based discovery and fall back to TURN relays when needed. Since all GLP messages are encrypted and authenticated end-to-end at the application layer, relay servers handle only opaque ciphertext. Multiple STUN and TURN servers can coexist and be independently operated.
+
+\subsection{TEE Attestation Support}
+
+To ensure that a remote GLP agent is genuine—running the correct version of the GLP app within a secure execution environment—GLP relies on TEE-based attestation. Both major mobile platforms impose constraints:
+
+\begin{itemize}
+    \item Android's Play Integrity and SafetyNet APIs, and Apple's App Attest, require challenge-response flows mediated by a backend.
+    \item The verification of attestation responses, including decoding and signature checks, depends on server-side libraries provided by Google and Apple.
+\end{itemize}
+
+A GLP backend service is therefore required to generate fresh, request-bound challenges and verify attestation responses. The result—a signed assertion that a specific public key belongs to a verified GLP app instance—can then be shared with other agents. These services can be replicated, cached, and federated.
+
+\subsection{Deployment Model}
+
+A single physical server can provide both NAT traversal and TEE verification services, optionally along with additional support roles such as:
+
+\begin{itemize}
+    \item \textbf{Agent discovery} (mapping names or contact handles to public keys),
+    \item \textbf{Encrypted backups} for device migration or recovery,
+    \item \textbf{Distribution} of GLP apps and verified modules.
+\end{itemize}
+
+Multiple such servers may coexist, with agents free to select, verify, and switch among them. The architecture admits community-run infrastructure, federated trust domains, or fully independent support services. In all cases, no trusted central party is assumed, and no server has privileged access to the logic or state of any GLP agent.

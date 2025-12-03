@@ -1,0 +1,151 @@
+\section{The Grassroots Social Graph}\label{section:social-graph}
+
+
+This section demonstrates how GLP, specified by the multiagent transition systems maGLP, can realize the foundational grassroots platform, the grassroots social graph:
+the Network transaction enables cold-call connections between disconnected agents, whilst the Communicate transaction provides secure message transfer through established friend channels. 
+Friend-mediated introductions for expanding the network through existing trust relationships are presented in Appendix~\ref{appendix:friend-introductions}.
+
+The grassroots social graph serves as the infrastructure layer for all other grassroots platforms. It enables people to establish authenticated friendships through cryptographically-identified connections. Grassroots platforms built upon this foundation—including grassroots social networks, grassroots cryptocurrencies, and grassroots democratic federations—employ the social graph to establish their platform-specific communication network.
+
+
+\subsection{Protocol Architecture}
+
+Each agent maintains its social graph neighbourhood as a friends list containing named bidirectional channels to connected peers. The protocol processes three types of events: connection requests initiated by the agent's user, offers received from other agents through the network, and responses to the agent's own connection attempts. The architecture unifies all communication through a single merged input stream, with the friends list serving as both the social graph state and the routing table for outgoing messages.
+
+The protocol achieves non-blocking asynchronous operation through GLP's synchronization mechanisms, enabling agents to handle multiple concurrent connection attempts, process friend messages, and respond to user commands simultaneously without deadlock or starvation (see Appendix~\ref{appendix:social-graph-implementation} for details).
+
+\subsection{Initialization and Message Routing}
+
+Each agent begins with the goal \verb|agent(Id, ChUser, ChNet)| where \verb|Id| is the agent's unique identifier, \verb|ChUser| provides bidirectional communication with the user interface, and \verb|ChNet| connects to the network for initial message routing. The initialization phase establishes the unified message processing architecture:
+
+\Program{Social Graph Initialization}\label{program:social-init}
+\begin{verbatim}
+agent(Id, ChUser, ChNet) :- 
+    ChUser = ch(UserIn, UserOut), ChNet = ch(NetIn, NetOut) |
+    merge(UserIn?, NetIn?, In),
+    social_graph(Id?, In?, [(user, UserOut), (net, NetOut)]).
+\end{verbatim}
+
+The initialization extracts the input and output streams from the user and network channels, merges the input streams into a unified stream \verb|In|, and stores the output streams in the initial friends list with special identifiers "user" and "net". This design treats the user interface and network as special cases of friends, enabling uniform message sending through the \verb|lookup_send| procedure regardless of destination type.
+
+\subsection{Cold Call Protocol}
+
+The cold call mechanism enables agents to establish friendship without prior shared variables. When agent $p$ wishes to befriend agent $q$, the protocol proceeds through four phases: user $p$ initiation, $p$ to $q$ offer transmission, user $q$ consultation, and if the response is positive then $p-q$ channel establishment.
+
+\Program{Social Graph Cold-Call Befriending Protocol}\label{program:social-graph}
+\begin{verbatim}
+% Process user request to connect (self-introduction)
+social_graph(Id, [msg(user, Id, connect(Target))|In], Fs) :-
+    ground(Id), ground(Target) |
+    lookup_send(net, msg(Id, Target, intro(Id?, Id?, Resp)), Fs?, Fs1),
+    inject(Resp?, msg(Target, Id, response(Resp)), In?, In1),
+    social_graph(Id, In1?, Fs1?).
+
+% Process received self-introduction
+social_graph(Id, [msg(From, Id, intro(From, From, Resp))|In], Fs) :-
+    ground(Id), attestation(intro(From, From, Resp), att(From, _)) |
+    lookup_send(user, msg(agent, user, befriend(From?, Resp)), Fs?, Fs1),
+    social_graph(Id, In?, Fs1?).
+
+% Process user decision on received introduction
+social_graph(Id, [msg(user, Id, decision(Dec, From, Resp?))|In], Fs) :-
+    ground(Id) |
+    bind_response(Dec?, From?, Resp, Fs?, Fs1, In?, In1),
+    social_graph(Id, In1?, Fs1?).
+
+% Process response to sent introduction
+social_graph(Id, [msg(From, Id, response(Resp))|In], Fs) :-
+    ground(Id) |
+    handle_response(Resp?, From?, Fs?, Fs1, In?, In1),
+    social_graph(Id, In1?, Fs1?).
+
+% Application message handling
+social_graph(Id, [msg(From, To, Content)|In], Fs) :-
+    ground(Id), otherwise |
+    % Forward to application layer
+    social_graph(Id, In?, Fs?).
+
+inject(X,Y,Ys,[Y?|Ys?]) :- known(X) | true.
+inject(X,Y,[Y1|Ys],[Y1?|Ys1?]) :- unknown(X) | inject(X?,Y?,Ys?,Ys1).
+\end{verbatim}
+
+The first clause handles user-initiated connections by sending an offer containing an unbound response variable through the network. The \verb|inject| procedure defers insertion of the response message into the input stream until the response variable becomes bound, while allowing the stream to continue flowing. The second clause receives offers from other agents and forwards them to the user interface for approval, including the response variable that the user's decision will bind. The third clause processes user decisions, calling \verb|bind_response| to handle acceptance or rejection. The fourth clause handles responses to the agent's own offers.
+
+When \verb|X| is known, \verb|inject| inserts the message at the output stream and terminates.  Until then, it passes input stream messages to its output. This ensures the protocol remains responsive while awaiting responses to its own connection attempts.
+
+\subsection{Channel Establishment and Response Handling}
+
+The protocol's response handling demonstrates sophisticated use of GLP's concurrent programming capabilities. When an offer is accepted, both agents must establish symmetric channel configurations and merge the new friend's input stream into their main processing loop:
+
+\Program{Response Processing}\label{program:response-handling}
+\begin{verbatim}
+% Bind response based on user decision
+bind_response(yes, From, accept(FCh), Fs, Fs1, In, In1) :-
+    new_channel(ch(FIn, FOut), FCh) |
+    handle_response(accept(FCh?), From, Fs, Fs1, In, In1).
+bind_response(no, _, no, Fs, Fs, In, In).
+
+% Handle response (for both received and sent offers)
+handle_response(accept(ch(FIn, FOut)), From, Fs, [(From, FOut)|Fs], In, In1) :-
+    tag_stream(From?, FIn?, Tagged),
+    merge(In?, Tagged?, In1).
+handle_response(no, _, Fs, Fs, In, In).
+\end{verbatim}
+
+When accepting an offer, \verb|bind_response| creates a new channel pair using \verb|new_channel|, which produces two channels with crossed input/output streams. The acceptor retains one channel and sends the other through the response variable, ensuring both agents receive complementary channel endpoints. The \verb|handle_response| procedure, called for both accepted sent offers and accepted received offers, adds the friend's output stream to the friends list and merges the tagged input stream into the main message flow. The stream tagging preserves sender identity after merging, enabling the agent to determine message origin.
+
+
+\subsection{Friend-Mediated Introductions}
+
+Beyond cold calls, the social graph protocol enables friend-mediated introductions, leveraging existing trust relationships to establish new connections. When agent $r$ is friends with both $p$ and $q$, it can introduce them to each other, creating a direct communication channel between them.
+The protocol proceeds through five phases: (1) the introducer creates paired channels and sends introduction messages, (2) recipients initiate attestation exchange through the new channel, (3) attestation requests are verified and responded to, (4) verified introductions prompt user consultation, and (5) user acceptance establishes the connection.
+
+\Program{Friend-Mediated Introduction Protocol}\label{program:introduction}
+\begin{verbatim}
+% Friend introduces two others
+social_graph(Id, [msg(user, Id, introduce(P, Q))|In], Fs) :-
+    ground(Id), ground(P), ground(Q), 
+    new_channel(ch(PQIn, PQOut), ch(QPIn, QPOut)) |
+    lookup_send(P, msg(Id, P, intro(Q?, ch(QPIn?, PQOut?))), Fs?, Fs1),
+    lookup_send(Q, msg(Id, Q, intro(P?, ch(PQIn?, QPOut?))), Fs1?, Fs2),
+    social_graph(Id, In?, Fs2?).
+
+% Process introduction - initiate attestation exchange
+social_graph(Id, [msg(From, Id, intro(Other, ch(In, Out)))|In], Fs) :-
+    ground(Id), attestation(intro(Other, ch(In, Out)), att(From, _)) |
+    Out = [attest_req(Id?, AttResp)|Out1?],
+    inject(AttResp?, msg(Other, Id, verified_intro(From?, Other?, ch(In?, Out1?))), 
+           In?, In1),
+    social_graph(Id, In1?, Fs?).
+
+% Process attestation request and send verification
+social_graph(Id, [msg(From, Id, attest_req(From, AttResp))|In], Fs) :-
+    ground(Id), attestation(attest_req(From, AttResp), att(From, Module)) |
+    AttResp = verified(Id?, Module?),
+    social_graph(Id, In?, Fs?).
+
+% Attestation verified - now ask user
+social_graph(Id, [msg(Other, Id, verified_intro(Introducer, Other, Ch))|In], Fs) :-
+    ground(Id), 
+    attestation(verified_intro(Introducer, Other, Ch), att(Other, Module)) |
+    lookup_send(user, msg(agent, user, 
+                befriend_verified(Introducer?, Other?, Module?, Ch?)), Fs?, Fs1),
+    social_graph(Id, In?, Fs1?).
+
+% User accepts verified introduction
+social_graph(Id, [msg(user, Id, decision(yes, Other, ch(In, Out)))|In], Fs) :-
+    ground(Id) |
+    tag_stream(Other?, In?, Tagged),
+    merge(In?, Tagged?, In1),
+    social_graph(Id, In1?, [(Other?, Out?)|Fs?]).
+\end{verbatim}
+
+
+
+Friend-mediated introductions provide stronger trust assurance than cold calls through double verification. The introducer $r$ creates a fresh channel pair connecting $p$ and $q$, sending each party one of the paired channels, along with the identity of the other party. Recipients first verify through the signature and attestation that the introduction genuinely originates from their mutual friend $r$ running verified code. Before accepting the connection, the introduced parties $p$ and $q$ exchange signed and attested messages through the new channel, allowing each to verify the other's identity through signatures and code compatibility through attestations.
+
+This double verification mechanism addresses two distinct security requirements. The introducer's signature and attestation prevent forgery—the signature proves the introduction came from $r$ while the attestation confirms it was produced by legitimate social graph code. The signatures and attestations exchanged between introduced parties ensure they are indeed who the introducer claims, with signatures providing cryptographic proof of identity and attestations ensuring code compatibility.
+
+Unlike cold calls which require external identity verification, friend-mediated introductions provide both the introducer's social vouching and direct cryptographic verification from the introduced party through their signatures. The mutual friend serves as a trusted intermediary who facilitates the connection, while the exchange of signed and attested messages between parties ensures the connection's authenticity independent of the introducer.
+
+

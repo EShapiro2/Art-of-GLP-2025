@@ -1,0 +1,42 @@
+\section{Introduction}
+\mypara{Grassroots platforms} Grassroots platforms~\cite{shapiro2023grassrootsBA} are distributed applications in which multiple disjoint platform instances emerge independently and coalesce when they interoperate. They are run by people on their networked personal devices (today—smartphones), who are identified cryptographically~\cite{rivest1978method}, communicate only with authenticated friends, and can participate in multiple instances of multiple grassroots platforms simultaneously. The grassroots social graph~\cite{shapiro2023gsn} is both a platform in its own right and the infrastructure layer for all other grassroots platforms. In it, nodes represent people, edges—authenticated friendships, and connected components arise spontaneously and interconnect through befriending. The social graph provides grassroots platforms with communication along graph edges, encrypted for ensuring privacy, signed for authenticity and attested for integrity. Upon this foundation, grassroots social networks~\cite{shapiro2023gsn}, grassroots cryptocurrencies~\cite{shapiro2024gc}, and grassroots democratic federations~\cite{shapiro2025GF} are built.
+
+
+\mypara{Programming grassroots platforms}  A key challenge in implementing grassroots platforms is overcoming faulty and malicious participants~\cite{lamport1982byzantine}. Without secure language support, correct participants cannot reliably identify each other, establish secure communication channels, or verify each other's code integrity~\cite{sabt2015trusted,costan2016intel}. 
+While grassroots platforms have been formally specified and their properties  proven~\cite{shapiro2023grassrootsBA,shapiro2023gsn,shapiro2024gc,shapiro2025GF,shapiro2025atomic}, they are so far mathematical constructions without an actual implementation. To the best of our knowledge, no existing programming language provides the necessary combination of distributed execution, cryptographic security, safety, and liveness guarantees required to realize these specifications. GLP aim to close the gap between the mathematical specifications and actual implementation of grassroots platforms.
+
+\mypara{A grassroots programming language} Our goal is to design a high-level, secure, multiagent, concurrent programming language suitable for the implementation of grassroots platforms. To do so, the language should address:
+\begin{enumerate}
+\item Mutual authentication~\cite{boyd2003protocols} enabling people to identify each other and verify each other's code identity and integrity
+\item Grassroots social graph formation through both cold calls (for bootstrap and connecting disconnected components) and friend-mediated introductions
+\item Secure communication among friends
+\item Multiagent operational semantics~\cite{shapiro2021multiagent} with proven security, safety and liveness
+\item Useful abstractions for distributed multiagent programming in general, and metaprogramming support in particular, to enable the development of programming tools and runtime support for the language within the language.
+%~\cite{safta1988,shapiro1984systems}.
+\end{enumerate}
+
+
+\mypara{GLP} We present GLP, a secure, multiagent, concurrent, logic programming language designed for implementing grassroots platforms. 
+GLP extends logic programs~\cite{lloyd1987foundations,sterling1994art} with paired single-reader/single-writer variables (akin to futures and promises~\cite{dauth2019futures,azadbakht2020formal}), each establishing a secure single-message communication channel between the single writer and the single reader, enabling subsequent secure multidirectional communication by sharing readers and writers in messages.
+
+Through signed attestations at the language level, participants verify each other's identity and code integrity when befriending and communicating. These mechanisms enable both cold calls (for bootstrap and connecting disconnected components) and friend-mediated introductions (the preferred trust propagation method).
+
+We present GLP and prove their properties in five steps, injecting illustrative programming examples along the way: 
+\begin{enumerate}
+\item \textbf{Logic Programs:} Define a transition system-based operational semantics for logic programs (LP)~\cite{lloyd1987foundations,sterling1994art}, in which a conjunctive goal (resolvent) is transformed by nondeterministic goal/clause reductions. 
+
+\item \textbf{Concurrent GLP:} Extend LP with reader/writer pairs, which must satisfy the Single-Reader/Single-Writer requirement; extend unification to suspend upon an attempt to bind a reader; extend configurations to include pending assignments to readers; extend transitions to include the application of an assignment from a writer to its paired reader, and thus provide nondeterministic interleaving-based asynchronous operational semantics for concurrent GLP. Prove safety properties~\cite{alpern1985defining}, including that GLP computations are deductions~\cite{kowalski1974predicate,lloyd1987foundations}.  Provide GLP with deterministic `workstation implementation-ready' transition system (Appendix~\ref{appendix:irGLP}), based on which a workstation implementation of GLP can be developed to support GLP program development.
+
+\item \textbf{Multiagent, Concurrent GLP:} Employ multiagent transition systems~\cite{shapiro2021multiagent} with atomic transactions~\cite{shapiro2025atomic} to define the operational semantics of multiagent concurrent GLP, in which goal reductions are local and assignments of shared logic variables are realized as writer-to-reader messages among agents, and prove it to be grassroots~\cite{shapiro2023grassrootsBA}. 
+
+\item \textbf{Secure, Multiagent, Concurrent GLP:} Augment agents with self-chosen keypairs and augment cross-agent communication that is encrypted, signed and attested, resulting in secure, multiagent, concurrent GLP. Prove its security as a distributed systems~\cite{coulouris2011distributed} and that GLP streams enjoy the security properties of blockchains~\cite{nakamoto2008peer}.
+
+\item \textbf{Implementation-Ready Specification:} Replace nondeterministic goal selection with deterministic scheduling, and replace abstract push-based shared-variable communication with pull-based message-passing using dynamic shared-variable tables, geared for smartphone deployment.
+\end{enumerate}
+
+The remainder of this paper is organized as follows. Section~\ref{section:lp} recalls logic programs. Section~\ref{section:GLP} extends them to concurrent GLP. Section~\ref{section:programming-examples} presents basic GLP programming techniques. Section~\ref{section:maGLP} defines multiagent GLP and proves it grassroots. Section~\ref{section:social-graph} implements the grassroots social graph cold-call and friend-mediated introduction protocols. Section~\ref{section:GLP-security} adds cryptographic security and attestations and presents security properties, including blockchain security properties of streams. Section~\ref{section:implementation} discusses smartphone implementation. Section~\ref{section:related-work} reviews related work, and Section \ref{section:conclusion} concludes.
+The appendixes provide~\ref{appendix:LP-synax} LP syntax, ~\ref{appendix:proofs} proofs, ~\ref{appendix:friend-introductions} social-graph protocol properties,  ~\ref{appendix:social-networking} grassroots social networking, 
+~\ref{appendix:guards-system} guard and system predicates,
+~\ref{appendix:additional-techniques} additional programming and metaprogramming examples, and ~\ref{appendix:irGLP} single-workstation and~\ref{appendix:irmaGLP}  networked-smartphones implementation-ready specifications of GLP.
+
+
