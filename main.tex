@@ -221,8 +221,234 @@ merge([],[],[]).
 [Programming techniques chapter to be developed]
 
 \chapter{Simulating Multiagent Systems}
+\label{ch:plays}
 
-[Plays and multiagent simulation chapter to be developed]
+Part II of this book covers true multiagent \GLP---distributed agents on separate devices communicating over networks. But we can \emph{simulate} multiagent systems within single-agent \GLP, enabling development and testing before deployment.
+
+This chapter introduces \emph{plays}: a theater-inspired framework for simulating and testing multiagent protocols.
+
+\section{The Testing Challenge}
+
+Testing distributed multiagent systems presents unique challenges:
+\begin{itemize}
+\item Agents cannot directly observe each other's internal state
+\item Actions are causally linked rather than sequentially ordered
+\item Nondeterminism must be controlled for reproducible tests
+\item Network delays and failures add complexity
+\end{itemize}
+
+We address these challenges by simulating the entire system---multiple agents, users, and network---within a single \GLP computation.
+
+\section{Theater-Style Testing}
+
+We adopt a testing methodology inspired by theater. Each test scenario is a \emph{play} with \emph{actors} following a \emph{script}.
+
+\begin{center}
+\begin{tabular}{lll}
+\textbf{Term} & \textbf{Role} & \textbf{Implementation} \\
+\hline
+Agent & Personal agent (code under test) & GLP process \\
+Actor & Simulated user following script & GLP process \\
+Play & Complete test scenario & Directory with files \\
+Script & Human-readable test description & Structured English \\
+\end{tabular}
+\end{center}
+
+The architecture for each simulated person:
+\begin{verbatim}
+    Actor (simulated user)
+        |
+   user channel
+        |
+        v
+    Agent (code under test) <-- network channel --> Network
+\end{verbatim}
+
+\section{Scripts}
+
+Scripts describe causal sequences using phrases like ``after seeing X, do Y'':
+
+\begin{verbatim}
+Title: Alice and Bob become friends via cold call
+Actors: Alice, Bob
+
+---
+Scene 1: Alice initiates
+
+Alice says to her agent: connect(bob)
+
+---
+Scene 2: Bob receives offer
+
+Bob's agent says to Bob: befriend(alice, Resp)
+Bob says to his agent: decision(yes, alice, Resp)
+
+---
+Scene 3: Connection established
+
+Alice's agent establishes friend channel to Bob
+Alice says to her agent: send(bob, hello)
+
+---
+Scene 4: Message delivered
+
+Bob's agent says to Bob: msg(alice, hello)
+Bob: done
+\end{verbatim}
+
+\section{Actors}
+
+Actors are strict, deterministic \GLP processes. Each script step becomes one clause. Unexpected messages cause failure---there are no \texttt{otherwise} guards.
+
+\Program{Alice's Actor for Cold Call}
+\begin{verbatim}
+% Step 1: Initiate connection to bob
+alice(ch(In, [connect(bob)|Out?])) :-
+    alice_wait(In?, Out).
+
+% Step 2: After response, send hello
+alice_wait([response(_)|In], [send(bob, hello)|Out?]) :-
+    alice_done(In?, Out).
+
+% Step 3: Done - close output stream
+alice_done(_, []).
+\end{verbatim}
+
+Key principles:
+\begin{enumerate}
+\item Each script step = one clause
+\item Unexpected messages $\rightarrow$ no clause matches $\rightarrow$ goal suspends (test fails)
+\item Clean termination: output streams closed with \texttt{[]}
+\end{enumerate}
+
+\section{Channels}
+
+Communication uses bidirectional channels:
+
+\Program{Channel Operations}
+\begin{verbatim}
+send(X, ch(In, [X?|Out?]), ch(In?, Out)).
+receive(X?, ch([X|In], Out?), ch(In?, Out)).
+new_channel(ch(Xs?, Ys), ch(Ys?, Xs)).
+\end{verbatim}
+
+A channel \texttt{ch(In, Out)} has an input stream \texttt{In} (messages received) and output stream \texttt{Out} (messages sent). The \texttt{new\_channel} predicate creates a paired channel where each end's output is the other's input.
+
+\section{Network Simulation}
+
+For two-agent tests, a simple network switch routes messages:
+
+\Program{Two-Agent Network}
+\begin{verbatim}
+network((P, ChP), (Q, ChQ)) :-
+    receive(msg(To, X)?, ChP?, ChP1),
+    To = Q |
+    send(X?, ChQ?, ChQ1),
+    network((P?, ChP1?), (Q?, ChQ1?)).
+
+network((P, ChP), (Q, ChQ)) :-
+    receive(msg(To, X)?, ChQ?, ChQ1),
+    To = P |
+    send(X?, ChP?, ChP1),
+    network((P?, ChP1?), (Q?, ChQ1?)).
+\end{verbatim}
+
+Messages are tagged with destination; the network routes accordingly.
+
+\section{Stream Observation}
+
+To verify test execution, we observe message streams without consuming them:
+
+\Program{Stream Observer}
+\begin{verbatim}
+observe([], [], []).
+observe([X|Xs], [X?|Ys?], [X?|Zs?]) :-
+    observe(Xs?, Ys, Zs).
+\end{verbatim}
+
+This creates two copies of a stream for observation. One copy goes to the agent; the other becomes a trace for verification.
+
+\begin{formal}{SRSW and Stream Observation}
+The \texttt{observe} program appears to violate SRSW: the reader \texttt{X?} occurs twice in the second clause head. However, when \texttt{X} is bound to a ground term, the SRSW constraint on readers can be relaxed---a ground value can safely be copied.
+
+The guard \texttt{ground(X)} explicitly enables this relaxation:
+\begin{verbatim}
+observe([X|Xs], [Y1?|Ys1?], [Y2?|Ys2?]) :-
+    ground(X) |
+    Y1 = X?, Y2 = X?,
+    observe(Xs?, Ys1, Ys2).
+\end{verbatim}
+\end{formal}
+
+\section{Test Harness}
+
+The test harness wires together channels, network, agents, and actors:
+
+\Program{Cold Call Test Harness}
+\begin{verbatim}
+test(AliceTrace?, BobTrace?) :-
+    % Create channels
+    new_channel(NetA, ANet),
+    new_channel(NetB, BNet),
+    new_channel(UserA, AUser),
+    new_channel(UserB, BUser),
+
+    % Observe user channels for traces
+    AUser = ch(AIn, AOut),
+    observe(AIn?, AInCopy, AliceTrace),
+    BUser = ch(BIn, BOut),
+    observe(BIn?, BInCopy, BobTrace),
+
+    % Start network
+    network((alice, NetA?), (bob, NetB?)),
+
+    % Start agents
+    agent(alice, ch(AInCopy?, AOut?), ANet?),
+    agent(bob, ch(BInCopy?, BOut?), BNet?),
+
+    % Start actors
+    alice_actor(UserA?),
+    bob_actor(UserB?).
+\end{verbatim}
+
+Running \texttt{test(AliceTrace, BobTrace)} executes the entire simulation. The traces capture all messages for verification.
+
+\section{Verification}
+
+After a test completes:
+\begin{enumerate}
+\item Check that traces contain expected messages in order
+\item Verify final channel bindings match expected state
+\item Confirm clean termination (no suspended goals)
+\end{enumerate}
+
+A suspended goal indicates the script didn't match reality---either a bug in the agent code or an incorrect script.
+
+\section{From Simulation to Reality}
+
+The plays framework provides a development path:
+\begin{enumerate}
+\item \textbf{Design}: Write the script in structured English
+\item \textbf{Implement}: Code actors and agents
+\item \textbf{Test}: Run simulation, verify traces
+\item \textbf{Deploy}: Replace simulated network with real network (Part II)
+\end{enumerate}
+
+The agent code remains unchanged between simulation and deployment---only the network layer changes.
+
+\section{Exercises}
+
+\begin{enumerate}
+\item[$\star$] Write a script for a three-person introduction: Alice introduces Bob to Carol.
+
+\item[$\star$] Implement the actors for a message rejection scenario: Bob refuses Alice's friend request.
+
+\item[$\star\star$] Extend the network simulation to handle message delays (messages arrive after $n$ steps).
+
+\item[$\star\star$] Design a test for group formation with four participants.
+
+\item[$\star\star\star$] Implement an ``adversarial actor'' that tries to violate the protocol. Verify the agent correctly rejects invalid messages.
+\end{enumerate}
 
 %% ============================================
 %% PART II: MULTIAGENT GLP (placeholder)
