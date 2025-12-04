@@ -1,0 +1,99 @@
+\documentclass[11pt,a4paper,openright]{memoir}
+
+% Include preamble with all packages and macros
+\input{preamble}
+
+\begin{document}
+
+%% ============================================
+%% FRONT MATTER
+%% ============================================
+
+\frontmatter
+\input{frontmatter/titlepage}
+\input{frontmatter/preface}
+\input{frontmatter/how_to_read}
+\tableofcontents
+
+%% ============================================
+%% MAIN MATTER
+%% ============================================
+
+\mainmatter
+
+%% --------------------------------------------
+%% Part I: Foundations
+%% --------------------------------------------
+
+\part{Foundations}
+
+\input{chapters/ch01_introduction}
+\input{chapters/ch02_logic_programs}
+\input{chapters/ch03_glp_core}
+\input{chapters/ch04_glp_computation}
+
+%% --------------------------------------------
+%% Part II: Programming with Streams
+%% --------------------------------------------
+
+\part{Programming with Streams}
+
+\input{chapters/ch05_streams}
+\input{chapters/ch06_advanced_streams}
+\input{chapters/ch07_channels_state}
+
+%% --------------------------------------------
+%% Part III: Recursive Programming
+%% --------------------------------------------
+
+\part{Recursive Programming}
+
+\input{chapters/ch08_lists}
+\input{chapters/ch09_sorting}
+\input{chapters/ch10_arithmetic}
+
+%% --------------------------------------------
+%% Part IV: Objects and Processes
+%% --------------------------------------------
+
+\part{Objects and Processes}
+
+\input{chapters/ch11_oop}
+\input{chapters/ch12_inheritance}
+
+%% --------------------------------------------
+%% Part V: Metaprogramming
+%% --------------------------------------------
+
+\part{Metaprogramming}
+
+\input{chapters/ch13_plain_meta}
+\input{chapters/ch14_enhanced_meta}
+\input{chapters/ch15_debugging}
+
+%% --------------------------------------------
+%% Part VI: Grassroots Protocols
+%% --------------------------------------------
+
+\part{Grassroots Protocols}
+
+\input{chapters/ch16_social_graph}
+\input{chapters/ch17_befriending}
+\input{chapters/ch18_networking}
+\input{chapters/ch19_security}
+
+%% ============================================
+%% BACK MATTER
+%% ============================================
+
+\backmatter
+
+\appendix
+\input{appendices/app_syntax}
+\input{appendices/app_irglp}
+\input{appendices/app_prolog_to_glp}
+\input{appendices/app_history}
+
+\bibliography{bib}
+
+\end{document}

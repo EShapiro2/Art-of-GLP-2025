@@ -1,0 +1,110 @@
+\begin{figure}[t]
+\begin{algorithm}[H]
+    \caption{\textbf{Cordial Dissemination Blocklace Utilities.} Code for agent $p $}
+    \label{alg:blocklace}
+    \small
+    %\begin{changemargin}{0cm}{-2cm}
+    \begin{algorithmic}[1] \scalefont{0.9}
+        % \begin{multicols}{2}
+        % \State \oded{I've decreased the font size for the algorithm to fit in.}
+        \Statex \textbf{Local variables:}
+
+      
+        \StateX struct $\textit{h}$: \Comment{The structure of a hash pointer $h$ in a block, Def.\ \ref{definition:block}}
+        \StateXX $h.\textit{hash}$ -- the value of the hash pointer
+        \StateXX $h.\textit{creator}$ -- the signatory of the hash pointer
+        
+        \StateX struct $\textit{block } b$: \Comment{The structure of a block $b$ in a blocklace, Def.\ \ref{definition:block}}
+        % \StateXX $b.\textit{round}$ - the round of $v$ in the DAG
+        \StateXX $b.h$ -- hash value of the rest of the block, signed by its creator $p$
+        \StateXX $b.\textit{payload}$ -- a set of transactions
+  %      \StateXX $b.\textit{share}$ -- a share of the random coin, if needed 
+        \StateXX $b.\textit{pointers}$ -- a possibly-empty set of signed hash pointers to other blocks
+      
+       
+  %   
+	  \StateX \textit{blocklace} $\gets \{\}$  \Comment{The local blocklace of agent $p$}
+   
+ 		\vspace{0.5em}
+		\Procedure{$\textit{create\_block}$}{\textit{payload}}   \Comment{1. \textbf{Create\&Disclose}}
+		\State \textbf{new} $b$  \Comment{Allocate a new block structure}
+		\State $b.\textit{pointers} \gets \{h :  h.\textit{hash} := b.\textit{hash} \wedge 
+            h.\textit{creator} := b.\textit{creator} \wedge \textit{follows}(p,b.\textit{creator}) \wedge \textit{maximal(b)}\}$ \label{alg:sources} \Comment{Def. \ref{definition:p-closure}, Fig. \ref{figure:p-closure}}
+          \State $b.\textit{payload} \gets \textit{payload}$ 
+          \State $b.h \gets \textit{hash}((b.\textit{pointers},b.\textit{payload}))$ signed by $p$
+	       \State $\textit{blocklace} \gets \textit{blocklace} \cup \{b\}$  \label{alg:BDA-create-next-block}
+		\EndProcedure
+
+	
+ \vspace{0.5em}  
+	    \Procedure{\textit{initial}}{$b$} \label{alg:friend}
+       \Comment{$b$ is an initial block.  Def. \ref{definition:block}} 
+            \State \Return 
+            $b.\textit{pointers}=\emptyset$.
+        \EndProcedure
+
+
+        % \vspace{0.5em}
+        \Procedure{$\textit{observes}(b,b')$}{} \Comment{Def.\ \ref{definition:observe}} 
+        \State \Return $\exists b_1,b_2,\ldots,b_k \in \textit{blocklace}$, $k\ge 1$,  s.t.\
+        $b_1 = b $, $b_k = b'$ and $\forall i \in [k-1] \exists h \in b_i.\textit{pointers} \colon h.\textit{hash}= \textit{hash}(b_{i+1})$
+        \EndProcedure
+        
+        
+        % \vspace{0.5em}
+        \Procedure{$\textit{maximal}(b)$}{} \Comment{Def.\ \ref{definition:p-closure}} 
+        \State \Return $\lnot\exists b'\in \textit{blocklace}: (b'\ne b \wedge
+        b'.\textit{creator} = b.\textit{creator}  \wedge \textit{observes}(b',b))  \wedge$ 
+        \StateX 
+        $\exists b'\in \textit{blocklace}: (b'.\textit{creator}=b.\textit{creator} \wedge 
+        \textit{initial}(b') \wedge \textit{observes}(b,b'))$
+        \EndProcedure
+        
+        
+        
+        
+        % \vspace{0.5em}
+        \Procedure{$\textit{sources}$}{} \Comment{Def.\ \ref{definition:p-closure}} 
+        \State $b^* \gets b\in \textit{blocklace}$ s.t. $b.\textit{creator} = p \wedge \textit{maximal}(b)$
+        \State \Return $\{b^*\} \cup \{b \in blocklace \setminus [b^*] :
+        \textit{maximal}(b)\}$
+        \EndProcedure
+        
+        
+        
+        % \vspace{0.5em}
+
+        
+	 \Procedure{\textit{agentObserves}}{$q,b$} \label{alg:agentObserves}
+       %\Comment{foo} 
+            \State \Return $\exists b' \in \textit{blocklace} :
+      b'.\textit{creator}=q \wedge \textit{observes}(b',b)$  \Comment{Def.\ \ref{definition:observe}, Fig. \ref{figure:p-closure}}
+        \EndProcedure
+
+     
+\vspace{0.5em} 
+
+	 \Procedure{\textit{follows}}{$q,q'$} \label{alg:follows}
+       \Comment{Follows, Def.\ \ref{defininition:follows}, Fig. \ref{figure:p-closure}}
+            \State \Return $ q= q' \vee \exists b \in \textit{blocklace}: 
+      b.\textit{creator}=q 
+     \wedge  b.\textit{payload}=(\textit{`follow'},q')$  
+        \EndProcedure
+        
+   
+\vspace{0.5em} 
+
+	 \Procedure{\textit{friend}}{$q$} \label{alg:friend}
+            \Return $\textit{follows}(p,q) \wedge \textit{follows}(q,p)$  \Comment{Def.\ \ref{defininition:follows}, Fig. \ref{figure:p-closure}}
+        \EndProcedure
+   
+          
+        \alglinenoNew{counter}
+        \alglinenoPush{counter}
+    % \end{multicols}
+ 
+    \end{algorithmic}
+     % \end{changemargin}
+\end{algorithm}
+\vspace{-2.5em}
+\end{figure}

@@ -1,0 +1,1199 @@
+\documentclass[runningheads,thm-restate]{llncs}
+
+% Essential packages for LNCS
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{xspace}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{xcolor}
+\usepackage{enumitem}
+
+% Algorithm packages
+\usepackage{algorithm}
+\usepackage[noend]{algpseudocode}
+
+% Your specific packages
+\usepackage{multirow}
+\usepackage{mathtools}
+\usepackage{relsize}
+\usepackage{bm}
+\usepackage{verbatimbox}
+\usepackage{wrapfig}
+\usepackage{thmtools}
+
+% Your custom formatting commands
+\newcommand{\mypara}[1]{\smallskip\noindent\textbf{#1.}}
+\newcommand{\temph}[1]{\textbf{#1}}  % or use \emph{#1}
+\newcommand{\remove}[1]{}
+\newcommand{\udi}[1]{\textcolor{blue}{[Udi says: #1]}}
+\newcommand{\claude}[1]{\textcolor{red}{[Claude: #1]}}
+
+% Your abbreviation commands
+\newcommand{\glp}{\textsc{GLP}\xspace}
+\newcommand{\lp}{logic programs\xspace}
+\newcommand{\cp}{Concurrent Prolog\xspace}
+\newcommand{\scl}{\textsc{scl}\xspace}
+\newcommand{\gsn}{\textsc{gsn}\xspace}
+
+% Your math commands
+\newcommand{\calV}{\mathcal{V}}
+\newcommand{\calG}{\mathcal{G}}
+\newcommand{\calT}{\mathcal{T}}
+\newcommand{\calF}{\mathcal{F}}
+\newcommand{\calR}{\mathbb{R}}
+\newcommand{\calN}{\mathbb{N}}
+\newcommand{\calA}{\mathcal{A}}
+\newcommand{\V}{\mathcal{V}}
+\newcommand{\calS}{\mathcal{S}}
+\newcommand{\calL}{\mathcal{L}}
+\newcommand{\calP}{\mathcal{P}}
+\newcommand{\calM}{\mathcal{M}}
+\newcommand{\calE}{\mathcal{E}}
+\newcommand{\calB}{\mathcal{B}}
+\newcommand{\calC}{\mathcal{C}}
+\newcommand{\calX}{\mathcal{X}}
+\newcommand{\calD}{\mathcal{D}}
+
+% Roman numeral abbreviations
+\newcommand{\ia}{\textit{i}}
+\newcommand{\ib}{\textit{ii}}
+\newcommand{\ic}{\textit{iii}}
+\newcommand{\id}{\textit{iv}}
+\newcommand{\iie}{\textit{v}}
+\newcommand{\iif}{\textit{vi}}
+\newcommand{\iiv}{\textit{iv}}
+\newcommand{\iv}{\textit{v}}
+
+% Program counter for examples
+\newcounter{pc}
+\newcommand\spc{\addtocounter{pc}{1}\thepc}
+\newcommand{\Program}[1]{\medskip\noindent\textbf{Program \spc: #1}\vspace{-5pt}}
+
+% Set list spacing
+\setlist{nosep, leftmargin=*}
+\setlist{itemsep=1pt, topsep=3pt, leftmargin=*}
+
+\newtheorem{observation}{Observation}
+
+\raggedbottom  % Prevents vertical justification
+
+% Bibliography style
+\bibliographystyle{plain}
+
+\begin{document}
+
+\title{\smaller Grassroots Logic Programs:
+A Secure, Multiagent, Concurrent, Logic Programming Language}
+
+\author{Anonymous}
+\authorrunning{Anonymous}
+\institute{Anonymous}
+
+\maketitle
+
+\begin{abstract}
+Grassroots platforms are distributed applications run by\linebreak  cryptographically-identified people on their personal devices, where multiple disjoint platform instances emerge independently and coalesce when they interoperate. Their foundation is the grassroots social graph, upon which grassroots social networks, grassroots cryptocurrencies, and grassroots democratic federations can be built. Grassroots platforms have yet to be implemented, the key challenge being faulty and malicious participants: without secure programming language support, correct participants cannot reliably identify each other, establish secure communication, or verify each other's code integrity.
+
+We present Grassroots Logic Programs (GLP), a secure, multiagent, concurrent, logic programming language for implementing grassroots platforms. GLP extends logic programs with paired reader/writer variables, providing secure communication channels between authenticated friends through language-level attestations that enable identity and code integrity verification. The single-reader/single-writer (SRSW) invariant—each variable occurs at most once—enables signed and encrypted point-to-point communication whilst eliminating distributed atomic unification.
+
+We present GLP progressively: from logic programs through concurrent GLP to multiagent GLP with atomic transactions, augmenting with cryptographic security, and providing implementation-ready specifications. We prove safety properties including that GLP computations are deductions, SRSW preservation, acyclicity, and monotonicity. We prove multiagent GLP is grassroots and that GLP streams achieve blockchain security properties. We present a social graph protocol establishing authenticated peer-to-peer connections and demonstrate secure social networking applications.
+\end{abstract}
+
+\section{Introduction}
+
+\mypara{Grassroots platforms} Grassroots platforms~\cite{shapiro2023grassrootsBA} are distributed applications in which multiple disjoint platform instances emerge independently and coalesce when they interoperate. They are run by people on their personal devices, who are identified cryptographically~\cite{rivest1978method}, communicate only with authenticated friends, and can participate in multiple instances of different grassroots platforms simultaneously. The grassroots social graph~\cite{shapiro2023gsn} is both a platform in its own right and the foundational infrastructure layer for all other grassroots platforms. In it, nodes represent people, edges—authenticated friendships, and connected components arise spontaneously and interconnect through befriending. Communication in grassroots platforms occurs only along graph edges, signed and encrypted to ensure authenticity and privacy; the sole exception is the initial befriending message enabling disconnected components to connect. Upon this foundation, grassroots social networks~\cite{shapiro2023gsn}, grassroots cryptocurrencies~\cite{shapiro2024gc}, and grassroots democratic federations~\cite{shapiro2025GF} are built.
+
+Grassroots platforms~\cite{shapiro2023grassrootsBA} are distributed applications in which multiple disjoint platform instances emerge independently and coalesce when they interoperate. They are run by people on their personal devices, who are identified cryptographically~\cite{rivest1978method}, communicate only with authenticated friends, and can participate in multiple instances of different grassroots platforms simultaneously. The grassroots social graph~\cite{shapiro2023gsn} is both a platform in its own right and the foundational infrastructure layer for all other grassroots platforms. In it, nodes represent people, edges—authenticated friendships, and connected components arise spontaneously and interconnect through befriending. Communication in grassroots platforms, except for befriending across disconnected components, occurs only along graph edges, signed and encrypted to ensure authenticity and privacy. Upon this foundation, grassroots social networks~\cite{shapiro2023gsn}, grassroots cryptocurrencies~\cite{shapiro2024gc}, and grassroots democratic federations~\cite{shapiro2025GF} are built.
+
+\mypara{Programming grassroots platforms}  A key challenge in implementing grassroots platforms is overcoming faulty and malicious participants~\cite{lamport1982byzantine}. Without secure language support, correct participants cannot reliably identify each other, establish secure communication channels, or verify each other's code integrity~\cite{sabt2015trusted,costan2016intel}. 
+While grassroots platforms have been formally specified and their properties mathematically proven~\cite{shapiro2023grassrootsBA,shapiro2023gsn,shapiro2024gc,shapiro2025GF,shapiro2025atomic}, they are so far theoretical constructions without an actual implementation. The specifications define what these platforms should achieve—sovereignty, privacy, grassroots emergence—but not how to program them. No existing programming language provides the necessary combination of distributed execution, cryptographic security, and formal guarantees required to realize these specifications. Grassroots Logic Programs aim to close the gap between the mathematical specifications and an actual implementation.
+
+\mypara{A grassroots programming language} Our goal here is to design a high-level, secure, multi-agent, concurrent programming language suitable for the implementation of grassroots platforms. To do so, the language should address:
+\begin{enumerate}
+\item Mutual authentication~\cite{boyd2003protocols} enabling people to identify each other and verify each other's code identity and integrity
+\item Grassroots social graph formation through both cold calls (for bootstrap and connecting disconnected components) and friend-mediated introductions
+\item Secure communication among friends
+\item Multiagent formal semantics~\cite{shapiro2021multiagent} with well-defined safety and liveness properties~\cite{alpern1985defining}
+\item Useful abstractions for distributed multiagent programming in general, and metaprogramming support in particular, to enable the development of programming tools, debuggers, and runtime environments for the language within the language.
+\end{enumerate}
+
+
+\mypara{Grassroots Logic Programs} We present Grassroots Logic Programs (GLP), a secure, multiagent, concurrent, logic programming language designed for implementing grassroots platforms. 
+GLP extends logic programs~\cite{lloyd1987foundations,sterling1994art} with paired reader/writer variables (akin to futures and promises~\cite{dauth2019futures,azadbakht2020formal}), each establishing a secure communication channel between authenticated friends, with these shared logic variables enabling all subsequent secure communication. Such bidirectional channels serve as edges in the social graph. The single-reader/single-writer (SRSW) invariant enables signed and encrypted communication via these variables, preventing malicious participants from intercepting or forging messages, and as we prove, enables GLP streams to achieve blockchain security properties~\cite{nakamoto2008peer}.
+
+Through attestation transactions~\cite{shapiro2025atomic} at the language level, participants verify each other's identity and each other's code integrity when befriending. These mechanisms enable both cold calls (for bootstrap and connecting disconnected components) and friend-mediated introductions (the preferred trust propagation method).
+
+We present Grassroots Logic Programs and prove their properties in five steps, injecting illustrative programming examples along the way: 
+\begin{enumerate}
+\item \textbf{Logic Programs:} Define a transition system-based operational semantics for standard logic programs (LP)~\cite{lloyd1987foundations,sterling1994art}, in which the configuration (state) is a resolvent and the transition is goal/clause reduction. 
+
+\item \textbf{Concurrent GLP:} Extend LP with reader/writer pairs, which must satisfy the Single-Reader/Single-Writer (SRSW) requirement; extend unification to suspend upon an attempt to bind a reader, extend configurations to include pending assignments to readers, extend transitions to include the application of an assignment from a writer to its paired reader, and thus provide interleaving-based asynchronous operational semantics for concurrent GLP. Prove safety properties~\cite{alpern1985defining}, including that GLP computations are deductions~\cite{kowalski1974predicate,lloyd1987foundations}.  Provide GLP with `workstation implementation-ready' transition system (Appendix), based on which a workstation implementation of GLP can be developed, and use it to support GLP program development.
+
+\item \textbf{Multiagent, Concurrent GLP:} Employ multiagent transition systems~\cite{shapiro2021multiagent} with atomic transactions~\cite{shapiro2025atomic} to define the operational semantics of multiagent concurrent GLP, in which a set of identified agents reduce the resolvent cooperatively. Reduction is a unary transaction, cross-agent communication is a binary transaction among the sender and recipient, and the network provides for agents to bootstrap shared logic variables. Prove multiagent GLP is grassroots~\cite{shapiro2023grassrootsBA}. 
+
+\item \textbf{Secure, Multiagent, Concurrent GLP:} Augment agents with self-chosen keypairs and augment cross-agent assignments with encryption, signatures and attestations, resulting in secure, multiagent, concurrent GLP. Prove its security properties required for distributed systems~\cite{coulouris2011distributed} and that GLP streams enjoy the security properties of blockchains~\cite{nakamoto2008peer}.
+
+\item \textbf{Implementation-Ready Specification:} Replace nondeterministic goal selection with deterministic scheduling, and replace abstract shared-variable communication with concrete message-passing mechanisms using variable tables and routing, suitable for smartphone deployment.
+\end{enumerate}
+
+
+\section{Logic Programs}\label{section:lp}
+
+We introduce the notion of transition systems and use them to recall standard Logic Programs (LP): syntax, the notion of most-general unifier (mgu), operational semantics via nondeterministic goal/clause reduction, and a proof that LP computations are deductions.
+
+\subsection{Transition Systems}
+
+Here we introduce transition systems, which provide the formal framework for defining the operational semantics of both Logic Programs and Grassroots Logic Programs.
+We use $\subset$ to denote the strict subset relation and $\subseteq$ when equality is also possible, and $a\ne b \in S$ as a shorthand for $a\ne b\wedge q\in S \wedge b\in S$.
+
+\begin{definition}[Transition System]\label{definition:ts}
+A \temph{transition system} is a tuple $TS = (C, c0, T)$ where:
+\begin{itemize}
+    \item $C$ is a set of \temph{configurations}
+    \item $c0 \in C$ is the \temph{initial configuration}
+    \item $T \subseteq C \times C$ is a \temph{transition relation}. A transition $(c,c') \in T$ is also written as $c \rightarrow c' \in T$.
+\end{itemize}
+A transition $c \rightarrow c' \in T$ is \temph{enabled} from configuration $c$. A configuration $c$ is \temph{terminal} if no transitions are enabled from $c$. A \temph{computation} is a (finite or infinite) sequence of configurations where for each two consecutive configurations $(c,c')$ in the sequence, $c \rightarrow c' \in T$. A \temph{run} is a computation starting from $c0$, which is \temph{complete} if it is infinite or ends in a terminal configuration.
+\end{definition}
+Definition~\ref{definition:ts} uses `configuration' rather than the more standard `state'  to avoid confusion with the `local state' of agents in a multiagent transition system, Definition~\ref{definition:mts}.
+
+\subsection{Logic Programs Syntax}
+
+The syntax of Logic Programs follows the standard in logic programming and Prolog, and is formally defined in Appendix~\ref{appendix:lp}.
+We recall the quintessential logic program for list concatenation as an example:
+\begin{example}[Append]
+\begin{verbatim}
+append([X|Xs], Ys, [X|Zs]) :- append(Xs, Ys, Zs).
+append([], Ys, Ys).
+\end{verbatim}
+Logically, a logic program clause $A$\verb|:-| $B$ is a universally-quantified implication in which $B$ implies $A$, and a program is a conjunction of its clauses.
+By convention, we use plural variable names like \verb|Xs| to denote lists of elements, where the \verb|s| suffix suggests plurality. 
+\end{example}
+
+\subsection{Logic Programs Operational Semantics}
+
+\begin{definition}[Substitution, Instance, Unifier, Most-General Unifier]\label{definition:substitution}
+A \temph{substitution} $\sigma$ is an idempotent function $\sigma: V \xrightarrow{} \calT$, namely a mapping from variables to terms applied to a fixed point. By convention, $\sigma(x)=x\sigma$.
+\begin{itemize}
+    \item Given a substitution $\sigma$, $V_\sigma := \{ X \in V ~|~ X\sigma \ne X\}$.
+    \item Given a term $T \in \calT$ and a substitution $\sigma$, then $T\sigma$ is term obtained from $T$ by replacing every variable $X \in T$ by the term $X\sigma$.
+    \item The partial order on terms $\preceq \subset \calT \times \calT$ is defined by $T \preceq T'$, or $T'$ is an \temph{instance} of $T$, if there is a substitution $\sigma$ for which $T\sigma = T'$, and 
+    $T \simeq T'$ if $T \preceq T'$ and $T' \preceq T$.
+    If $T \ne T\sigma$ we say that $\sigma$ \temph{instantiates} $T$. 
+   
+    \item For substitutions $\sigma$ and $\sigma'$, $\sigma \preceq \sigma'$ if for every $T \in \calT$, $T\sigma \preceq T\sigma'$, and $\sigma \simeq \sigma'$ if for every $T \in \calT$, $T\sigma \simeq T\sigma'$.
+    
+    \item A substitution $\sigma$ is \temph{as general as} substitution $\sigma'$ if $V_\sigma \subseteq V_{\sigma'}$ and $\sigma \preceq \sigma'$.
+    \item A substitution $\sigma$ is a \temph{unifier} of two terms $T, T' \in \calT$ if $T\sigma = T'\sigma$; it is a \temph{most-general unifier (mgu)} of $T, T'$ if in addition it is as general as any other unifier of $T$ and $T'$.
+\end{itemize}
+\end{definition}
+
+Namely, a most general unifier is frugal both in its domain (not instantiating variables unnecessarily) and in its range (not instantiating variables more than necessary).
+
+\begin{remark}[Substitution as Assignment Set]
+We equivalently view a substitution $\sigma$ as a set of assignments $\{X_1:=T_1, \ldots, X_n:=T_n\}$ where $X_i\sigma = T_i$. Thus the singleton substitution mapping $X$ to $T$ is $\{X:=T\}$, its application $T\sigma$ may be written $T\{X:=T\}$, the empty substitution is $\emptyset$, and compatible substitution composition corresponds to set union.
+\end{remark}
+
+\begin{definition}[Renaming, Rename apart]\label{definition:renaming}
+A \temph{renaming} is a substitution $\sigma: V \mapsto V$ that maps variables to variables.
+A renaming $\sigma$ renames $T'$ \temph{apart from} $T$ if $T$ and $T'\sigma$ have no variable in common.
+\end{definition}
+We assume a deterministic renaming-apart function, so that the result of renaming $T'$ apart from $T$ is well defined.
+Next we define the operational semantics of Logic Programs via a transition system.
+ 
+\begin{definition}[LP Goal/Clause Reduction]\label{definition:logic-goal-clause-reduction}
+Given LP goal $A$ and clause $C$,  with $H \verb|:-| B$ being the result of renaming $C$ apart from $A$, the \temph{LP reduction} of $A$ with $C$ \temph{succeeds with result} $(B,\sigma)$ if $A$ and $H$ have an mgu $\sigma$,  else \temph{fails}.
+\end{definition}
+
+\begin{definition}[Logic Programs Transition System]\label{definition:lp-ts}
+A transition system $LP = (C,c0, T)$ is a \temph{Logic Programs transition system} for a logic program $M$ and initial goal $G_0 \in \mathcal{G}(M)$ if 
+$C=\mathcal{G}(M)$, $s0=G_0$, and $T$
+is the set of all transitions $G \rightarrow G' \in \mathcal{G}(M)^2$ such that for some atom $A \in G$ and clause $C \in M$  the LP reduction of $A$ with $C$ succeeds with result $(B,\sigma)$, and $G' = (G \setminus \{A\} \cup B)\sigma$.
+\end{definition}
+We write $G \xrightarrow{\sigma} G'$ when we want to make the substitution of a reduction explicit.
+As a tribute to resolution theorem proving~\cite{robinson1965machine}—the intellectual ancestor of logic programming—a configuration of $LP$ is also referred to as a \emph{resolvent}.
+
+Note that $LP$ is nondeterministic in its choices of both $A\in G$ (called \emph{and-nondeterminism}) and  $C\in M$ (called \emph{or-nondeterminism}).  Thus, as an abstract model of computation, Logic Programs  are  closely-related to \emph{Alternating Turing Machines}, a generalization of Nondeterministic Turing Machines~\cite{shapiro1984alternation}.
+
+\begin{definition}[Proper Run and Outcome]\label{definition:proper-run}
+A run $\rho: G_0 \xrightarrow{\sigma_1} G_1 \xrightarrow{\sigma_2} \cdots \xrightarrow{\sigma_n} G_n$ of $LP$ is \temph{proper} if for any $1\le i<  n$,  a variable that occurs in  $G_{i+1}$ but not in  $G_i$ also does not occur in any $G_j$, $j<i$.   If proper, the \temph{outcome} of $\rho$ is $(G_0 \verb|:-| G_n)\sigma$ where $\sigma = \sigma_1 \circ \sigma_2 \circ \cdots \circ \sigma_n$.
+\end{definition}
+While we use LP transition systems to define the operational semantics of Logic Programs, it so happens that the set of all outcomes of all proper runs of a logic program constitutes its fully-abstract compositional semantics~\cite{gaifman1989fully}.
+Next we prove the key safety property of LP:
+
+\begin{restatable}[LP Computation is Deduction]{proposition}{LPComputationisDeduction}\label{proposition:LP-computation-deduction}
+The outcome\linebreak $(G_0$ :- $G_n)\sigma$ 
+of a proper run $\rho: G_0 \xrightarrow{\sigma_1} G_1 \xrightarrow{\sigma_2} \cdots \xrightarrow{\sigma_n} G_n$ of $LP$  is a logical consequence of $M$, where $\sigma = \sigma_1 \circ \sigma_2 \circ \cdots \circ \sigma_n$.
+\end{restatable}
+
+\section{Grassroots Logic Programs}\label{section:glp}
+
+We present Grassroots Logic Programs (GLP) as an extension of Logic Programs: The syntax is extended with reader variables $X?$, where $X$ and $X?$ form a reader/writer pair, and the Single-Reader/Single-Writer (SRSW) restriction on clauses.  For example, here is the quintessential concurrent logic program for merging two streams (incrementally constructed, potentially unbounded lists), written in GLP.  Its first two arguments are the input streams to be merged, and the third is the merged output stream:
+
+\Program{GLP Fair Stream Merger}\label{program:merge}
+\begin{small}
+\begin{verbatim}
+merge([X|Xs],Ys,[X?|Zs?]) :- merge(Ys?,Xs?,Zs). % output from first stream
+merge(Xs,[Y|Ys],[Y?|Zs?]) :- merge(Xs?,Ys?,Zs). % output from second stream
+merge([],[],[]).                                % terminate on empty streams
+\end{verbatim}
+\end{small}
+Note that in each clause, every reader or writer occurs at most once.
+
+The operational semantics of GLP extends that of LP as follows:
+\begin{enumerate}
+\item \textbf{Synchronisation}: Unification may only instantiate writers, so in addition to succeed/fail, unification may suspend when it requires instantiating readers.
+\item \textbf{Communication}: When a unifying writer substitution binds a writer $X$ to a term $T$, the message  $X? := T$ encoding its reader counterpart substitution is created and added to the configuration. Its application happens asynchronously, realizing a message $T$ from the single occurrence of $X$ to the single occurrence of $X?$. 
+\item \textbf{Deterministic clause selection}: The first applicable clause is chosen (not nondeterministically as in LP). This implies the fairness of \verb|merge| presented above:  As long as the two input streams are available the output dovetails the two inputs, due to the switch of the order of arguments in the recursive call of the first clause; if only one is available, its elements are copied to the output; and if both unavailable the goal suspends.
+\end{enumerate}
+
+\subsection{GLP Syntax}
+
+\mypara{Reader/Writer pairs}
+GLP extends Logic Programs with paired reader/writer variables, where a \emph{writer} $X$ is a single-assignment variable (promise) and its \emph{paired reader $X?$} provides read-only access to the (future) value of $X$. We denote by $V$ the set of all writers, $V?$ the set of all readers and, $\mathcal{V} = V \cup V?$ the set of all variables, where for each writer $X \in V$ there exists a paired reader $X? \in V?$.  
+We view $?$ as an identity suffix operator on non-writers, namely  $(X?)?=X?$ for $X?\in V?$ and $T?=T$ for $T\notin \calV$. 
+We use $\calA_?$ and $\calG_?$ to denote the set of all atoms and goals, respectively, over $\calV$ (i.e., goals that may contain both readers and writers), and for a GLP program $M$,  $\calA_?(M)$  and $\calG_?(M)$ to denote the subsets of  $\calA_?$ and $\calG_?$, respectively,  restricted to the vocabulary of $M$.
+
+\mypara{Single-Reader/Single Writer (SRSW)} The critical innovation in GLP is the \emph{single-reader/single-writer requirement}:
+That any reader and any writer may occur at most once in any state of a computation.  It is realized by two complementary concepts:
+\begin{enumerate}
+    \item \emph{SRSW syntactic restriction on clauses}: In each clause each variable (reader or writer) occurs at most once
+    \item \emph{SRSW invariant}: If a resolvent satisfies the SRSW requirement, then applying to it a goal/clause reduction with a clause that satisfies the SRSW syntactic restriction produces  a resolvent that also satisfies the SRSW requirement.
+\end{enumerate}
+This SRSW syntactic restriction excludes programs like the equality definition $X=X$ which has two occurrences of the writer $X$. At the same time it
+eliminates the need for distributed atomic unification~\cite{kleinman1990distributed}—replacing it with efficient point-to-point communication of a single assignment from the single occurrence of a writer to the single occurrence of its paired reader.
+
+\subsection{GLP Operational semantics}
+
+\begin{definition}[Writer and Reader Substitution, Reader Counterpart, Suspension Set, Writer MGU]\label{definition:glp-unification}
+
+A substitution $\sigma$ is a \temph{writer substitution} if  $\sigma$: 
+\begin{enumerate}
+    \item only binds writers: $V_\sigma \subset V$
+    \item does not bind writers to writers: if $X\ne X\sigma$ then $X\sigma\notin V$
+    \item does not form cycles through readers:  $X?$ does not occur in $X\sigma$ for any $X \in V_\sigma$
+\end{enumerate}
+A substitution $\sigma$ is a \temph{reader substitution} if $V_\sigma \subset V?$.
+If $\sigma$ is a writer substitution then its \temph{reader counterpart} is the reader substitution  $\sigma?$  defined by $X?\sigma? = X\sigma$ for every $X\in V_\sigma$.
+
+The \temph{suspension set} of a (regular) substitution $\sigma$ is $W_\sigma:= \{X?\in V? : X?\sigma \notin \calV\}$.
+
+The \temph{writer unification} of two terms:
+\begin{enumerate}
+    \item \temph{succeeds with $\sigma$} if they have a writer mgu $\sigma$.
+    \item else \temph{suspends on $W_\sigma$} if they have a (regular) mgu $\sigma$
+    \item else \temph{fails}
+\end{enumerate}
+\end{definition}
+\begin{remark}
+If a writer mgu exists it is unique, rather than unique up to renaming,  since it does not include writer-to-writer bindings.
+If writer-to-writer bindings were allowed then, by the single-writer restriction, the binding would leave their two paired readers \emph{abandoned}, namely without a writer that can provide them with a value.   
+The occurs check condition for the reader counterpart ensures that no writer is bound to a term containing its paired reader, preventing the formation of circular terms, as proven in Proposition~\ref{proposition:acyclicity}.
+\end{remark}
+
+Renaming  (Definition~\ref{definition:renaming}) is extended to respect variable pairing:
+\begin{definition}[GLP Renaming]\label{definition:glp-renaming}
+ Two GLP terms $T, T'$ have a variable in common if for some writer $X$, either $X$ or $X?$ occur in $T$ and either $X$ or $X?$ occur in $T'$. A \temph{GLP renaming} is a renaming substitution $\sigma: \mathcal{V} \mapsto \mathcal{V}$ such that for each $X\in V$: $X\sigma \in V$ and $X?\sigma = (X\sigma)?$.
+\end{definition}
+
+\begin{definition}[GLP Goal/Clause Reduction]\label{definition:glp-goal-clause-reduction}
+ Given GLP goal $A$ and clause $C$,  with $H \verb|:-| B$ being the result of renaming $C$ apart from $A$,
+ the \temph{GLP reduction} of $A$ with $C$ \temph{succeeds with result} $(B,\sigma)$ if $A$ and $H$ have writer mgu $\sigma$; \temph{suspends} if $A$ has a reader-instance $A'$ for which the GLP reduction of $A'$ with $C$ succeeds; else \temph{fails}.
+\end{definition}
+
+The GLP transition system extends Definition~\ref{definition:lp-ts}:
+\begin{definition}[GLP Transition System]\label{definition:glp-ts}
+Given a GLP program $M$, an \temph{asynchronous resolvent} over $M$ is a pair $(G,\sigma)$ where $G\in \calG_?(M)$ and $\sigma$ is a reader substitution. 
+
+A transition system $GLP = (\calC,c0,\calT)$ is a \temph{GLP transition system} over $M$ and initial goal $G_0 \in \mathcal{G}_?(M)$ satisfying SRSW if:
+\begin{enumerate}
+    \item $\calC$ is the set of all asynchronous resolvents over $M$
+    \item $c0= (G_0,\emptyset)$
+    \item $\calT$ is the set of all transitions $(G,\sigma)\rightarrow (G',\sigma')$ satisfying:
+    \begin{enumerate}
+        \item \textbf{Reduce:} there exists an atom $A \in G$ such that $C \in M$ is the first clause for which the GLP reduction of $A$ with $C$ succeeds with result $(B,\hat\sigma)$, and $G' = (G \setminus \{A\} \cup B)\hat\sigma$ and $\sigma' = \sigma \circ \hat\sigma?$
+        \item \textbf{Communicate:} $\hat\sigma = \{X?:=T\} \in \sigma$, $G'= G\hat\sigma$, and $\sigma' = \sigma \setminus \hat\sigma$
+\end{enumerate}
+\end{enumerate}
+\end{definition}
+The monotonicity of GLP goal/clause reduction (Proposition~\ref{proposition:glp-monotonicity}) allows a simple \emph{GLP fairness requirement}: A goal that can be reduced is eventually reduced.
+
+\subsection{GLP Safety}
+
+Here prove that, like LP, GLP computations are deductions, but, unlike LP, a goal that can be reduced in a configuration can still be reduced in any subsequent configuration of the computation.
+
+\mypara{GLP computations are deductions}  First we show that the extensions of GLP over LP do not take it outside of the logic programming realm.
+
+\begin{definition}[Pure Logic Variant]\label{definition:pure-logic}
+Given a GLP term or goal $T$, the \temph{pure logic variant} $L(T)$ of $T$ is defined by replacing every reader $X?$ in $T$ with its paired writer $X$. Given a GLP computation  $r$, its pure logic variant $L(r)$ is the result of replacing every configuration $(G,\sigma)$ in $r$ by $L(G)$,  removing stutter transition (every configuration identical to their predecessor), and labelling the remaining transitions by the mgu of their respective reduction.
+\end{definition}
+
+\begin{restatable}[GLP Computations are Deductions]{proposition}{GLPComputationsareDeductions}\label{theorem:glp-computation-deduction}
+For any finite GLP run $r$, let $L(r) = G0\xrightarrow{\sigma_1}G_1\xrightarrow{\sigma_2}\ldots G_n$, with $\sigma = \sigma_1\cdot \ldots \cdot \sigma_n$, then  $(G_$ :- $G_n)\sigma$ is a logical consequence of $L(M)$.
+\end{restatable}
+
+We establish essential safety properties for GLP that distinguish it from standard LP. The key innovation is monotonicity—once a goal becomes reducible in GLP, it remains reducible, unlike LP where variable instantiation can cause unification to fail.
+
+\mypara{SRSW}
+\begin{restatable}[SRSW Invariant]{proposition}{SRSWInvariant}\label{proposition:srsw-preservation}
+If in a $GLP$ run the initial goal $G_0$ satisfies the SRSW requirement, then every goal in the run satisfies the SRSW requirement.
+\end{restatable}
+
+\mypara{Acyclicity}
+The occurs check in readers prevents the formation of circular terms.
+
+\begin{restatable}[Acyclicity]{proposition}{Acyclicity}\label{proposition:acyclicity}
+If in a $GLP$ run the initial goal $G_0$ contains no circular terms, then no goal in the run contains a circular term.
+\end{restatable}
+
+\mypara{Monotonicity}
+Unlike LP where variable instantiation can cause a previously reducible goal to fail, GLP exhibits monotonicity. In a run, if a goal $A$ can be reduced at some point, it remains reducible at all future points in that run, where 
+``future" implies that readers in $A$  (and only readers) have been further instantiated by other goal reductions.
+
+\begin{restatable}[Reader-Instance]{lemma}{ReaderOnlyInstantiation}\label{lemma:reader-only}
+In any $GLP$ run $G_0 \rightarrow G_1 \rightarrow \cdots$, if $G_i \rightarrow G_{i+1}$ via reduction with substitution $\sigma?$, then for any atom $A \in G_{i+1}$ that also appeared in $G_i$, we have $A = A'\tau$ where $A' \in G_i$ and $\tau$ instantiates only readers.
+\end{restatable}
+
+\begin{restatable}[Monotonicity]{proposition}{Monotonicity}\label{proposition:glp-monotonicity}
+In any $GLP$ run $G_0 \rightarrow G_1 \rightarrow \cdots$, if atom $A \in G_i$ can reduce with clause $C$, then for any $j > i$, either $A$ has been reduced by step $j$, or there exists $A' \in G_j$ where $A' = A\tau$ for some reader substitution $\tau$, and $A'$ can reduce with $C$.
+\end{restatable}
+
+\section{Programming Examples}\label{section:programming-examples}
+
+We present basic GLP programming techniques. Additional programming examples demonstrating advanced concurrent techniques appear in Appendix~\ref{appendix:additional-techniques}.
+
+\subsection{Guards and System Predicates}
+
+Guards provide read-only access to the runtime state of GLP computation. A guard appears after the clause head, separated by \verb=|=, and must be satisfied for the clause to be selected:
+
+\begin{itemize}
+\item \verb|ground(X)| succeeds if \verb|X| contains no variables, enabling safe replication of ground terms to multiple concurrent consumers.
+\item \verb|known(X)| succeeds if \verb|X| is not a variable.
+\item \verb|writer(X)| and \verb|reader(X)| test variable states.
+\item \verb|otherwise| succeeds if all previous clauses failed.
+\item \verb|X=Y| and \verb|X=\=Y| test equality and unification failure.
+\end{itemize}
+
+User-defined guards enable abstract data types through unit clauses \verb|p(T1,...,Tn)|. System predicates \verb|evaluate|, \verb|current_time|, and \verb|variable_name| provide runtime services.
+
+\subsection{Basic Concurrent Communication}
+
+Streams enable continuous communication between concurrent processes:
+
+\Program{Concurrent Producer-Consumer}\label{program:producer-consumer}
+\begin{small}
+\begin{verbatim}
+producer([N?|Xs?],N) :- N1 := N? + 1, producer(Xs,N1?).
+consumer([X|Xs],Sum) :- Sum1 := Sum? + X?, consumer(Xs?,Sum1?).
+\end{verbatim}
+\end{small}
+
+When executed with goal \verb|producer(Stream,0), consumer(Stream?,0)|, the producer continuously extends the stream while the consumer concurrently processes each element. Reader/writer pairs provide synchronization, with fairness ensuring each produced element is eventually consumed.
+
+\section{Multiagent Grassroots Logic Programs}\label{section:maGLP}
+
+We first extend the notion of transition systems to multiagent transition systems,  then use them to extend GLP to multiagent GLP, and finally prove that multiagent GLP is grassroots.
+
+\subsection{Multiagent transition systems and atomic transactions} 
+
+We assume a potentially infinite set of \emph{agents} $\Pi$ (think of all the agents that are yet to be born), but consider only finite subsets of it,  so when we refer to a particular set of agents $P \subset \Pi$ we assume $P$ to be nonempty and finite.
+We extend the notion of transition systems (Definition~\ref{definition:ts}) to be multiagent~\cite{shapiro2023grassrootsBA,shapiro2025atomic}:
+
+\begin{definition}[Multiagent Transition System]\label{definition:mts}
+Given agents $P \subset \Pi$ and an arbitrary set $S$ of \temph{local states} with a designated \temph{initial local state} $s0\in S$, 
+a \temph{multiagent transition system} over $P$ and $S$ is a transition system $TS= (C,c0,T)$ with $C:= S^P$,  $c0:= \{s0\}^P$, and $T\subseteq C^2$ being a set of \temph{multiagent transitions} over $P$ and $S$. For $c\in C$ and $p\in P$, let $c_p$ denote the $p$-indexed element of $c$, define $TS$ to be of \temph{degree} $k$  (unary, binary, $k$-ary) if $k$ is the minimal number such that for every transition $c \rightarrow c' \in T$, at most $k$ agents $p\in P$ change their local state, $c_p \neq c'_p$.
+\end{definition}
+
+Informally, a multiagent configuration $c$ over $P$ can be thought of as an array indexed by agents in $P$, with $c_p$, the local state of $p$ in $c$, being the array element indexed by $p$.
+
+\begin{definition}[Transaction, Closure]\label{definition:closure}
+Let $P\subset \Pi$, $S$ a set of local states, and $C:=S^P$.
+A \temph{transaction} $t=(c\rightarrow c')$ over local states $S$ with \temph{participants} $Q \subset \Pi$ is but a multiagent transition over $S$ and $Q$.
+For every $P\subset \Pi$ s.t.  $Q\subseteq P$, the \temph{$P$-closure of $t$}, $t{\uparrow}P$,  is the set of transitions over $P$ and $S$ defined by:
+$$
+t{\uparrow}P := \{ t' \in C^2  :
+\forall p\in Q.(t_p = t'_p) \wedge \forall p\in P\setminus Q.(p\text{ is stationary in }t')\}
+$$
+If $R$ is a set of transactions, each $t\in R$ over some $Q\subseteq P$ and $S$, then the 
+\temph{$P$-closure of $R$}, $R{\uparrow}P$, is the set of $P$-transitions 
+$ R{\uparrow}P := \bigcup_{t\in R} t{\uparrow}P$.
+\end{definition}
+Namely, the closure over $P\supseteq Q$ of a transaction $t$ over $Q$ includes all transitions $t'$ over $P$ in which members of $Q$ do the same in $t$ and in $t'$, and the rest remain in their current (arbitrary) state.  A set of transactions $R$ over $S$, each with participants $Q\subseteq P$, defines a multiagent transition system as follows:
+
+\begin{definition}[Transactions-Based Multiagent Transition System]\label{definition:tbdts}
+Given agents $P \subset \Pi$, local states $S$ with initial local state $s0\in S$, 
+and a set of transactions $R$, each $t\in R$ over some $Q\subseteq P$ and  $S$, a \temph{transactions-based multiagent transition system} over $P$, $S$, and $R$ is the multiagent transition system $TS= (S^P,\{s0\}^P,R{\uparrow}P)$ .
+\end{definition}
+
+In other words, one can fully specify a multiagent transition system over $S$ and $P$ simply by providing a set of atomic transactions over $S$, each with participants $Q\subseteq P$.  Reference~\cite{shapiro2025atomic} provided transactions-based specification for social networks, grassroots cryptocurrencies, and grassroots federations.  Here we do that for multiagent GLP.
+
+\subsection{Multiagent GLP} 
+
+We extend GLP to be multiagent by letting agents' local states to be asynchronous resolvents, have unary Reduce transitions in which agents reduce a local goal and add reader assignments to it pending assignments, and binary Communicate transitions between agents $p$ and $q$ in case $p$ has suspended $X?:=T$ and $X?$ occurs in the resolvent of $q$.
+
+The key difference between GLP and multiagent GLP is in the initial state. In a multiagent transition systems all agents must have the same initial state $s0$.  This precludes setting up an initial configuration in which agents share logic variables, as this would imply different initial states for different agents, which need to be coordinated a priori.  Our solution is congruent with reality: Recall that GLP agents are envisioned as apps running on networked smartphones owned and operated by people. Thus, each agent is initialized with two channels, one for communicating with its `user', namely the person operating the smartphone, the other for communicating with the network.  Furthermore, we assume that agents can use the network to establish initial shared logic variables, via which subsequent logic variable-based communication can proceed.
+
+Thus, the initial state of each agent is the atomic goal\linebreak \verb|agent(ch(UIn?,UOut),ch(NIn?,NOut))|, with the variables unique to each agent, so formally written as \verb|agent(ch(_?,_),ch(_?,_))|.  Furthermore, we assume that in a multiagent GLP transition over agents $P\subset\Pi$, the network connecting them can transfer messages from the network output stream one agent to the network input stream of another, as specified by the following GLP program template, assuming the network process holds in position $p$ the paired channel of the network channel of $p$, for every $p\in P$.
+
+Note that the initial state \verb|agent(ch(_?,_),ch(_?,_))| employs anonymous variables and is thus identical across all agents.  Upon initialization, each agent creates them as fresh, unique variables. 
+
+The Network transaction defined below causes the multiagent GLP system to behave as if agents' network channels were paired to a \verb|network| GLP process that routes messages between them: Messages sent to agent $q$ via agent $p$'s network output stream appear on agent $q$'s network input stream, realizing communication as specified by the following GLP program.  However, the network is not another GLP agent; the purpose of the \verb|network| program is solely to provide  behavioural specification of how the network should behave. 
+
+Thus, the following GLP program template specifies the required network behaviour rather than mandating a particular implementation:
+
+\Program{Network switch, representative clause}~\label{program:switch}
+\begin{small}
+\begin{verbatim}
+% clause for forwarding a message from p to q:
+network(...,(p,Chp),...,(q,Chq),.... :-
+    receive(Chp?,msg(q,X),Chp1),
+    send(Chq?,X?,Chjq1) |
+    network(...,(p,Chp1?),...,(q,Chq1?),....)
+\end{verbatim}
+\end{small}
+
+To avoid notational clutter, the Network binary transition below refers to the operation of \verb|network| verbally. It is activated when agent $p$ binds its network output stream tail to a list cell with head \verb|msg|$(q,X)$, as specified by the \verb|network|.
+A concrete 3-way switch is shown in Appendix~\ref{appendix:additional-techniques}.
+
+We leave the specification of `user' open; assuming people have free will, their behaviour cannot be specified in GLP:)  However,  programs for testing a multiagent GLP program or for simulating specific social behaviours can of course be added.
+
+\begin{definition}[Multiagent GLP]\label{definition:maglp}
+The \temph{maGLP transition system} over agents $P\subset \Pi$ and GLP module $M$ is the multiagent transition system $maGLP$ over multiagent asynchronous resolvents over $M$ and the following transactions $c\rightarrow c'$:
+\begin{enumerate}
+    \item \textbf{Reduce $p$:} $c_p\rightarrow c'_p$ is a GLP Reduce transition, $\forall p\in P$
+    \item \textbf{Communicate $p$ to $q$:}  $c_p=(G_p,\sigma_p)$, $c_q=(G_q,\sigma_q)$, $\{X?:=T\} \in \sigma_p$, $X?$ occurs in $G_q$, $c'_p=(G_p,\sigma_p \setminus \{X?:=T\})$, and $c'_q=(G_q\{X?:=T\},\sigma_q)$, $\forall p,q \in P$  (including $p=q$)
+    \item \textbf{Network $p$ to $q$:} The network output stream in $c_p$ has a new message \verb|msg|$(q,X)$ and $c'_q$ is the result of adding $X?$ to the network input stream in $c_q$
+\end{enumerate}
+\end{definition}
+Note that Reduce is unary while Communicate and Network are binary. Both transfer assignments from writers to readers: Communicate operates between agents sharing logic variables, while Network operates through the network input/output streams established in each agent's initial configuration. Network and Communicate are essentially identical:  In both cases an assignment to a writer in $p$ results in its application to a reader in $q$.
+
+To show that maGLP computations are deductions, $L$ is augmented so the resolvent is the union of all local resolvents, the initial goal includes also a \verb|network| goal with  $|P|$ channels paired correctly to each agent's initial network channels, and the module $M$ is augmented with the GLP definition of  \verb|network|.   Other than that, safety properties for GLP and maGLP are essentially identical. Proofs carry over directly referring to multiagent asynchronous resolvents instead of asynchronous resolvents.
+
+\subsection{Multiagent Grassroots Logic Programs are  Grassroots}
+
+\mypara{Overview}
+Here we prove that multiagent Grassroots Logic Programs are indeed \emph{grassroots}~\cite{shapiro2023grassrootsBA}. To do so, we recall necessary mathematical foundations:
+\begin{enumerate}
+    \item \textbf{Protocols:} The notion of grassroots applies to protocols: A \emph{protocol} $\calF$ is an infinite family of multiagent transition systems, one $\calF(P)$  for each set of agents $P\subset\Pi$.
+    \item \textbf{Grassroots:} Informally, proving that a protocol $\calF$ is grassroots requires proving for that for any two sets of agents $P\subset P'$:
+        \begin{enumerate}
+            \item \textbf{Oblivious:}  Any behaviours available to agents $P$ according to $\calF(P)$ are also available to them  when they operate within $P'$, namely in $\calF(P')$ 
+            \item \textbf{Interactive:}  There are behaviours available to agents $P$ operating within  $P'\supset P$ not available when they operate on their own in $\calF(P)$
+        \end{enumerate}
+\end{enumerate}
+We proceed with the definitions.
+
+\begin{definition}[Local-states function]\label{definition:local-states}
+A \temph{local-states function} $S: 2^\Pi \mapsto 2^\mathcal{S}$ maps every set of agents $P \subset \Pi$ to a set of local states $S(P) \subset \mathcal{S}$ that includes a designated initial state $s0 \in \mathcal{S}$ and satisfies $P \subset P' \subset \Pi \implies S(P) \subset S(P')$.
+\end{definition}
+
+\begin{definition}[Protocol]\label{definition:protocol}
+A \temph{protocol} $\mathcal{F}$ over a local-states function $S$ is a family of multiagent transition systems that has exactly one mts $\mathcal{F}(P) = (C(P), c_0(P), T(P))$ for every $P \subset \Pi$, where $c_p \in S(P)$ and  $c0(P)_p = s0$ for every $c\in C(P)$ and $p\in P$.
+\end{definition}
+
+Note that maGLP over $M$ and $P$ is a protocol, parameterized by $P$. Next we recall the notion of a grassroots protocol.
+
+\begin{definition}[Projection]\label{definition:projection}
+Let $\emptyset \subset P \subset P' \subset \Pi$. If $c'$ is a configuration over $P'$ then $c'/P$, the \temph{projection of $c'$ over $P$}, is the configuration $c$ over $P$ defined by $c_p := c'_p$ for every $p \in P$.
+\end{definition}
+Note that in the definition above, $c_p$, the state of $p$ in $c$, is in $S(P')$, not in $S(P)$, and hence may include elements ``alien'' to $P$, e.g., logic variables shared with $q \in P' \setminus P$.
+
+We use the notions of projection and closure (Definition \ref{definition:closure}) to define when a protocol is grassroots:
+
+\begin{definition}[Oblivious, Interactive, Grassroots]\label{definition:grassroots}
+A protocol $\mathcal{F}$ is:
+\begin{enumerate}
+    \item \temph{oblivious} if for every $\emptyset \subset P \subset P' \subseteq \Pi$, 
+    $T(P){\uparrow}P'\subseteq T(P')$
+    \item \temph{interactive} if for every $\emptyset \subset P \subset P' \subseteq \Pi$ and every configuration $c\in C(P')$ such that $c/P\in C(P)$, there is a computation $c\xrightarrow{*} c'$ of $\mathcal{F}(P')$ for which $c'/P\notin C(P)$.
+    \item \temph{grassroots} if it is oblivious and interactive.
+\end{enumerate}
+\end{definition}
+For protocols defined via atomic transactions, such as maGLP, we get the oblivious property ``for free'':
+\begin{proposition}[\cite{shapiro2025atomic}]\label{proposition:oblivious}
+A transactions-based protocol is oblivious. 
+\end{proposition}
+
+The interactive property requires that agents in $P$ can always potentially interact with agents in $P' \setminus P$, leaving "alien traces" in their local states that could not have been produced by $P$ operating alone.  In maGLP this is achieved by the Network transition, in which agent $q\in P'\setminus P$ sends a message with a logic variable to agent $p\in P$.
+
+\begin{restatable}{theorem}{maGLPisgrassroots}\label{theorem:maglp-grassroots}
+maGLP is grassroots.    
+\end{restatable}
+
+\section{The Grassroots Social Graph}\label{section:social-graph}
+
+The grassroots social graph emerges through a protocol enabling agents to establish authenticated bidirectional communication channels through cold calls. Friend-mediated introductions, which leverage existing trust relationships, are presented in Appendix~\ref{appendix:friend-introductions}.
+
+\subsection{Protocol Architecture}
+
+Each agent maintains its social graph neighbourhood as a friends list containing named bidirectional channels to connected peers. The protocol achieves non-blocking asynchronous operation through GLP's synchronization mechanisms: agents send offers containing unbound response variables and continue processing while awaiting responses.
+
+\subsection{Initialization and Message Routing}
+
+Each agent begins with the goal \verb|agent(Id, ChUser, ChNet)| where \verb|Id| is the agent's unique identifier, \verb|ChUser| provides bidirectional communication with the user interface, and \verb|ChNet| connects to the network:
+
+\Program{Social Graph Initialization}\label{program:social-init}
+\begin{small}
+\begin{verbatim}
+agent(Id, ChUser, ChNet) :- 
+    ChUser = ch(UserIn, UserOut), ChNet = ch(NetIn, NetOut) |
+    merge(UserIn?, NetIn?, In),
+    social_graph(Id?, In?, [(user, UserOut), (net, NetOut)]).
+\end{verbatim}
+\end{small}
+
+The initialization merges input streams and stores output streams in the friends list with special identifiers "user" and "net", enabling uniform message sending regardless of destination type.
+
+\subsection{Cold Call Protocol}
+
+The cold call mechanism enables agents to establish friendship without prior shared variables:
+
+\Program{Social Graph Cold-Call Protocol}\label{program:social-graph}
+\begin{small}
+\begin{verbatim}
+% Process user request to connect
+social_graph(Id, [msg(user, Id, connect(Target))|In], Fs) :-
+    ground(Id), ground(Target) |
+    lookup_send(net, msg(Id, Target, intro(Id?, Id?, Resp)), Fs?, Fs1),
+    inject(Resp?, msg(Target, Id, response(Resp)), In?, In1),
+    social_graph(Id, In1?, Fs1?).
+
+% Process received introduction
+social_graph(Id, [msg(From, Id, intro(From, From, Resp))|In], Fs) :-
+    ground(Id), attestation(intro(From, From, Resp), att(From, _)) |
+    lookup_send(user, msg(agent, user, befriend(From?, Resp)), Fs?, Fs1),
+    social_graph(Id, In?, Fs1?).
+
+% Process user decision
+social_graph(Id, [msg(user, Id, decision(Dec, From, Resp?))|In], Fs) :-
+    ground(Id) |
+    bind_response(Dec?, From?, Resp, Fs?, Fs1, In?, In1),
+    social_graph(Id, In1?, Fs1?).
+
+% Process response to sent introduction
+social_graph(Id, [msg(From, Id, response(Resp))|In], Fs) :-
+    ground(Id) |
+    handle_response(Resp?, From?, Fs?, Fs1, In?, In1),
+    social_graph(Id, In1?, Fs1?).
+
+% Application message handling
+social_graph(Id, [msg(From, To, Content)|In], Fs) :-
+    ground(Id), otherwise |
+    social_graph(Id, In?, Fs?).
+
+inject(X,Y,Ys,[Y?|Ys?]) :- known(X) | true.
+inject(X,Y,[Y1|Ys],[Y1?|Ys1?]) :- unknown(X) | inject(X?,Y?,Ys?,Ys1).
+\end{verbatim}
+\end{small}
+
+The protocol handles user-initiated connections by sending offers with unbound response variables. The \verb|inject| procedure defers response insertion until the variable becomes bound, ensuring non-blocking operation. Received offers are forwarded to the user for approval, with decisions processed through \verb|bind_response| and \verb|handle_response|.
+
+\subsection{Channel Establishment}
+
+When an offer is accepted, both agents establish symmetric channel configurations:
+
+\Program{Response Processing}\label{program:response-handling}
+\begin{small}
+\begin{verbatim}
+bind_response(yes, From, accept(FCh), Fs, Fs1, In, In1) :-
+    new_channel(ch(FIn, FOut), FCh),
+    handle_response(accept(FCh?), From, Fs, Fs1, In, In1).
+bind_response(no, _, no, Fs, Fs, In, In).
+
+handle_response(accept(ch(FIn, FOut)), From, Fs, [(From, FOut)|Fs], In, In1) :-
+    tag_stream(From?, FIn?, Tagged),
+    merge(In?, Tagged?, In1).
+handle_response(no, _, Fs, Fs, In, In).
+\end{verbatim}
+\end{small}
+
+When accepting, \verb|bind_response| creates a new channel pair with crossed streams, ensuring both agents receive complementary endpoints. The \verb|handle_response| procedure adds the friend's output to the friends list and merges the tagged input stream into main message flow.
+
+\section{Securing Multiagent Grassroots Logic Programs}\label{section:glp-security}
+
+\subsection{Secure Multiagent GLP}
+
+Here we assume that each agent $p\in \Pi$ has a self-chosen keypair, unique whp, with a public key known to all other agents, and identify $p$ with its public key.
+In addition to the standard cryptographic assumptions on the security of encryption and signatures, we assume that the underlying GLP execution mechanism can produce \emph{attestations}: A proof that a network message  $\verb|msg|(q,X)$ or a substitution message $\{X?:=T\}$  was produced by module $M$ as a result of a correct goal/clause reduction. For such a message $E$, we denote by $E_M$ the message together with its attestation, and by $E_{M,p}$ such an attestation further signed by agent $p$'s private key. Furthermore, we assume that when such a signed attestation is sent to agent $q$, it is encrypted with $q$'s public key, denoted $E_{M,p,q}$. In summary, each message  $\verb|msg|(q,X)$ or assignment to $X$ produced by agent $p$ using module $M$ is sent to the intended recipient $q$ or the holder $q$ of $X?$ attested by $M$, signed by $p$ and encrypted for $q$.\footnote{
+On current smartphones, secure multiagent GLP is realized through Trusted Execution Environments (TEEs) with hardware providers (e.g., ARM TrustZone~\cite{pinto2019demystifying}) as trust anchors, combined with OS-level attestation services (Google Play Integrity~\cite{googlePlayIntegrity}, Apple App Attest~\cite{appleAppAttest}) with OS providers as trust anchors. This infrastructure authenticates and attests to the integrity of the sender and prevents tampering while ensuring confidentiality.}
+
+Programs require the ability to inspect attestations on received messages and identify their own module for protocol decisions. GLP provides guard predicates for security operations:
+\begin{itemize}
+\item \verb|attestation(X, Info)| succeeds if \verb|X| carries an attestation, binding \verb|Info| to a term \verb|att(Agent, Module)| containing the attesting agent's public key and module identifier. For locally-produced terms, \verb|Agent| binds to \verb|self|. The guard fails for unauthenticated data and suspends if \verb|X| is not yet bound.
+\item \verb|module(M)| binds \verb|M| to the identifier of the currently executing module. Agents use this guard to determine their own module identity when evaluating compatibility with other agents' attested modules.
+\end{itemize}
+
+While the formal specification requires attestation, signature and encryption for every message, practical implementations employ standard cryptographic optimizations: Attestation can be required only on initial contact and verified intermittently rather than for every message. Public keys exchanged during initial attestation can establish secure agent-to-agent channels using ephemeral session keys through protocols such as Diffie-Hellman key exchange~\cite{diffie1976new}, providing perfect forward secrecy whilst reducing encryption costs. These optimizations are transparent to the GLP program level.
+
+\subsection{Program-Independent Security Properties}
+
+The cryptographic mechanisms of secure maGLP guarantee three fundamental properties for all executions:
+
+\begin{enumerate}
+\item \textbf{Integrity:} Any entity $E_{M,p,q}$ transmitted from agent $p$ to agent $q$ either arrives unmodified or is rejected upon signature verification failure.
+
+\item \textbf{Confidentiality:} The content of $E_{M,p,q}$ remains inaccessible to all agents except $q$, as decryption requires $q$'s private key. Combined with the SRSW invariant ensuring exclusive reader/writer pairing, this prevents both direct cryptographic attacks and indirect access through shared variables.
+
+\item \textbf{Non-repudiation:} Agent $p$ cannot deny sending any entity successfully verified as $E_{M,p,q}$, as the valid signature constitutes cryptographic proof of authorship.
+\end{enumerate}
+
+\subsection{Security of the Social Graph Protocol}
+
+While secure multiagent GLP automatically generates attestations for all inter-agent messages, programs must explicitly verify these attestations. The social graph protocol verifies attestations when processing received messages:
+
+\begin{small}
+\begin{verbatim}
+social_graph(Id, [msg(From, Id, offer(Resp))|In], Fs) :-
+    ground(Id), attestation(offer(Resp), att(Sender, Module)) |
+    verify_offer(Sender?, From?, Module?, Resp, Fs?, Fs1, In?, In1),
+    social_graph(Id, In1?, Fs1?).
+\end{verbatim}
+\end{small}
+
+The attestation guard extracts the actual sender's public key and module identifier. The protocol verifies \verb|Sender| matches the claimed \verb|From| field, preventing impersonation, and checks \verb|Module| compatibility before forwarding offers to users.
+
+Cold call offers carry attestation $(\verb|msg|(q,\verb|offer|(\verb|Resp|)))_{M,p,q}$ proving agent $p$ executes module $M$. Acceptance returns $(\verb|Resp:=accept(FCh)|)_{M,q,p}$, establishing mutual authentication. The signature proves control of private keys whilst attestation verifies code execution. The protocol prevents Sybil attacks (requiring separate attested execution environments), man-in-the-middle attacks (through encryption and SRSW-guaranteed exclusive channels), and impersonation (through signature verification).
+
+\subsection{Blockchain Properties of GLP Streams}
+
+Authenticated GLP streams achieve blockchain security properties through language-level guarantees. The single-assignment semantics provides \textbf{immutability} without cryptographic hashing. The SRSW invariant ensures \textbf{unforkability}—only one continuation per stream tail. Stream extensions carry attestations providing \textbf{non-repudiation}. The occurs check guarantees \textbf{acyclicity}. Traditional blockchains employ competitive consensus; GLP's single-writer constraint enables elegant cooperative protocols through explicit handover (Program~\ref{program:cooperative} in Appendix~\ref{appendix:additional-techniques}). Interlaced streams (Appendix~\ref{appendix:additional-techniques}) form blocklaces~\cite{almeida2024blocklace}—DAGs where blocks reference multiple predecessors, achieving eventual consistency equivalent to Byzantine fault-tolerant CRDTs~\cite{shapiro2011conflict} whilst maintaining blockchain integrity. Mutual attestations in secure maGLP ensure all participating agents run verified code, enabling consensus protocols to eliminate Byzantine fault tolerance mechanisms when using interlaced streams.
+
+\section{Implementation}\label{section:implementation}
+
+The implementation of Grassroots Logic Programs on smartphones requires cross-platform mobile deployment, garbage-collected memory management, lightweight concurrency, cryptographic operations, and TEE attestation access. The Dart programming language~\cite{dartIsolates}, deployed via Flutter~\cite{flutter}, satisfies these requirements. Flutter compiles to native iOS and Android applications from a single codebase, while Dart's event loop with microtask scheduling maps naturally to GLP's operational semantics. Flutter plugins provide access to Google Play Integrity~\cite{googlePlayIntegrity} and Apple App Attest~\cite{appleAppAttest}, enabling TEE-based peer verification. Server infrastructure supports initial attestation and NAT traversal via STUN~\cite{rfc5389}, TURN~\cite{rfc5766}, and ICE~\cite{rfc8445}, but core GLP execution remains peer-to-peer on smartphones.
+
+\mypara{Architecture}
+The Dart implementation maps the formal `implementation-ready' multiagent GLP semantics (detailed in Appendix~\ref{appendix:IR-maGLP}) to concrete smartphone operations. Each agent maintains its resolvent as Dart microtasks with three goal categories: active (queued for reduction), suspended (awaiting variable bindings), and failed (permanently blocked). A shared variable table tracks creator-holder relationships for distributed variables, enabling message routing without consensus protocols.
+
+The implementation preserves GLP's three core transactions. \textbf{Reduce} performs goal/clause reduction within microtasks, generating assignments for remote readers. \textbf{Communicate} delivers these assignments across agents via encrypted, signed, and attested messages routed through variable creators. \textbf{Network} handles initial channel establishment for cold calls. The single-reader/single-writer invariant eliminates distributed unification, while creator-mediated routing ensures messages reach their destinations despite variable migration.
+
+Security enforcement occurs at message boundaries as specified in Section~\ref{section:glp-security}. Practical implementations employ the standard cryptographic optimizations described earlier—including intermittent attestation verification and session-key-based channels—to reduce computational overhead while maintaining security guarantees. 
+
+\section{Related Work}\label{section:related-work}
+
+Implementing grassroots platforms imposes distinctive requirements on a programming language. Agents must verify each other's cryptographic identity and application-level code integrity upon first contact, establishing authenticated communication channels that form the grassroots social graph. Since the same agent may run multiple grassroots platforms concurrently (social networks, currencies, governance) and participate in multiple independent instances of each platform simultaneously, agents must verify not only that counterparts execute trusted runtime code but also which specific application protocols they implement and whether those protocols are compatible for interoperation. This application-level attestation must integrate into the language's operational semantics, enabling programs themselves to inspect attestation evidence and make protocol-compatibility decisions. Multiple independent platform instances must emerge without coordination and coalesce spontaneously when instances meet through peer-initiated connections, requiring no global infrastructure beyond peer-to-peer networking. Additionally, the language should support metaprogramming—the ability to write programs that reason about and manipulate its own programs—enabling development of programming tools, debuggers, and runtime environments within the language itself, essential for a productive platform development ecosystem.
+We examine existing work in distributed programming languages and secure frameworks to assess how they address these requirements.
+
+\mypara{Distributed actor and process languages}
+Actor-based and process-oriented languages~\cite{agha1986actors} provide foundations for distributed computation through message-passing concurrency and isolation. Erlang/OTP achieves fault isolation through separate memory spaces and location-transparent messaging, whilst active object languages~\cite{boer2017survey,boer2024active} provide structured concurrency with asynchronous method calls and futures. Pony achieves compile-time prevention of data races through capability-based type systems, whilst Swift's distributed actors extend local actor isolation to distributed systems with location transparency. These languages excel at building distributed systems where processes communicate through well-defined channels. However, we are not aware of mechanisms in these languages enabling application code to inspect attestation evidence about which specific protocols counterpart agents implement. While these systems may employ transport-level security (TLS, mutual authentication), verification remains at the infrastructure level rather than enabling applications to programmatically reason about protocol compatibility. These frameworks typically assume deployment within pre-established clusters or service meshes with coordinated configuration.
+
+\mypara{Capability security and distributed object languages}
+E~\cite{miller2006robust} is a general-purpose distributed programming language for secure computing, descended from the Actor Model~\cite{agha1986actors}, Joule~\cite{tribble1995joule}, and Concurrent Prolog~\cite{shapiro1987concurrent,shapiro1989family}, providing capability-based security through unforgeable object references with automatic encryption of all distributed communication. In E's security model, capabilities are object-centric—holding a reference to an object grants authorization to invoke its operations, regardless of who holds that reference. This provides robust access control where objects grant least-authority capabilities to untrusted code, solving the authorization problem of determining what resources an object may access. However, E's model does not appear to address identity verification—determining which person or agent holds an object reference—or protocol attestation—verifying what code a remote object executes or which protocol it implements. For grassroots platforms, these distinctions matter: when agents establish peer connections, they must verify both cryptographic identity (is this really the claimed person?) and protocol compatibility (does their code implement a compatible version of the social graph or currency protocol?). Capability-based authorization and identity-based attestation serve complementary security goals—the former determines access rights given trust, whilst the latter establishes the trust foundation itself.
+
+\mypara{Session types in programming languages}
+Session types~\cite{honda1993types} ensure protocol conformance in concurrent systems by encoding communication protocols as types. Several programming languages integrate session types: Links~\cite{cooper2007links,lindley2017lightweight} provides lightweight functional session types for web applications; Rust implementations~\cite{jespersen2015session} leverage affine typing for protocol safety; Scala~\cite{scalas2016lightweight} integrates session types through continuation-passing style protocols; and Go~\cite{castro2019distributed} supports role-parametric protocols with dynamically-instantiated participants. These systems statically verify protocol conformance but assume trusted implementations, lacking mechanisms to verify participants' cryptographic identity or attest which protocol implementation they execute—both essential for independent platform instances meeting spontaneously.
+
+\mypara{Authorization and policy languages}
+Declarative authorization languages achieve mainstream adoption for policy specification and enforcement. OPA/Rego provides Datalog-based policy-as-code for cloud infrastructure, whilst Cedar introduces verification-guided authorization with formally proven security properties. These languages excel at expressing authorization policies declaratively, separating policy from application logic. However, they are specialized for policy evaluation rather than general-purpose programming, and whilst they can consume authentication tokens as inputs, they do not integrate attestation evidence as first-class primitives enabling applications to verify what code remote parties execute. 
+
+\mypara{Concurrent logic programming languages}
+Concurrent logic programming languages~\cite{shapiro1989family} extend logic programming with concurrent execution, where multiple concurrent processes communicate and synchronize by binding shared logic variables. Concurrent Prolog~\cite{shapiro1987concurrent} introduced read-only variables ($?$-annotated) paired with write-once variables, enabling asynchronous communication between processes—writers bind variables whilst readers suspend until values become available. PARLOG~\cite{clark1986parlog}, GHC~\cite{ueda1986guarded}, and others employed static mode declarations or guards to distinguish read and write access to shared logic variables. However, these languages do not associate exclusive read-and-write capabilities with individual variables—a key requirement for establishing secure point-to-point communication channels in distributed settings. GLP borrows the notion of read-only variables from Concurrent Prolog but enforces the Single-Reader/Single-Writer (SRSW) restriction: each variable (reader or writer) occurs at most once in any configuration. Each reader/writer pair serves as a single-message communication channel from the writer to the reader. Since messages may contain logic variables (both readers and writers), sophisticated bidirectional communication protocols emerge through exchanging streams—incrementally constructed lists where each element may contain further shared variables. The SRSW invariant enables signed and encrypted point-to-point communication, as the single writer-to-single reader relationship provides the cryptographic foundation for authenticated messaging, whilst eliminating the need for distributed atomic unification~\cite{kleinman1990distributed}. 
+
+Unlike the languages reviewed above, logic programming languages are inherently suited for metaprogramming due to their homoiconic nature—programs are themselves terms in the language, enabling programs to naturally reason about and manipulate program structures through unification and clause definition. This property proves essential for GLP platform development: debugging tools can inspect program execution through meta-interpretation~\cite{safra1988meta,lichtenstein1988concurrent}, development environments can analyse protocol compatibility between modules, and runtime systems can verify attestation properties by examining program structure~\cite{shapiro1984systems}. GLP inherits this metaprogramming capability whilst adding security properties, enabling the development of self-contained platform development tools within the language itself.
+
+\bibliography{bib}
+
+\appendix
+
+\section{Logic Programs Syntax}\label{appendix:lp}
+
+\begin{definition}[Logic Programs Syntax]\label{definition:lp-syntax}
+The syntax of Logic Programs is defined thus:
+\begin{itemize}
+    \item A \temph{variable} is an alphanumeric string beginning with uppercase letter, e.g. \verb|X, X1, Xs|. We use $V$ to denote the set of all variables.
+    
+    \item A \temph{constant} is a string beginning with a lowercase letter, e.g. a, a1, and foo, as well as any quoted string, e.g. \verb|","| and \verb|"X"|.
+    
+    \item A \temph{number} is a numeric string, which may include a decimal point, e.g. 0, 1, 103.65.
+    
+    \item A \temph{logic term}, or \temph{term} for short is a variable in $V$, a constant, a number, as well as a \temph{composite term} of the form $f(T_1,T_2,\ldots,T_n)$, $n \ge 1$, where $f$ is a constant and each $T_i$ is a term, $i \in [n]$, referred to as a \temph{subterm} of $T$.
+    \item A term $T$ \temph{occurs} in term $T'$, denoted $T \in T'$, if $T=T'$ or if $T'$ is an $n$-ary term
+    $f(T_1,T_2,\ldots,T_n)$ for some constant $f$ and $T$ occurs in $T_i$ for some $i \in [n]$. A term is \temph{ground} if it contains no variables, namely $X \notin T$ for any $X \in V$. We let $\calT$ denote the set of all terms.
+
+    \item \temph{Lists:} By convention the constant \verb|[]| (read ``nil'') represents an empty list, the binary term \verb=[X|Xs]= represents a (linked) list with the first element \verb|X| and (a link to the) rest \verb|Xs|, the term \verb|[X]| is a shorthand for \verb=[X|[]]= and the term \verb=[X1,X2,...Xn]= is a shorthand for the nested term \verb=[X1|[X2|...[Xn|[]]...]]=. 
+    
+    \item An \temph{atom} is a constant or a composite term.
+    
+    \item A \temph{goal} is a term of the form $a_1, a_2,\ldots a_n$, $n\ge 0$, where each $a_i$ is an atom, $i \in [n]$. Such a goal is \temph{empty} if $n=0$, in which case it may also be written as \verb|true|, \temph{atomic} if $n=1$, and \temph{conjunctive} if $n \ge 2$. A conjunctive goal can be written equivalently as $(a_1,(a_2,(\ldots a_n)\ldots))$, where $(a,b)$ is a shorthand for \verb|","|$(a,b)$. As goal order is immaterial here, a conjunctive goal is identified with a multiset of its atoms and an atomic goal with its singleton. Let $\calA$ denote the set of all atoms and $\calG$ the set of all goals.
+
+     \item A \temph{clause} is a term of the form $A$ \verb|:-| $B$ (read `$A$ if $B$'), where $A$ is an atom, referred to as the clause's \temph{head}, and $B$ is a (possibly empty) goal, referred to as the clause's \temph{body}. If $B$ is empty then the clause is called \temph{unit} and can be written simply as $A$. The underscore symbol \verb|_| is a \emph{don't-care variable} that stands for a variable occurring only once, which can be bound to any value that subsequently cannot be unified.
+    
+    \item A \temph{logic program} is a finite sequences of ``.''-separated clauses.
+  As a convention, clauses for the same predicate (name and arity) are grouped together and are referred to as the \temph{procedure} for that predicate.  Given logic program $M$, let $\calA(M)$ and $\mathcal{G}(M)$ be the subsets of $\calA$ and $\calG$, respectively, that include only the vocabulary (constant, function, and predicate symbols) of $M$. 
+\end{itemize}
+\end{definition}
+
+\section{Proofs}\label{appendix:proofs}
+
+\LPComputationisDeduction*
+\begin{proof}
+We prove by induction on the length of the run that each step preserves logical consequence.
+
+\mypara{Base case} For $n=0$, we have $G_0 = G_0$ with empty substitution $\epsilon$. The outcome $(G_0 \verb|:-| G_0)$ is a tautology, hence a logical consequence of any program.
+
+\mypara{Inductive step} Assume the proposition holds for runs of length $k$. Consider a proper run of length $k+1$:
+$$\rho: G_0 \xrightarrow{\sigma_1} \cdots \xrightarrow{\sigma_k} G_k \xrightarrow{\sigma_{k+1}} G_{k+1}$$
+
+By the inductive hypothesis, $(G_0 \verb|:-| G_k)\sigma'$ is a logical consequence of $M$, where $\sigma' = \sigma_1 \circ \cdots \circ \sigma_k$.
+
+For the transition $G_k \xrightarrow{\sigma_{k+1}} G_{k+1}$:
+\begin{itemize}
+   \item There exists atom $A \in G_k$ and clause $(H \verb|:-| B) \in M$ renamed apart
+   \item $\sigma_{k+1}$ is the mgu of $A$ and $H$
+   \item $G_{k+1} = (G_k \setminus \{A\} \cup B)\sigma_{k+1}$
+\end{itemize}
+
+Since $(H \verb|:-| B)$ is a clause in $M$ and $\sigma_{k+1}$ unifies $A$ with $H$, we know that:
+\begin{itemize}
+   \item The instance $(H \verb|:-| B)\sigma_{k+1}$ is a logical consequence of $M$ (by instantiation of a program clause)
+   \item Since $A\sigma_{k+1} = H\sigma_{k+1}$ (by the mgu property), we can replace $A$ with $B$ under substitution $\sigma_{k+1}$
+   \item Therefore, the implication $(G_k \verb|:-| G_{k+1})$ is a logical consequence of $M$ when we consider that $G_{k+1}$ was obtained by replacing $A$ in $G_k$ with $B$ and applying $\sigma_{k+1}$
+\end{itemize}
+
+By the transitivity of logical consequence, if $(G_0 \verb|:-| G_k)\sigma'$ is a logical consequence of $M$ and $(G_k \verb|:-| G_{k+1})$ follows from $M$ under the additional substitution $\sigma_{k+1}$, then $(G_0 \verb|:-| G_{k+1})(\sigma' \circ \sigma_{k+1})$ is a logical consequence of $M$.
+
+Since $\sigma = \sigma' \circ \sigma_{k+1} = \sigma_1 \circ \cdots \circ \sigma_{k+1}$, we conclude that the outcome $(G_0 \verb|:-| G_{k+1})\sigma$ is a logical consequence of $M$.
+\qed\end{proof}
+
+\ReaderOnlyInstantiation*
+\begin{proof}
+Consider the transition $G_i \rightarrow G_{i+1}$ via reduction of some atom $A' \in G_i$ with clause $C$. Let $(H \verb|:-| B)$ be the renaming of $C$ apart from $A'$, with writer mgu $\sigma$ and reader counterpart $\sigma?$.
+
+By Definition~\ref{definition:glp-ts}, the Reduce transition specifies that $G_{i+1} = (G_i \setminus \{A'\} \cup B)\sigma$, and the configuration's reader substitution is updated with $\sigma?$.
+
+For any atom $A \in G_{i+1}$ that also appeared in $G_i$, we have $A \neq A'$ (the reduced atom is removed). Then $A \in G_i \setminus \{A'\}$. The reduction applies $\sigma$ to all atoms in the resolvent. Since $A$ was in $G_i$ and the clause was renamed apart from the entire goal (including $A$), any writers in $A$ are distinct from $V_\sigma$. Therefore $\sigma$ does not instantiate variables in $A$. Only the reader counterpart $\sigma?$ can affect $A$. Since $\sigma?$ is a reader substitution with $V_{\sigma?} \subset V?$, we have $A$ in $G_{i+1}$ equals $A'\tau$ where $A' \in G_i$ and $\tau = \sigma?$ instantiates only readers.
+\qed
+\end{proof}
+
+\GLPComputationsareDeductions*
+\begin{proof}
+Follows from the correspondence between GLP reductions and LP reductions on pure logic variants, combined with Proposition~\ref{proposition:LP-computation-deduction}.
+\qed
+\end{proof}
+
+\SRSWInvariant*
+\begin{proof}
+By induction on run length. The base case holds by assumption. For the inductive step, consider $G_i \rightarrow G_{i+1}$ via reduction with clause $C$ renamed apart. The renamed clause has fresh variables satisfying the SRSW syntactic constraint. The reduction replaces atom $A$ with body $B$ and applies $\sigma?$. Since $\sigma?$ replaces variables with terms (eliminating variable occurrences rather than duplicating them), and $B$ has fresh variables distinct from $G_i$, the SRSW invariant is preserved in $G_{i+1}$.
+\qed\end{proof}
+
+\Acyclicity* 
+\begin{proof}
+By induction on run length. For the base case, $G_0$ contains no circular terms by assumption. For the inductive step, assume $G_i$ contains no circular terms and consider the transition $G_i \rightarrow G_{i+1}$ via reduction of atom $A$ with clause $C$. Let $(H \verb|:-| B)$ be the renaming of $C$ apart from $A$, with writer mgu $\sigma$ and reader counterpart $\sigma?$. The reader counterpart exists only if for all $X \in V_\sigma$, $X? \notin X\sigma$ (occurs check). This ensures no writer is bound to a term containing its paired reader. Since $G_{i+1} = (G_i \setminus \{A\} \cup B)\sigma?$, and the occurs check prevents circular bindings, $G_{i+1}$ contains no circular terms.
+\qed\end{proof}
+
+\Monotonicity*
+\begin{proof}
+By induction on $j - i$. For the base case ($j = i$), the atom $A \in G_i$ can reduce with $C$ by assumption. For the inductive step, assume the property holds for $j = k$ and consider $j = k + 1$. 
+
+If $A$ was reduced at some step between $i$ and $k$, then case (1) holds. Otherwise, by the inductive hypothesis, there exists $A' \in G_k$ where $A' = A\tau$ for some reader substitution $\tau$, and $A'$ can reduce with $C$.
+
+Consider the transition $G_k \rightarrow G_{k+1}$. If the reduction involves $A'$, then case (1) holds for $j = k + 1$. If the reduction involves a different atom $B \in G_k$, then $A'$ persists in $G_{k+1}$, possibly further instantiated. Specifically, the reduction applies substitution $\sigma?$ where $\sigma?$ instantiates only readers (by definition of reader counterpart). Thus there exists $A'' \in G_{k+1}$ where $A'' = A'\sigma? = A(\tau \circ \sigma?)$, and $\tau \circ \sigma?$ is a reader substitution.
+
+Since $A'$ could reduce with $C$ (renamed apart) via some writer mgu at step $k$, and $\sigma?$ only instantiates readers, the unification of $A''$ with the head of $C$ (appropriately renamed) still succeeds: reader instantiation preserves unifiability and cannot introduce new writer instantiation requirements. Therefore $A''$ can reduce with $C$ at step $k + 1$.
+\qed\end{proof}
+
+\maGLPisgrassroots*    
+\begin{proof}
+We prove that maGLP is oblivious and interactive.
+\begin{enumerate}
+    \item \textbf{maGLP is Oblivious:}  Follows directly from Proposition~\ref{proposition:oblivious}.
+    \item \textbf{maGLP is Interactive:}  We have to show that in any configuration $c$ of a run of maGLP over $P$, if this configuration is in fact  configuration over $P'\supset P$, then members of $P$ have a behaviour not available to them if this was a run over $P$. The answer, of course, is that in such a case any agent $q\in P'\setminus P$ can send a network message to some agent $p\in P$, resulting in the local state of $p$ having an `alien trace'—a variable produced by an agent not in $P$—a behaviour not available to $P$ on their own.
+\end{enumerate}
+We conclude that maGLP is grassroots.
+\qed\end{proof}
+
+\section{Friend-Mediated Introductions}\label{appendix:friend-introductions}
+
+Beyond cold calls, the social graph protocol enables friend-mediated introductions, leveraging existing trust relationships to establish new connections. When agent $r$ is friends with both $p$ and $q$, it can introduce them to each other, creating a direct communication channel between them.
+
+\Program{Friend-Mediated Introduction Protocol}\label{program:introduction}
+\begin{verbatim}
+% Friend introduces two others
+social_graph(Id, [msg(user, Id, introduce(P, Q))|In], Fs) :-
+    ground(Id), ground(P), ground(Q), 
+    new_channel(ch(PQIn, PQOut), ch(QPIn, QPOut)) |
+    lookup_send(P, msg(Id, P, intro(Q?, ch(QPIn?, PQOut?))), Fs?, Fs1),
+    lookup_send(Q, msg(Id, Q, intro(P?, ch(PQIn?, QPOut?))), Fs1?, Fs2),
+    social_graph(Id, In?, Fs2?).
+
+% Process introduction - initiate attestation exchange
+social_graph(Id, [msg(From, Id, intro(Other, ch(In, Out)))|In], Fs) :-
+    ground(Id), attestation(intro(Other, ch(In, Out)), att(From, _)) |
+    Out = [attest_req(Id?, AttResp)|Out1?],
+    inject(AttResp?, msg(Other, Id, verified_intro(From?, Other?, ch(In?, Out1?))), 
+           In?, In1),
+    social_graph(Id, In1?, Fs?).
+
+% Process attestation request and send verification
+social_graph(Id, [msg(From, Id, attest_req(From, AttResp))|In], Fs) :-
+    ground(Id), attestation(attest_req(From, AttResp), att(From, Module)) |
+    AttResp = verified(Id?, Module?),
+    social_graph(Id, In?, Fs?).
+
+% Attestation verified - now ask user
+social_graph(Id, [msg(Other, Id, verified_intro(Introducer, Other, Ch))|In], Fs) :-
+    ground(Id), attestation(verified_intro(Introducer, Other, Ch), att(Other, Module)) |
+    lookup_send(user, msg(agent, user, 
+                befriend_verified(Introducer?, Other?, Module?, Ch?)), Fs?, Fs1),
+    social_graph(Id, In?, Fs1?).
+
+% User accepts verified introduction
+social_graph(Id, [msg(user, Id, decision(yes, Other, ch(In, Out)))|In], Fs) :-
+    ground(Id) |
+    tag_stream(Other?, In?, Tagged),
+    merge(In?, Tagged?, In1),
+    social_graph(Id, In1?, [(Other?, Out?)|Fs?]).
+\end{verbatim}
+
+Friend-mediated introductions provide stronger trust assurance than cold calls through double verification. The introducer $r$ creates a fresh channel pair connecting $p$ and $q$, sending each party one of the paired channels, along with the identity of the other party. Recipients first verify through the signature and attestation that the introduction genuinely originates from their mutual friend $r$ running verified code. Before accepting the connection, the introduced parties $p$ and $q$ exchange signed and attested messages through the new channel, allowing each to verify the other's identity through signatures and code compatibility through attestations.
+
+This double verification mechanism addresses two distinct security requirements. The introducer's signature and attestation prevent forgery—the signature proves the introduction came from $r$ while the attestation confirms it was produced by legitimate social graph code. The signatures and attestations exchanged between introduced parties ensure they are indeed who the introducer claims, with signatures providing cryptographic proof of identity and attestations ensuring code compatibility.
+
+Unlike cold calls which require external identity verification, friend-mediated introductions provide both the introducer's social vouching and direct cryptographic verification from the introduced party through their signatures. The mutual friend serves as a trusted intermediary who facilitates the connection, while the exchange of signed and attested messages between parties ensures the connection's authenticity independent of the introducer's continued involvement.
+
+\section{Social Networking Applications}\label{appendix:social-networking}
+
+Building upon the authenticated social graph, this section demonstrates how GLP enables secure social networking applications. The established friend channels and attestation mechanisms provide verifiable content authorship and provenance guarantees impossible in centralised platforms.
+
+\subsection{Direct Messaging}
+
+Direct messaging establishes dedicated conversation channels between friends, separate from the protocol control channels:
+
+\Program{Direct Messaging Channel Establishment}\label{program:direct-messaging}
+\begin{verbatim}
+establish(yes, From, Resp, Fs, Fs1, In, In1) :-
+    new_channel(ch(FIn, FOut), FCh),
+    new_channel(ch(DMIn, DMOut), DMCh),
+    Resp = accept(FCh, DMCh),
+    attestation(DMCh, att(From, _)) |
+    handle_friend(From?, FIn?, FOut?, DMIn?, DMOut?, Fs?, Fs1, In?, In1).
+
+handle_friend(From, FIn, FOut, DMIn, DMOut, Fs, 
+             [(From, FOut), (dm(From), DMOut)|Fs], In, In1) :-
+    tag_stream(From?, FIn?, Tagged),
+    merge(In?, Tagged?, In1),
+    forward_to_app(dm_channel(From?, DMIn?)).
+\end{verbatim}
+
+The protocol maintains separation between control and messaging channels, with each DM message carrying attestation for non-repudiation and authenticity.
+
+\subsection{Feed Distribution with Verified Authorship}
+
+Content feeds leverage the \verb|ground| guard's relaxation of SRSW constraints to broadcast to multiple followers whilst maintaining cryptographic proof of authorship:
+
+\Program{Authenticated Feed Distribution}\label{program:feed}
+\begin{verbatim}
+post(Content, Followers, Followers1) :-
+    ground(Content), current_time(Time) |
+    create_post(Content?, Time?, Post),
+    broadcast(Post?, Followers?, Followers1).
+
+broadcast(_, [], []).
+broadcast(Post, [(Name,Out)|Fs], [(Name,[Post|Out1?])|Fs1]) :-
+    broadcast(Post?, Fs?, Fs1).
+
+preserve_attestation(Post, Author, forward(Author?, Post)).
+
+forward(Post, Followers, Followers1) :-
+    ground(Post), attestation(Post, att(Author, _)),
+    preserve_attestation(Post?, Author?, Forward) |
+    broadcast(Forward?, Followers?, Followers1).
+\end{verbatim}
+
+Each post carries the creator's attestation $(Post)_{M,p,q}$. When forwarding, the original attestation is preserved whilst adding the forwarder's attestation, creating a cryptographically verifiable provenance chain.
+
+\subsection{Group Communication}
+
+Groups in GLP follow a founder-administered model where users create groups with selected friends. Group messages use interlaced streams, creating natural causal ordering without consensus:
+
+\Program{Group Formation}\label{program:group-formation}
+\begin{verbatim}
+social_graph(Id, [msg(user, Id, create_group(Name, Friends))|In], Fs) :-
+    create_group_streams([Id|Friends]?, Streams),
+    send_invitations(Friends?, Id?, Name?, Streams?, Fs?, Fs1),
+    social_graph(Id, In?, [((Id,Name), group(admin, Streams?))|Fs1?]).
+
+send_invitations([], _, _, _, Fs, Fs).
+send_invitations([Friend|Friends], Founder, Name, Streams, Fs, Fs1) :-
+    lookup(Friend, Fs?, Ch),
+    Ch = [inv(Founder?, Name?, Streams?)|Ch1?],
+    send_invitations(Friends?, Founder?, Name?, Streams?, [(Friend,Ch1?)|Fs2?], Fs1).
+
+social_graph(Id, [msg(From, Id, inv(Founder, Name, Streams))|In], Fs) :-
+    attestation(inv(Founder, Name, Streams), att(From, _)) |
+    lookup_send(user, msg(agent, user, join_group(From?, Founder?, Name?)), Fs?, Fs1),
+    social_graph(Id, In?, Fs1?).
+
+social_graph(Id, [msg(user, Id, join(yes, Founder, Name, Streams))|In], Fs) :-
+    social_graph(Id, In?, [((Founder,Name), group(member, Streams?))|Fs?]).
+\end{verbatim}
+
+The globally unique group identifier (founder, name) prevents naming conflicts. Members maintain independent message streams whilst observing others' messages through interlaced streams (Appendix~\ref{appendix:additional-techniques}), creating causal ordering where replies follow what they reply to whilst independent messages remain unordered. Security derives from authenticated friend channels—Byzantine agents cannot inject messages as they lack authenticated channels to members.
+
+\subsection{Content Authenticity}
+
+Content authenticity derives from attestation applied recursively through forwarding. When agent p creates post P, it carries attestation $(P)_{M,p,*}$. When agent q forwards, the operation wraps the attested post: `forward(p, P)` with attestation $(forward(p,P))_{M,q,*}$. Recipients verify both forwarding and original creation attestations, with nesting depth revealing the complete chain. This prevents impersonation (agents cannot forge attestations), misattribution (original attestation remains embedded), and conversation manipulation (interlaced streams create tamper-evident partial order).
+
+\section{Additional Programming Techniques}\label{appendix:additional-techniques}
+
+This appendix presents additional GLP programs demonstrating advanced concurrent programming techniques.
+
+\subsection{Dynamic Stream Merger}
+
+\Program{Dynamic Stream Merger}\label{program:dynamic-merge}
+\begin{verbatim}
+merger(Ws,Xs,Out?) :- merge(Ws?,Xs?,Out).
+
+merge([merge(Ws)|Xs],Ys,Zs?) :- 
+   merger(Ws?,Xs?,Xs1), merge(Xs1?,Ys?,Zs).
+merge(Xs,[merge(Ws)|Ys],Zs?) :- 
+   merger(Ws?,Ys?,Ys1), merge(Xs?,Ys1?,Zs).
+merge([X|Xs],Ys,[X?|Zs?]) :- 
+    X =\= merge(_) | merge(Ys?,Xs?,Zs).
+merge(Xs,[Y|Ys],[Y?|Zs?]) :- 
+    Y =\= merge(_) | merge(Xs?,Ys?,Zs).
+merge([],[],[]).
+\end{verbatim}
+
+Any producer can send \verb|merge(NewStream)| to dynamically add another stream to the merge network, creating a self-organizing merge tree.
+
+\subsection{Concurrent Monitor}
+
+\Program{Concurrent Monitor}\label{program:monitor}
+\begin{verbatim}
+monitor(Ops) :- monitor(Ops?,0).
+
+monitor([add(N)|Ops],Sum) :- Sum1 := Sum? + N?, monitor(Ops?,Sum1?).
+monitor([subtract(N)|Ops],Sum) :- Sum1 := Sum? - N?, monitor(Ops?,Sum1?).
+monitor([value(V)|Ops],Sum) :- ground(Sum?) | V = Sum?, monitor(Ops?,Sum?).
+monitor([],_).
+\end{verbatim}
+
+The monitor threads state through tail-recursive calls, serializing concurrent requests whilst maintaining consistency.
+
+\subsection{Stream Distribution}
+
+\Program{Concurrent Stream Distribution}\label{program:distribute}
+\begin{verbatim}
+distribute([X|Xs],[X|Ys1],...,[X|Ysn]) :- 
+    ground(X) | distribute(Xs?,Ys1?,...,Ysn?).
+distribute([],[],...,[]).
+\end{verbatim}
+
+\subsection{Channel Abstractions}
+
+\Program{Channel Operations}\label{program:channel-operations}
+\begin{verbatim}
+send(X,ch(In,[X?|Out?]),ch(In?,Out)).
+receive(X?,ch([X|In],Out?),ch(In?,Out)).
+new_channel(ch(Xs?,Ys),ch(Ys?,Xs)).
+\end{verbatim}
+
+\Program{Stream-Channel Relay}\label{program:relay}
+\begin{verbatim}
+relay(In,Out?,Ch) :- 
+    In?=[X|In1], send(X?,Ch?,Ch1) | relay(In1?,Out,Ch1?).
+relay(In,Out?,Ch) :- 
+    receive(X,Ch?,Ch1), Out=[X?|Out1?] | relay(In?,Out1,Ch1?).
+\end{verbatim}
+
+\subsection{Stream Tagging}
+
+\Program{Stream Tagging}\label{program:tag-stream}
+\begin{verbatim}
+tag_stream(Name, [M|In], [msg(Name?, M?)|Out]) :-
+    tag_stream(Name?, In?, Out?).
+tag_stream(_, [], []).
+\end{verbatim}
+
+\subsection{Cooperative Producers}
+
+\Program{Cooperative Producers}\label{program:cooperative}
+\begin{verbatim}
+producer_a(control(Xs,Next)) :-
+    produce_batch_a(Xs,Xs1,Done),
+    handover(Done?,Xs1,Next).
+
+producer_b(control(Xs,Next)) :-
+    produce_batch_b(Xs,Xs1,Done),
+    handover(Done?,Xs1,Next).
+
+handover(done,Xs,control(Xs,Next)).
+
+produce_batch_a([a,b,c|Xs],Xs,done).
+produce_batch_b([d,e,f|Xs],Xs,done).
+\end{verbatim}
+
+The \verb|control(Xs,Next)| term encapsulates both the stream tail writer and continuation for transferring control, enabling round-robin production, priority-based handover, or dynamic producer pools.
+
+\subsection{Interlaced Streams}
+
+\Program{Interlaced Streams (Blocklace)}\label{program:interlaced-streams}
+\begin{verbatim}
+streams(MyStream, Others) :-
+    produce_payloads(Payloads),
+    interlace(Payloads?, MyStream, [], Others?).
+
+interlace([Payload|Payloads], [block(Payload?,Tips?)|Stream?], PrevTips, Others) :-
+    collect_new_tips(Others?, Tips, Others1),
+    interlace(Payloads?, Stream, Tips?, Others1?).
+interlace([], [], _, _).
+
+collect_new_tips([[Block|Bs]|Others], [Block?|Tips?], [Bs?|Others1?]) :-
+    reader(Bs) |  % Bs unbound means Block is the current tip
+    collect_new_tips(Others?, Tips, Others1).
+collect_new_tips([[B|Bs]|Others], Tips?, [[Bs]?|Others1?]) :-
+    collect_new_tips([[Bs]?|Others?], Tips, Others1).
+collect_new_tips([], [], []).
+\end{verbatim}
+
+Multiple agents maintaining streams that reference each other naturally form a blocklace—a DAG where each block references multiple predecessors, providing eventual consistency equivalent to Byzantine fault-tolerant CRDTs whilst maintaining blockchain integrity.
+
+\subsection{Network Switch}
+
+\Program{3-Way Network Switch}\label{program:3-way-network-switch}
+\begin{verbatim}
+network((P,ChP),(Q,ChQ),(R,ChR)) :-
+    ground(Q), receive(ChP?,msg(Q,X),ChP1), send(ChQ?,X?,ChQ1) |
+    network((P,ChP1?),(Q,ChQ1?),(R,ChR?)).
+
+network((P,ChP),(Q,ChQ),(R,ChR)) :-
+    ground(R), receive(ChP?,msg(R,X),ChP1), send(ChR?,X?,ChR1) |
+    network((P,ChP1?),(Q,ChQ?),(R,ChR1?)).
+
+% Remaining clauses for Q to P, Q to R, R to P, R to Q similarly
+\end{verbatim}
+
+\section{Implementation-Ready Semantics}\label{appendix:IR-maGLP}
+
+This section specifies the concrete data structures and message-passing mechanisms suitable for smartphone implementation, combining the implementation-ready structure with the multiagent framework. A variable $X$ is \emph{local} to agent $p$ if $X$ occurs in $p$'s resolvent. Non-local variables require coordination through variable tables and explicit message passing.
+
+\subsection{Local States}
+
+\begin{definition}[Implementation-Ready maGLP Local State]\label{definition:IRmaGLP-local-state}
+The local state of agent $p \in \Pi$ is an \temph{implementation-ready resolvent} $s_p = (R_p, V_p,M_p)$ where:
+\begin{enumerate}
+\item $R_p = (A_p, S_p, F_p)$ separates goals into active (queue), suspended (with reader sets), and failed.
+    
+   \item $V_p \subseteq \calV \times \Pi \times (\mathcal{T} \cup \Pi \cup \{\bot\})$ maintains shared variable state as triples $(Y, q, s)$ where:
+        \begin{itemize}
+        \item \textbf{Writer:} $Y \in V$,  $s \in \mathcal{T}$ is the value, else $s=\bot$
+        \item \textbf{Created Reader:} $Y \in V?$, $q = p$, $s \in \Pi$ is the read-requesting agent, else $s=\bot$
+        \item  \textbf{Imported Reader:} $Y \in V?$,  $q \neq p$, $s =q$ indicates read request sent, else  $s=\bot$ 
+        \end{itemize}
+        
+\item $M_p$ contains pending messages: assignments $(X?:=T, q)$, read requests $(request(X?, p), q)$, abandonment notifications $(abandon(X), q)$
+\end{enumerate}
+\end{definition}
+
+\subsection{Helper Routines}
+
+\begin{definition}[routine abandon(Y)]
+\begin{itemize}
+\item If $(Y, q, s) \in V_p$ where $q \neq p$: remove from $V'_p$ and add $(abandon(Y'), q)$ to $M'_p$
+\item If $(Y, p, s) \in V_p$ and $s \neq \bot$: remove from $V'_p$ and add $(abandon(Y'), s)$ to $M'_p$
+\item Otherwise: remove $(Y, \cdot, \cdot)$ from $V'_p$ if present
+\end{itemize}
+where $Y' = Y?$ if $Y \in V$, else $Y' = Y$
+\end{definition}
+
+\begin{definition}[routine request(X?)]
+If $(X?, q, \bot) \in V'_p$ and $q \neq p$ then:
+\begin{itemize}
+\item Update to $(X?, q, q)$ in $V'_p$ 
+\item Add $(request(X?, p), q)$ to $M'_p$
+\end{itemize}
+\end{definition}
+
+\begin{definition}[routine export$(T)$ returns $T'$]
+Set $T' := T$. For each variable $Y$ in $T$:
+\begin{itemize}
+\item \textbf{Local:} If $Y$ created by $p$ and $(Y, p, \cdot) \notin V'_p$: add $(Y, p, \bot)$ to $V'_p$
+\item \textbf{Non-local:} If $Y$ created by $q \neq p$:
+    \begin{itemize}
+    \item \textbf{Writer or Non-requested Reader:} If $Y \in V$ or $(Y, q, \bot) \in V'_p$ then remove $(Y, q, \cdot)$ from $V'_p$
+    \item \textbf{Requested Reader:} If $(Y, q, q) \in V'_p$  then create fresh pair $(Z, Z?)$, replace $Y$ with $Z?$ in $T'$, add $\text{export\_reader}(Y, Z)$ to $A'_p$, add $(Z?, p, \bot)$ to $V'_p$
+    \end{itemize}
+\end{itemize}
+$T'$ is the result of applying replacements to $T$.
+\end{definition}
+
+\begin{definition}[routine reactivate(X?) for agent p returns R]
+\begin{itemize}
+\item Let $R = \{G : (G, W) \in S'_p, X? \in W\}$
+\item $S'_p := S'_p \setminus \{(G, W) : G \in R\}$
+\item Return $R$
+\end{itemize}
+\end{definition}
+
+\subsection{Transactions}
+
+\begin{definition}[Variable Abandonment]
+When reducing atom $A$ with clause $C$ yielding body $B$ and substitution $\hat\sigma$, a variable $Y$ is \emph{abandoned} if its paired variable $Y'$ occurs in $A$, is not instantiated by $\hat\sigma$ or $\hat\sigma?$, and does not occur in $B$.
+\end{definition}
+
+\begin{definition}[Implementation-Ready Reduce Transaction]\label{definition:IRmaGLP-reduce}
+The unary Reduce transaction for agent $p$ transitions $(R_p, V_p, M_p) \rightarrow (R'_p, V'_p, M'_p)$ where $R_p = (A_p, S_p, F_p)$,  $(R'_p, V'_p, M'_p): = (R_p, V_p, M_p)$ with $A_p = A \cdot A_r$:
+
+\begin{enumerate}
+\item \textbf{Reduce:} If GLP reduction of $A$ with first applicable clause $C \in M$ succeeds with $(B,\hat\sigma)$:
+\begin{itemize}
+    \item Let $R = \bigcup_{X? \in V_{\hat\sigma?}} \text{reactivate}(X?)$ (modifies $S'_p$)
+    \item $A'_p := (A_r \cdot B \cdot R)\hat\sigma\hat\sigma?$
+    \item Update $M'_p$: add $(X?:=T, r)$ for each $\{X?:=T\} \in \hat\sigma?$ where $(X?, p, r) \in V'_p, r \neq \bot$
+    \item Call abandon$(Y)$ for each abandoned variable $Y$
+\end{itemize}
+
+\item \textbf{Suspend:} Else if $W = \bigcup_{C \in M} W_{C} \neq \emptyset$:
+\begin{itemize}
+    \item $A'_p := A_r$
+    \item $S'_p := S'_p \cup \{(A, W)\}$
+    \item Call request$(X?)$ for each $X? \in W$ (modifies $V'_p$ and $M'_p$)
+\end{itemize}
+
+\item \textbf{Fail:} Else:
+\begin{itemize}
+    \item $A'_p := A_r$
+    \item $F'_p := F'_p \cup \{A\}$
+    \item Call abandon$(Y)$ for each variable $Y$ in $A$ (modifies $V'_p$ and $M'_p$)
+\end{itemize}
+\end{enumerate}
+Then $R'_p := (A'_p, S'_p, F'_p)$.
+\end{definition}
+
+\begin{definition}[Implementation-Ready Communicate Transaction]\label{definition:IRmaGLP-communicate}
+The binary Communicate transaction $(c_p,c_q) \rightarrow (c'_p,c'_q)$ where $p \neq q$ and $(m, q) \in M_p$. Set $(c'_p, c'_q) := (c_p, c_q)$, remove $(m, q)$ from $M'_p$, and case:
+\begin{enumerate}
+\item \textbf{Assignment} $m = (X?:=T)$ where $X?$ is local to $q$: 
+\begin{itemize}
+    \item Let $R = $ reactivate$(X?)$ for agent $q$ (modifies $S'_q$)
+    \item If $T \neq \bot$: $A'_q := (A_q \cdot R)\{X?:=T\}$, and apply $\{X?:=T\}$ to $S'_q$ and $F_q$
+    \item Else: $A'_q := A_q \cdot R$
+    \item Remove $(X?, \cdot, \cdot)$ from $V'_q$
+    \item For each variable $Y$ in $T$ not already local to $q$ and created by $r$: add $(Y, r, \bot)$ to $V'_q$
+\end{itemize}
+
+\item \textbf{Read Request} $m = \text{request}(X?, p)$:
+\begin{itemize}
+    \item If $p = \bot$ then call abandon$(X?)$ for agent $q$
+    \item Else if $(X?, q, \bot) \in V'_q$ then update to $(X?, q, p)$ in $V'_q$
+    \item Else if $(X, q, T) \in V'_q$ then add $(X?:=T, p)$ to $M'_q$
+\end{itemize}
+\end{enumerate}
+\end{definition}
+
+\begin{definition}[Implementation-Ready Network Transaction]\label{definition:IRmaGLP-network}
+The binary Network transaction $(c_p,c_q) \rightarrow (c'_p,c'_q)$ where $p \neq q$ and a new \verb|msg|$(q,X)$ appears in $p$'s network output stream. Set $(c'_p, c'_q) := (c_p, c_q)$:
+\begin{itemize}
+\item Let $X' := \text{export}(X)$ for agent $p$ (modifies $V'_p$ and $M'_p$)
+\item Add $X'$ to $q$'s network input stream
+\item For each variable $Y$ in $X'$ not already local to $q$ and created by $r$: add $(Y, r, \bot)$ to $V'_q$
+\end{itemize}
+\end{definition}
+
+\subsection{Extensions for Secure Multiagent GLP}
+
+Each agent $p \in \Pi$ has a self-chosen keypair $(pk_p, sk_p)$ where $pk_p$ serves as identity. All messages in $M_p$ are cryptographically protected: $(m, q) \in M_p$ becomes $(m_{M,p,q}, q)$ where $M$ indicates attestation, $p$ indicates digital signature, and $q$ indicates encryption. Before processing received messages, implementations decrypt, verify signatures, validate attestations, and discard messages failing any check. Guard predicates \verb|attestation| and \verb|module| provide program-level access to verification results. These extensions ensure integrity, confidentiality, non-repudiation, and authentication for all inter-agent communication.
+
+\end{document}

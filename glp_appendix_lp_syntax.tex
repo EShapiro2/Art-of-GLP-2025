@@ -1,0 +1,34 @@
+\section{Logic Programs Syntax}\label{appendix:LP-synax}
+
+\begin{definition}[Logic Programs Syntax]\label{definition:lp-syntax}
+The syntax of Logic Programs is defined thus:
+\begin{itemize}
+    \item A \temph{variable} is an alphanumeric string beginning with uppercase letter, e.g. \verb|X, X1, Xs|. We use $V$ to denote the set of all variables.
+
+    \item A \temph{string} is an alphanumeric string beginning with a lowercase letter, e.g. a, a1, and foo, or a quoted string, e.g. \verb|","| and \verb|"X"|.
+
+\item A \temph{constant} is a string, a number (optionally signed, which may include a decimal point), e.g. 0, -1, +42, 103.65, or the empty list \verb|[]|.
+
+\item A \temph{tuple} is a term of the form $T=f(T_1,T_2,\ldots,T_n)$, $n \ge 1$, where $f$ is a string (called the \temph{functor} of $T$), $n$ is the \temph{arity} of $T$, and each $T_i$ is a term.
+
+\item A \temph{logic term}, or \temph{term} for short, is a variable in $V$, a constant, or a tuple.
+
+\item \temph{Lists:} By convention the constant \verb|[]| (read ``nil'') represents an empty list, the binary term \verb=[X|Xs]= is a shorthand for the tuple \verb="."(X,Xs)=,
+   representing a list with the first element \verb|X| and (a link to the) rest \verb|Xs|, the term \verb|[X]| is a shorthand for \verb=[X|[]]= and the term \verb=[X1,X2,...Xn]= is a shorthand for the nested term \verb=[X1|[X2|...[Xn|[]]...]]=.
+
+
+\item An \temph{atom} is a constant or a tuple.
+
+    \item A term $T$ \temph{occurs} in term $T'$, denoted $T \in T'$, if $T=T'$ or if $T'$ is an $n$-ary term
+    $f(T_1,T_2,\ldots,T_n)$ for some functor $f$ and $T$ occurs in $T_i$ for some $i \in [n]$. A term is \temph{ground} if it contains no variables, namely $X \notin T$ for any $X \in V$. We let $\calT$ denote the set of all terms.
+
+
+    \item A \temph{goal} is a term of the form $a_1, a_2,\ldots a_n$, $n\ge 0$, where each $a_i$ is an atom, $i \in [n]$. Such a goal is \temph{empty} if $n=0$, in which case it may also be written as \verb|true|, \temph{atomic} or \emph{unary} if $n=1$, and \temph{conjunctive} if $n \ge 2$. A conjunctive goal can be written equivalently as $(a_1,(a_2,(\ldots a_n)\ldots))$, where $(a,b)$ is a shorthand for \verb|","|$(a,b)$. As goal order is immaterial here, a conjunctive goal is identified with a multiset of its atoms and an atomic goal with its singleton. Let $\calA$ denote the set of all atoms and $\calG$ the set of all goals.
+
+     \item A \temph{clause} is a term of the form $A$ \verb|:-| $B$ (read `$A$ if $B$'), where $A$ is an atom, referred to as the clause's \temph{head}, and $B$ is a (possibly empty) goal, referred to as the clause's \temph{body}. If $B$ is empty then the clause is called \temph{unit} and can be written simply as $A$. The underscore symbol \verb|_| is a \emph{don't-care variable} that stands for a variable occurring only once, which can be bound to any value that subsequently cannot be unified.
+
+    \item A \temph{logic program} is a finite sequences of ``.''-separated clauses.
+  As a convention, clauses for the same predicate (name and arity) are grouped together and are referred to as the \temph{procedure} for that predicate.  Given logic program $M$, let $\calA(M)$ and $\mathcal{G}(M)$ be the subsets of $\calA$ and $\calG$, respectively, that include only the vocabulary (constant, function, and predicate symbols) of $M$.
+\end{itemize}
+\end{definition}
+

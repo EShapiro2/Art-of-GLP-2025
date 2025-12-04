@@ -1,0 +1,71 @@
+\section{Securing Multiagent GLP}\label{section:GLP-security}
+
+\subsection{Secure Multiagent GLP}\label{section:secturemaGLP}
+
+Here we assume that each agent $p\in \Pi$ has a self-chosen keypair, unique with high probability, and identify $p$ with its public key.
+Agents learn public keys through two mechanisms: existing social channels (exchanging keys in person, via email, phone numbers, or other trusted communication methods outside the protocol) and friend-mediated introductions within the protocol itself. In cold calls, agents initiate connections only with those whose public keys they have verified through external channels. Friend-mediated introductions (Appendix~\ref{appendix:friend-introductions}) provide an additional trust propagation mechanism, where mutual friends vouch for the cryptographic identities of introduced parties, enabling the social graph to expand through existing trust relationships.
+
+In addition to the standard cryptographic assumptions on the security of encryption and signatures, we assume that the underlying GLP execution mechanism can produce \emph{attestations}: A proof that a network message  $\verb|msg|(q,X)$ or a substitution message $\{X?:=T\}$  was produced by module $M$ as a result of a correct goal/clause reduction. For such a message $E$, we denote by $E_M$ the message together with its attestation, and by $E_{M,p}$ such an attestation further signed by agent $p$'s private key. Furthermore, we assume that when such a signed attestation is sent to agent $q$, it is encrypted with $q$'s public key, denoted $E_{M,p,q}$. In summary, each message  $\verb|msg|(q,X)$ or assignment to $X$ produced by agent $p$ using module $M$ is sent to the intended recipient $q$ or the holder $q$ of $X?$ attested by $M$, signed by $p$ and encrypted for $q$. (See Section~\ref{section:implementation} for smartphone-specific implementation of these security mechanisms.)
+
+
+Programs require the ability to inspect attestations on received messages and identify their own module for protocol decisions. GLP provides guard predicates for security operations:
+\begin{itemize}
+\item \verb|attestation(X, Info)| succeeds if \verb|X| carries an attestation, assiging to \verb|Info| a term \verb|att(Agent, Module)| containing the attesting agent's public key and module identifier. For locally-produced terms, \verb|Agent| binds to the distinguished constant \verb|self|.
+\item \verb|module(M)| binds \verb|M| to the identifier of the currently executing module. Agents use this guard to determine their own module identity when evaluating compatibility with other agents' attested modules. Module identifiers include version information enabling compatibility verification between different protocol versions.
+\end{itemize}
+These guards enable programs to make protocol decisions based on attestation properties and module compatibility without accessing the underlying cryptographic mechanisms directly. The social graph protocol uses these to verify cold call origins and enforce module compatibility, whilst social networking applications extract and preserve provenance chains when forwarding content.
+
+While the formal specification requires attestation, signature and encryption for every message, a practical implementations should employ standard cryptographic optimizations~\cite{menezes1996handbook}: Attestation can be required only on initial contact and then verified intermittently rather than for every message, reducing computational overhead while maintaining security guarantees. Public keys exchanged during initial attestation can be used to establish secure agent-to-agent communication channels using ephemeral session keys through protocols such as Diffie-Hellman key exchange~\cite{diffie1976new} or ECDH~\cite{hankerson2004guide}, providing perfect forward secrecy while reducing the cost of encryption operations. These optimizations are transparent to the GLP program level, where the security properties continue to hold as specified.
+
+\subsection{Program-Independent Security Properties}
+
+The cryptographic mechanisms of secure maGLP guarantee three fundamental properties for all executions, regardless of the specific GLP program:
+
+\begin{enumerate}
+\item \textbf{Integrity:} Any entity $E_{M,p,q}$ transmitted from agent $p$ to agent $q$ either arrives unmodified or is rejected upon signature verification failure. Tampering with $E$ invalidates $p$'s signature, which cannot be forged without $p$'s private key.
+
+\item \textbf{Confidentiality:} The content of $E_{M,p,q}$ remains inaccessible to all agents except $q$, as decryption requires $q$'s private key. Combined with the SRSW invariant ensuring exclusive reader/writer pairing, this prevents both direct cryptographic attacks and indirect access through shared variables.
+
+\item \textbf{Non-repudiation:} Agent $p$ cannot deny sending any entity successfully verified as $E_{M,p,q}$, as the valid signature constitutes cryptographic proof of authorship that only $p$ could have created.
+\end{enumerate}
+
+These properties provide the cryptographic foundation for secure maGLP communication. Authentication and trust propagation properties depend on program-specific behaviour and are analysed for particular protocols such as the grassroots social graph.
+
+\subsection{Security of the Social Graph Protocol}
+
+
+\mypara{Authenticated Connection Establishment}
+Cold call offers carry attestation $(\verb|msg|(q,\verb|offer|(\verb|Resp|)))_{M,p,q}$ proving agent $p$ executes module $M$. Acceptance returns $(\verb|Resp:=accept(FCh)|)_{M,q,p}$, establishing mutual authentication. The signature mechanism proves control of private keys and attestation verifies code execution, but neither establishes real-world identity—this requires external verification through existing social channels.Attestations include module identifiers, enabling compatibility verification between protocol versions.
+
+
+\mypara{Trust Propagation}
+Friend-mediated introductions strengthen identity assurance. When $p$ introduces friends $q$ and $r$, recipients verify the introduction originates from $p$ through attestation. The established channel provides ongoing mutual attestation. The introducer vouches for cryptographic-to-social identity mappings, combining cryptographic proof with social trust.
+
+\mypara{Attack Prevention}
+The protocol prevents three attack categories through integrated cryptographic and language-level mechanisms. Sybil attacks are mitigated through the requirement that agents know each other's public keys through external social verification before connecting - an adversary cannot create meaningful fake identities without corresponding social relationships. Man-in-the-middle attacks fail because messages are encrypted for specific recipients and the SRSW invariant ensures exclusive reader/writer channels that cannot be intercepted. Impersonation attempts are detected through signature verification on every message, with invalid signatures causing silent drops. These mechanisms combine to ensure that successful communication occurs only between authenticated parties running verified code.
+
+
+\subsection{Blockchain Security of GLP Streams}\label{subsection:blockchain-security}
+Authenticated GLP streams achieve blockchain security properties~\cite{nakamoto2008peer,garay2015bitcoin} through language-level guarantees:
+
+\begin{enumerate}
+\item \textbf{Immutability:} Once a stream element \verb=[X|Xs]= is created with \verb=X= bound to value \verb=T=, the single-assignment semantics of logic variables prevents any subsequent assignment of \verb=X=. This provides immutability without cryptographic hashing.
+
+\item \textbf{Unforkability:} The SRSW invariant ensures each writer \verb~Xs~ has exactly one occurrence. Attempting to create two continuations \verb~Xs=[Y|Ys]~ and \verb~Xs=[Z|Zs]~ would require two occurrences of writer \verb~Xs~, violating SRSW. This prevents forks at the language level.
+
+\item \textbf{Non-repudiation:} Stream extensions communicated between agents carry attestations $(\verb~Xs:=[Y|Ys]~)_{M,p,q}$. The signature by agent $p$ provides cryptographic proof of authorship that $p$ cannot deny.
+
+\item \textbf{Acyclicity:} Proposition~\ref{proposition:acyclicity} guarantees no circular terms. The occurs check prevents any writer from being bound to a term containing its paired reader, ensuring strict temporal ordering of stream elements.
+\end{enumerate}
+
+\mypara{Cooperative Extension} These properties establish that authenticated GLP streams provide blockchain security guarantees through logical foundations rather than proof-of-work or proof-of-stake mechanisms.
+Traditional blockchains employ competitive consensus where multiple parties race to extend the chain~\cite{garay2015bitcoin}. GLP's single-writer constraint makes competitive extension impossible---only the agent holding the tail writer can extend a stream. This enables cooperative protocols through explicit handover (Program~\ref{program:cooperative} in Appendix~\ref{appendix:additional-techniques}), supporting round-robin production or priority-based scheduling without consensus overhead.
+
+\mypara{Interlaced Streams are a Blocklace}
+When multiple agents maintain interlaced streams that reference each other (Program~\ref{program:interlaced-streams}), they form a blocklace~\cite{almeida2024blocklace}---a DAG where blocks reference multiple predecessors---employed by modern consensus protocols including Cordial Miners~\cite{keidar2023cordial},  Morpheus~\cite{lewis2025morpheus}, and Constitutional Consensus~\cite{keidar2025constitutional}.
+The resulting structure provides eventual consistency equivalent to Byzantine fault-tolerant CRDTs~\cite{shapiro2011conflict} while maintaining blockchain integrity guarantees.
+
+In secure multiagent GLP, mutual attestations ensure all participants execute verified code, allowing consensus protocols to handle only network and fail-stop failures rather than Byzantine behaviour, significantly reducing complexity while maintaining safety.
+
+
+

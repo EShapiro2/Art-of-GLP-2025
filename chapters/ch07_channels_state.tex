@@ -1,0 +1,34 @@
+% chapters/ch07_channels_state.tex - Channels and State
+
+\chapter{Channels and State}
+\label{ch:channels-state}
+
+This chapter shows how reader/writer pairs naturally give rise to bidirectional channels and stateful servers.
+
+\section{Bidirectional Channels}
+
+A single reader/writer pair provides one-way communication. Two pairs provide bidirectional communication:
+
+\begin{verbatim}
+channel(In?, Out) :- ...
+\end{verbatim}
+
+\section{Request-Response Patterns}
+
+[To be developed: client-server communication]
+
+\section{Stateful Servers}
+
+[To be developed: maintaining state across requests]
+
+\section{State Machines}
+
+[To be developed: encoding state machines in GLP]
+
+\section{Exercises}
+
+\begin{enumerate}
+\item[$\star$] Implement a simple counter server.
+\item[$\star\star$] Implement a key-value store server.
+\item[$\star\star\star$] Implement a replicated state machine.
+\end{enumerate}

@@ -1,0 +1,60 @@
+\begin{figure}[tp]
+\begin{algorithm}[H]
+	\caption{\textbf{Grassroots Cordial Dissemination for Mobile Agents Over UDP}\\ Code for agent $p$, including Algorithm \ref{alg:blocklace}}	\label{alg:CD-UDP}
+	%\small
+	%\begin{changemargin}{0cm}{-1.5cm}
+	\begin{algorithmic}[1] \scalefont{0.93}
+	\alglinenoPop{counter} 
+		
+
+	\Statex \textbf{Local variables:}
+    \StateX \textit{timer} \Comment{with \textbf{reset} and \textbf{timeout} operations}
+    \StateX $\textit{my\_ip} \gets \bot$ \Comment{My IP address and open UDP port, updated externally}
+\vspace{0.5em}
+
+     	\Upon{change to \textit{my\_ip}}     \label{alg:disseminate-new-IP}
+	            \Comment{Update friends of my new address}
+        \State  $b\gets \{\textit{create\_block}((\textit{`ip\_address'},\textit{my\_ip}))\}$
+	    \EndUpon
+
+\vspace{0.5em}
+	\Upon{decision to send $b \in \textit{blocklace}$ to address \textit{IP}}   \label{alg:BDA-b-to-q}   \Comment{Decision made externally} 
+       \State  \textbf{send}  $b$ to \textit{IP}   \Comment{2. \textbf{Send-$b$-to-$q$}}
+	 \EndUpon
+
+  
+\vspace{0.5em}
+
+	\Upon{$\textbf{receive } b$}   \label{alg:BDA-receive}   \Comment{3. \textbf{Receive-$b$}}
+	  \State  $\textit{blocklace}\gets \textit{blocklace} \cup \{b\}$  \label{alg:BDA-receive}
+	 \EndUpon
+
+  
+	   	 \vspace{0.5em}	
+     	\Upon{$\textbf{timeout}(\textit{timer})$}     \label{alg:disseminate-timeout}
+	            \Comment{4. \textbf{Cordially-Send-$b$-to-$q$}}
+        \For{all $b\in \textit{blocklace}, q \in P :  \textit{friend}(q) \wedge \textit{follows}(q, b.\textit{creator}) \wedge \lnot\textit{agentObserves}(q,b)$}
+	    \State \textbf{send}  $b$ to  $ip(q)$  \label{alg:send-package}
+	    \EndFor
+     	\State $\textbf{reset}(\textit{timer})$ \label{alg:reset-upon-send-package}
+	    \EndUpon
+
+   
+\vspace{0.5em}
+        \Procedure{$\textit{ip}(q)$}{} \Comment{Most-recently known IP address of $q$} 
+        \State Let $b$ be the most recent $q$-block in \textit{blocklace} s.t. $b.\textit{payload}= (\textit{`ip\_address'},\textit{IP})$ 
+        \State \Return $\textit{IP}$ 
+        \EndProcedure
+        
+
+		\alglinenoPush{counter}
+	\end{algorithmic}
+	
+          
+	
+	%\end{changemargin}
+% 	\vspace{-5em}
+\end{algorithm}
+\vspace{-2em}
+\end{figure}
+

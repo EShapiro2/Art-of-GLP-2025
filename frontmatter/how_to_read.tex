@@ -1,0 +1,88 @@
+% frontmatter/how_to_read.tex - How to Read This Book
+
+\chapter{How to Read This Book}
+
+This book has two parallel tracks: an \emph{informal track} and a \emph{formal track}.
+
+\section*{The Informal Track}
+
+The informal track provides intuitive explanations, examples, and programming techniques. It is comprehensive and self-contained. Most readers should follow this track.
+
+The informal presentation uses:
+\begin{itemize}
+\item Plain English explanations of concepts
+\item Numerous program examples with detailed walkthroughs
+\item Diagrams illustrating data flow and communication
+\item Analogies connecting \GLP concepts to familiar ideas
+\end{itemize}
+
+\section*{The Formal Track}
+
+The formal track provides precise mathematical definitions and proofs. It appears in shaded boxes labeled ``Formal X.Y'' throughout the text.
+
+\begin{formal}{Example Formal Box}
+This is what a formal box looks like. It contains precise definitions, theorems, and proofs that complement the informal exposition.
+
+\begin{fdef}[Example Definition]
+A \emph{widget} is a triple $(A, B, C)$ where $A$ is a set, $B$ is a relation on $A$, and $C$ is a distinguished element of $A$.
+\end{fdef}
+\end{formal}
+
+Readers who want rigorous foundations should read the formal boxes. Readers who prefer intuition can skip them entirely without losing the thread of the exposition.
+
+The formal material is drawn from the \GLP specification paper and provides:
+\begin{itemize}
+\item Precise syntax definitions using BNF grammar
+\item Operational semantics via transition systems
+\item Safety properties (SRSW preservation, acyclicity, monotonicity)
+\item Proofs of key theorems
+\end{itemize}
+
+\section*{Prerequisites}
+
+This book assumes familiarity with:
+\begin{itemize}
+\item Basic programming concepts (variables, functions, recursion)
+\item Elementary logic (propositions, predicates, implication)
+\item Some exposure to functional or logic programming is helpful but not required
+\end{itemize}
+
+No prior knowledge of Prolog or concurrent programming is assumed, though readers with such background will progress faster through the early chapters.
+
+\section*{Chapter Dependencies}
+
+The book is organized into six parts:
+
+\mypara{Part I: Foundations} Chapters 1--4 must be read in order. They establish the core concepts of logic programs and \GLP.
+
+\mypara{Part II: Programming with Streams} Chapters 5--7 build on Part I and introduce stream programming. They should be read in order.
+
+\mypara{Part III: Recursive Programming} Chapters 8--10 can be read after Part II. They cover classical recursive programming patterns adapted to \GLP.
+
+\mypara{Part IV: Objects and Processes} Chapters 11--12 require Parts I--II. They show how object-oriented concepts emerge naturally in \GLP.
+
+\mypara{Part V: Metaprogramming} Chapters 13--15 require Parts I--III. They explore programs that manipulate programs.
+
+\mypara{Part VI: Grassroots Protocols} Chapters 16--19 require Parts I--II. They present the crown jewel: protocols for grassroots social networking and security.
+
+\section*{Exercises}
+
+Each chapter concludes with exercises of varying difficulty:
+\begin{itemize}
+\item[$\star$] Basic exercises reinforcing chapter concepts
+\item[$\star\star$] Intermediate exercises requiring synthesis
+\item[$\star\star\star$] Advanced exercises exploring extensions
+\end{itemize}
+
+Solutions to selected exercises appear on the book's companion website.
+
+\section*{Notation Conventions}
+
+\begin{itemize}
+\item Program code appears in \texttt{typewriter font}
+\item Variables in programs start with uppercase: \texttt{X}, \texttt{Stream}, \texttt{Result}
+\item Constants and functors start with lowercase: \texttt{merge}, \texttt{person(alice)}
+\item Reader variables use suffix \texttt{?}: \texttt{X?}
+\item Writer variables use suffix \texttt{!}: \texttt{X!}
+\item Mathematical variables appear in italics: $x$, $\sigma$, $\theta$
+\end{itemize}

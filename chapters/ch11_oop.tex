@@ -1,0 +1,27 @@
+% chapters/ch11_oop.tex - Object-Oriented Programming
+
+\chapter{Objects and Processes}
+\label{ch:oop}
+
+This chapter shows how object-oriented concepts emerge naturally from stream-based programming in \GLP.
+
+\section{Objects as Processes}
+
+An object is a process that maintains state and responds to messages:
+
+\begin{verbatim}
+object(State, [Msg | Msgs?], Responses?) :-
+    handle(Msg?, State?, NewState, Response),
+    Responses = [Response? | RestResponses?],
+    object(NewState?, Msgs?, RestResponses).
+\end{verbatim}
+
+\section{Encapsulation}
+
+\section{Method Dispatch}
+
+\section{Object Identity}
+
+\section{Exercises}
+
+[To be developed]

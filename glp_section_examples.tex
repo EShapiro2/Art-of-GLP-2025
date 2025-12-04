@@ -1,0 +1,52 @@
+\section{Programming Examples}\label{section:programming-examples}
+
+We present some basic GLP programming techniques through examples. Additional  techniques appear in Appendix~\ref{appendix:additional-techniques}.
+
+\Program{Concurrent Monitor}\label{program:monitor}
+\begin{verbatim}
+monitor(Reqs) :- monitor(Reqs?,0).
+
+monitor([add(N)|Reqs],Sum) :- 
+    Sum1 := Sum? + N?, monitor(Reqs?,Sum1?).
+monitor([subtract(N)|Reqs],Sum) :- 
+    Sum1 := Sum? - N?, monitor(Reqs?,Sum1?).
+monitor([value(V)|Reqs],Sum) :- 
+    ground(Sum?) | V = Sum?, monitor(Reqs?,Sum?).
+monitor([],_).
+\end{verbatim}
+An example initial goal is:
+\begin{verbatim}
+client1(Xs), client2(Ys), merge(Xs?,Ys?,Zs), monitor(Zs?).
+\end{verbatim}
+The monitor demonstrates a stateful service handling requests from multiple concurrent clients, serialized through stream merging (Program~\ref{program:merge}) whilst maintaining state through the \verb|Sum| parameter in tail-recursive calls. The \verb|value(V)| request demonstrates incomplete messages—upon receipt the monitor binds the response variable \verb|V| to the current sum. 
+
+A fixed number of clients can be served by a fixed binary merge tree.  A dynamically-changing set of clients can be served by the following dynamic stream merger, where an existing client can onboard a new client with a request stream \verb|Ws| by sending down its own request stream the request \verb|merge(Ws?)|, creating a dynamic merge tree as follows.
+
+
+\Program{Dynamic Stream Merger}\label{program:dynamic-merge}
+\begin{verbatim}
+merger(Ws,Xs,Out?) :- merge(Ws?,Xs?,Out).
+
+merge([merge(Ws)|Xs],Ys,Zs?) :- 
+   merger(Ws?,Xs?,Xs1), merge(Xs1?,Ys?,Zs).
+merge(Xs,[merge(Ws)|Ys],Zs?) :- 
+   merger(Ws?,Ys?,Ys1), merge(Xs?,Ys1?,Zs).
+merge([X|Xs],Ys,[X?|Zs?]) :- 
+    X =\= merge(_) | merge(Ys?,Xs?,Zs).
+merge(Xs,[Y|Ys],[Y?|Zs?]) :- 
+    Y =\= merge(_) | merge(Xs?,Ys?,Zs).
+merge([],[],[]).
+\end{verbatim}
+The resulting merge tree can be highly imbalanced; standard optimization techniques can be applied~\cite{shapiro1984fair,shapiro1986multiway}.
+
+Broadcasting to multiple concurrent consumers uses the \verb|ground| guard to enable input replication without violating the single-writer constraint:
+
+\Program{Concurrent Stream Distribution}\label{program:distribute}
+\begin{verbatim}
+distribute([X|Xs],[X|Ys1],...,[X|Ysn]) :- 
+    ground(X) | distribute(Xs?,Ys1?,...,Ysn?).
+distribute([],[],...,[]).
+\end{verbatim}
+When \verb|X| is ground, multiple occurrences in the clause body do not violate SRSW.
+Additional programming examples appear in Appendix~\ref{appendix:additional-techniques}.
+

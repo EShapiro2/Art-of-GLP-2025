@@ -1,0 +1,130 @@
+% preamble.tex - Art of GLP Book Preamble
+
+% Essential packages
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{amsthm}
+\usepackage{xspace}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{thmtools}
+\usepackage{mdframed}
+\usepackage{marginnote}
+
+% Additional packages from paper
+\usepackage{multirow}
+\usepackage{mathtools}
+\usepackage{relsize}
+\usepackage{bm}
+\usepackage{verbatimbox}
+\usepackage{wrapfig}
+
+% Algorithm packages
+\usepackage{algorithm}
+\usepackage[noend]{algpseudocode}
+
+% Code listings
+\usepackage{listings}
+\lstset{
+  basicstyle=\ttfamily\small,
+  frame=single,
+  breaklines=true,
+  columns=fullflexible
+}
+
+% Memoir-specific settings
+\chapterstyle{veelo}
+\setlength{\beforechapskip}{50pt}
+\setlength{\afterchapskip}{40pt}
+
+% Page layout
+\raggedbottom
+
+% Bibliography style
+\bibliographystyle{plain}
+
+%% ============================================
+%% Text Commands and Abbreviations
+%% ============================================
+
+\newcommand{\GLP}{\textsc{GLP}\xspace}
+\newcommand{\lp}{logic programs\xspace}
+\newcommand{\cp}{Concurrent Prolog\xspace}
+\newcommand{\scl}{\textsc{scl}\xspace}
+\newcommand{\gsn}{\textsc{gsn}\xspace}
+
+% Paragraph and emphasis commands
+\newcommand{\mypara}[1]{\paragraph{#1}}
+\newcommand{\temph}[1]{\textbf{#1}}
+\newcommand{\remove}[1]{}
+
+% Author comment commands (for drafts)
+\newcommand{\udi}[1]{\textcolor{blue}{[Udi says: #1]}}
+\newcommand{\claude}[1]{\textcolor{red}{[Claude: #1]}}
+
+%% ============================================
+%% Math Commands
+%% ============================================
+
+\newcommand{\calV}{\mathcal{V}}
+\newcommand{\calG}{\mathcal{G}}
+\newcommand{\calT}{\mathcal{T}}
+\newcommand{\calF}{\mathcal{F}}
+\newcommand{\calR}{\mathbb{R}}
+\newcommand{\calN}{\mathbb{N}}
+\newcommand{\calA}{\mathcal{A}}
+\newcommand{\V}{\mathcal{V}}
+\newcommand{\calS}{\mathcal{S}}
+\newcommand{\calL}{\mathcal{L}}
+\newcommand{\calP}{\mathcal{P}}
+\newcommand{\calM}{\mathcal{M}}
+\newcommand{\calE}{\mathcal{E}}
+\newcommand{\calB}{\mathcal{B}}
+\newcommand{\calC}{\mathcal{C}}
+\newcommand{\calX}{\mathcal{X}}
+\newcommand{\calD}{\mathcal{D}}
+
+%% ============================================
+%% Roman Numeral Abbreviations
+%% ============================================
+
+\newcommand{\ia}{\textit{i}}
+\newcommand{\ib}{\textit{ii}}
+\newcommand{\ic}{\textit{iii}}
+\newcommand{\id}{\textit{iv}}
+\newcommand{\iie}{\textit{v}}
+\newcommand{\iif}{\textit{vi}}
+\newcommand{\iiv}{\textit{iv}}
+\newcommand{\iv}{\textit{v}}
+
+%% ============================================
+%% Program Counter
+%% ============================================
+
+\newcounter{programcounter}[chapter]
+\renewcommand{\theprogramcounter}{\thechapter.\arabic{programcounter}}
+\newcommand{\Program}[1]{%
+  \refstepcounter{programcounter}%
+  \medskip\noindent\textbf{Program \theprogramcounter: #1}\par\nopagebreak
+}
+
+%% ============================================
+%% List Settings
+%% ============================================
+
+\setlist{nosep, leftmargin=*}
+\setlist{itemsep=1pt, topsep=3pt, leftmargin=*}
+
+%% ============================================
+%% Theorem Environments (for main text)
+%% ============================================
+
+\newtheorem{observation}{Observation}[chapter]
+
+%% ============================================
+%% Include Formal Track Definitions
+%% ============================================
+
+\input{formal}

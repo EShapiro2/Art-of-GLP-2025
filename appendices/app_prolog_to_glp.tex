@@ -1,0 +1,50 @@
+% appendices/app_prolog_to_glp.tex - Prolog to GLP
+
+\chapter{From Prolog to GLP}
+\label{app:prolog-to-glp}
+
+This appendix guides Prolog programmers in transitioning to \GLP.
+
+\section{Key Differences}
+
+\begin{center}
+\begin{tabular}{lll}
+\textbf{Aspect} & \textbf{Prolog} & \textbf{GLP} \\
+\hline
+Variables & Shared, any can write & Reader/writer pairs \\
+Unification & Bidirectional & Writer-only \\
+Clause selection & Backtracking & Committed choice \\
+Execution & Sequential & Concurrent \\
+\end{tabular}
+\end{center}
+
+\section{Converting Programs}
+
+\subsection{Variable Usage}
+
+In Prolog:
+\begin{verbatim}
+swap(pair(X, Y), pair(Y, X)).
+\end{verbatim}
+
+In \GLP (requires restructuring):
+\begin{verbatim}
+swap(pair(X?, Y?), Result) :-
+    Result = pair(Y?, X?).
+\end{verbatim}
+
+\subsection{Removing Backtracking}
+
+Prolog's generate-and-test patterns must be restructured for committed choice.
+
+\subsection{Adding Concurrency}
+
+Sequential Prolog programs become concurrent \GLP programs through stream-based communication.
+
+\section{Common Patterns}
+
+[Pattern translations to be developed]
+
+\section{Pitfalls}
+
+[Common mistakes to be documented]

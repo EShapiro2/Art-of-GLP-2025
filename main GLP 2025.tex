@@ -1,0 +1,133 @@
+\documentclass[runningheads,thm-restate]{llncs}
+
+% Essential packages for LNCS
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{xspace}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{xcolor}
+\usepackage{enumitem}
+
+% Algorithm packages
+\usepackage{algorithm}
+\usepackage[noend]{algpseudocode}
+
+% Your specific packages
+\usepackage{multirow}
+\usepackage{mathtools}
+\usepackage{relsize}
+\usepackage{bm}
+\usepackage{verbatimbox}
+\usepackage{wrapfig}
+\usepackage{thmtools}
+
+% Your custom formatting commands
+\newcommand{\mypara}[1]{\smallskip\noindent\textbf{#1.}}
+\newcommand{\temph}[1]{\textbf{#1}}  % or use \emph{#1}
+\newcommand{\remove}[1]{}
+\newcommand{\udi}[1]{\textcolor{blue}{[Udi says: #1]}}
+\newcommand{\claude}[1]{\textcolor{red}{[Claude: #1]}}
+
+% Your abbreviation commands
+\newcommand{\GLP}{\textsc{GLP}\xspace}
+\newcommand{\lp}{logic programs\xspace}
+\newcommand{\cp}{Concurrent Prolog\xspace}
+\newcommand{\scl}{\textsc{scl}\xspace}
+\newcommand{\gsn}{\textsc{gsn}\xspace}
+
+% Your math commands
+\newcommand{\calV}{\mathcal{V}}
+\newcommand{\calG}{\mathcal{G}}
+\newcommand{\calT}{\mathcal{T}}
+\newcommand{\calF}{\mathcal{F}}
+\newcommand{\calR}{\mathbb{R}}
+\newcommand{\calN}{\mathbb{N}}
+\newcommand{\calA}{\mathcal{A}}
+\newcommand{\V}{\mathcal{V}}
+\newcommand{\calS}{\mathcal{S}}
+\newcommand{\calL}{\mathcal{L}}
+\newcommand{\calP}{\mathcal{P}}
+\newcommand{\calM}{\mathcal{M}}
+\newcommand{\calE}{\mathcal{E}}
+\newcommand{\calB}{\mathcal{B}}
+\newcommand{\calC}{\mathcal{C}}
+\newcommand{\calX}{\mathcal{X}}
+\newcommand{\calD}{\mathcal{D}}
+
+% Roman numeral abbreviations
+\newcommand{\ia}{\textit{i}}
+\newcommand{\ib}{\textit{ii}}
+\newcommand{\ic}{\textit{iii}}
+\newcommand{\id}{\textit{iv}}
+\newcommand{\iie}{\textit{v}}
+\newcommand{\iif}{\textit{vi}}
+\newcommand{\iiv}{\textit{iv}}
+\newcommand{\iv}{\textit{v}}
+
+% Program counter for examples
+\newcounter{pc}
+\newcommand\spc{\addtocounter{pc}{1}\thepc}
+\newcommand{\Program}[1]{\medskip\noindent\textbf{Program \spc: #1}\vspace{-5pt}}
+
+% Set list spacing
+\setlist{nosep, leftmargin=*}
+\setlist{itemsep=1pt, topsep=3pt, leftmargin=*}
+
+\newtheorem{observation}{Observation}
+\raggedbottom  % Prevents vertical justification
+
+% Bibliography style
+\bibliographystyle{plain}
+
+\begin{document}
+
+\title{\smaller
+GLP: A Secure, Multiagent, Grassroots, Concurrent, Logic Programming Language}
+\titlerunning{GLP}
+\author{Ehud Shapiro}
+\authorrunning{Shapiro}
+\institute{London School of Economics and Weizmann Institute of Science}
+
+\maketitle
+
+\begin{abstract}
+Grassroots platforms are distributed applications run by\linebreak  cryptographically-identified people on their networked personal devices, where multiple disjoint platform instances emerge independently and coalesce when they interoperate. Their foundation is the grassroots social graph, upon which grassroots social networks, grassroots cryptocurrencies, and grassroots democratic federations can be built.
+
+Grassroots platforms have yet to be implemented, the key challenge being faulty and malicious participants: without secure programming support, correct participants cannot reliably identify each other, establish secure communication, or verify each other's code integrity.
+
+We present GLP, a secure, multiagent, concurrent, logic programming language for implementing grassroots platforms. GLP extends logic programs with paired single-reader/single-writer (SRSW) logic variables, providing secure communication channels among cryptographically-identified people through encrypted, signed and attested messages, which enable identity and code integrity verification.
+We present GLP progressively:  logic programs,  concurrent GLP,  multiagent GLP, augmenting it with cryptographic security, and providing smartphone implementation-ready specifications. We prove safety properties including that GLP computations are deductions, SRSW preservation, acyclicity, and monotonicity. We prove multiagent GLP is grassroots and that GLP streams achieve blockchain security properties. We present a grassroots social graph protocol establishing authenticated peer-to-peer connections and demonstrate secure grassroots social networking applications.
+\end{abstract}
+
+\newpage
+% Add table of contents
+\setcounter{tocdepth}{2}  % Control depth: 0=chapters, 1=sections, 2=subsections
+\tableofcontents
+\newpage
+
+% Main sections
+\input{glp_section_introduction}
+\input{glp_section_logic_programs}
+\input{glp_section_glp}
+\input{glp_section_examples}
+\input{glp_section_multiagent}
+\input{glp_section_social_graph}
+\input{glp_section_security}
+\input{glp_section_implementation}
+\input{glp_section_related_work}
+\input{glp_section_conclusion}
+
+\bibliography{bib}
+
+% Appendices
+\input{glp_appendix_lp_syntax}
+\input{glp_appendix_proofs}
+\input{glp_appendix_social_graph_properties}
+\input{glp_appendix_social_networking}
+\input{glp_appendix_guards_system}
+\input{glp_appendix_additional_techniques}
+\input{glp_appendix_workstation}
+\input{glp_appendix_smartphone}
+
+\end{document}

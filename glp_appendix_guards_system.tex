@@ -1,0 +1,34 @@
+\section{Guards and System Predicates}\label{appendix:guards-system}
+
+Guards and system predicates extend GLP programs with access to the GLP runtime state, operating system and hardware capabilities.
+
+\mypara{Guard predicates}
+Guards provide read-only access to the runtime state of GLP computation. A guard appears after the clause head, separated by \verb=|=, and must be satisfied for the clause to be selected. The following guards are fundamental for concurrent GLP programming:
+
+\begin{itemize}
+\item \verb|ground(X)| succeeds if \verb|X| contains no variables. With this guard, the clause body may contain multiple occurrences of \verb|X?| without violating the single-writer requirement, enabling safe replication of ground terms to multiple concurrent consumers.
+\item \verb|known(X)| succeeds if \verb|X| is not a variable, though it may not be ground.
+\item \verb|writer(X)| and \verb|reader(X)| succeed if  \verb|X| is an uninstantiated writer or reader respectively.  Note that \verb|reader(X)| is non-monotonic.
+\item \verb|otherwise| succeeds if all previous clauses for this procedure failed.
+\item \verb|X=Y| succeed if $X$ and $Y$ are identical
+\item \verb|X=\=Y| succeeds if the unification of $X$ and $Y$ fails. 
+\end{itemize}
+
+\mypara{Defined guard predicates}
+To support abstract data types and cleaner code organization, GLP provides for user-defined guards, defined unit clauses \verb|p(T1,...,Tn)|.  The call \verb|p(S1,...,Sn)| in the guard is folded to the equalities \verb|T1=S1,...,Tn=Sn| for each unit goal. This mechanism is demonstrated in the channel abstractions below.
+
+\mypara{System predicates}
+System predicates execute atomically with goal/clause reduction and provide access to underlying runtime services:
+\begin{itemize}
+\item \verb|evaluate(Expr?,Result)| evaluates ground arithmetic expressions.
+\item \verb|current_time(T)| provides system timestamps for temporal coordination.
+\item \verb|variable_name(X,Name)| returns a unique identifier for variable \verb|X| and its pair.
+\end{itemize}
+
+\mypara{Arithmetic evaluation in assignments}
+Arithmetic expressions are defined by the following clause:
+\begin{verbatim}
+X? := E :- ground(E) | evaluate(E?,X).
+\end{verbatim}
+Ensuring the expression is ground before calling the system evaluator, maintaining program safety whilst providing convenient notation for mathematical computations.
+

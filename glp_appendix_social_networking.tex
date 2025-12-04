@@ -1,0 +1,126 @@
+\section{Social Networking Applications}\label{appendix:social-networking}
+
+Building upon the authenticated social graph, this section demonstrates how GLP enables secure social networking applications. The established friend channels and attestation mechanisms provide verifiable content authorship and provenance guarantees impossible in centralised platforms.
+
+\subsection{Direct Messaging}
+
+Direct messaging establishes dedicated conversation channels between friends, separate from the protocol control channels. When accepting friendship, the acceptor creates a messaging channel and includes it in the acceptance response:
+
+\Program{Direct Messaging Channel Establishment}\label{program:direct-messaging}
+\begin{verbatim}
+% Modified establishment for direct messaging
+% Secure version - verifies DM channel attestation
+establish(yes, From, Resp, Fs, Fs1, In, In1) :-
+    new_channel(ch(FIn, FOut), FCh),
+    new_channel(ch(DMIn, DMOut), DMCh),
+    Resp = accept(FCh, DMCh),
+    attestation(DMCh, att(From, _)) |  % Verify DM channel from authenticated friend
+    handle_friend(From?, FIn?, FOut?, DMIn?, DMOut?, Fs?, Fs1, In?, In1).
+
+handle_friend(From, FIn, FOut, DMIn, DMOut, Fs, 
+             [(From, FOut), (dm(From), DMOut)|Fs], In, In1) :-
+    tag_stream(From?, FIn?, Tagged),
+    merge(In?, Tagged?, In1),
+    forward_to_app(dm_channel(From?, DMIn?)).
+\end{verbatim}
+
+The protocol maintains separation between control and messaging channels. The friend channel handles protocol messages whilst the direct messaging channel carries conversation data. Each message through the DM channel carries attestation, ensuring non-repudiation and authenticity of the conversation history.
+
+\subsection{Feed Distribution with Verified Authorship}
+
+Content feeds leverage the \verb|ground| guard's relaxation of SRSW constraints to broadcast to multiple followers whilst maintaining cryptographic proof of authorship:
+
+\Program{Authenticated Feed Distribution}\label{program:feed}
+\begin{verbatim}
+% Post distribution with attestation preservation
+post(Content, Followers, Followers1) :-
+    ground(Content), current_time(Time) |
+    create_post(Content?, Time?, Post),
+    broadcast(Post?, Followers?, Followers1).
+
+broadcast(_, [], []).
+broadcast(Post, [(Name,Out)|Fs], [(Name,[Post|Out1?])|Fs1]) :-
+    broadcast(Post?, Fs?, Fs1).
+
+% Defined guard for attestation preservation  
+preserve_attestation(Post, Author, forward(Author?, Post)).
+
+% Forward with attestation verification
+forward(Post, Followers, Followers1) :-
+    ground(Post), attestation(Post, att(Author, _)),
+    preserve_attestation(Post?, Author?, Forward) |
+    broadcast(Forward?, Followers?, Followers1).
+\end{verbatim}
+
+Each post carries the creator's attestation $(Post)_{M,p,q}$. When forwarding, the original attestation is preserved whilst adding the forwarder's attestation, creating a cryptographically verifiable provenance chain. Recipients can verify both the original author and the complete forwarding path, preventing misattribution and enabling accountability for content distribution.
+
+\subsection{Group Communication}
+
+Groups in GLP follow a founder-administered model where users create groups with selected friends. The founder invites authenticated friends who decide whether to join. Group messages use interlaced streams, creating natural causal ordering without consensus.
+
+\mypara{Group Formation}
+Users initiate groups with a name and friend list. The globally unique group identifier is (founder, name), preventing naming conflicts:
+
+\Program{Group Formation Protocol}\label{program:group-formation}
+\begin{verbatim}
+% User creates group with friend list
+social_graph(Id, [msg(user, Id, create_group(Name, Friends))|In], Fs) :-
+    create_group_streams([Id|Friends]?, Streams),
+    send_invitations(Friends?, Id?, Name?, Streams?, Fs?, Fs1),
+    social_graph(Id, In?, [((Id,Name), group(admin, Streams?))|Fs1?]).
+
+% Send invitations through friend channels
+send_invitations([], _, _, _, Fs, Fs).
+send_invitations([Friend|Friends], Founder, Name, Streams, Fs, Fs1) :-
+    lookup(Friend, Fs?, Ch),
+    Ch = [inv(Founder?, Name?, Streams?)|Ch1?],
+    send_invitations(Friends?, Founder?, Name?, Streams?, [(Friend,Ch1?)|Fs2?], Fs1).
+
+% Receive invitation from friend
+social_graph(Id, [msg(From, Id, inv(Founder, Name, Streams))|In], Fs) :-
+    attestation(inv(Founder, Name, Streams), att(From, _)) |
+    lookup_send(user, msg(agent, user, 
+                join_group(From?, Founder?, Name?)), Fs?, Fs1),
+    social_graph(Id, In?, Fs1?).
+
+% User decision on invitation
+social_graph(Id, [msg(user, Id, join(yes, Founder, Name, Streams))|In], Fs) :-
+    social_graph(Id, In?, [((Founder,Name), group(member, Streams?))|Fs?]).
+social_graph(Id, [msg(user, Id, join(no, _, _, _))|In], Fs) :-
+    social_graph(Id, In?, Fs?).
+\end{verbatim}
+
+The founder creates interlaced stream structures for all members and sends invitations through authenticated friend channels. Recipients verify the invitation's attestation before consulting their user. Accepted groups are stored with key (Founder, Name), ensuring uniqueness whilst clarifying ownership.
+
+\mypara{Group Messaging via Interlaced Streams}
+Group members maintain independent message streams whilst observing others' messages, creating causal ordering through the interlaced streams mechanism:
+
+\Program{Group Messaging}\label{program:group-messaging}
+\begin{verbatim}
+% Member participates in group
+group_member(Id, (Founder, Name), Streams) :-
+    lookup((Founder,Name), Fs?, group(Role, Streams)),
+    compose_messages(Id?, Name?, Messages),
+    find_my_stream(Id?, Streams?, MyStream),
+    interlace(Messages?, MyStream?, [], Streams?).
+
+compose_messages(Id, Name, [Msg|Msgs]) :-
+    await_user_input(Id?, Name?, Input),
+    format_message(Input?, Id?, Msg),
+    compose_messages(Id?, Name?, Msgs?).
+compose_messages(_, _, []).
+
+format_message(reply(Text), Id, msg(Id, reply, Text)).
+format_message(post(Text), Id, msg(Id, post, Text)).
+\end{verbatim}
+
+Members post independently without control tokens. The interlaced streams mechanism (Program~\ref{program:interlaced-streams}) ensures each member's block references all observed messages. When member p replies to message m, the reply appears in p's stream only after p has observed m, creating natural causality where replies follow what they reply to whilst independent messages remain unordered.
+
+Security derives from authenticated friend channels—all group communication occurs through channels established via the social graph protocol, with automatic attestation on every message. Byzantine agents outside the group cannot inject messages as they lack authenticated channels to members. The interlaced structure provides causal consistency equivalent to consensus protocols whilst eliminating their overhead, demonstrating how authenticated channels combined with GLP's concurrent programming primitives enable efficient group communication without centralisation or Byzantine agreement.
+
+\subsection{Content Authenticity and Provenance}
+
+Content authenticity in GLP derives from the attestation mechanism applied recursively through forwarding operations. When agent p creates post P, it carries attestation $(P)_{M,p,*}$. When agent q forwards this post, the forward operation wraps the entire attested post: `forward(p, P)`, which receives attestation $(forward(p,P))_{M,q,*}$. Recipients can verify both q's forwarding attestation and p's original creation attestation, with the nesting depth revealing the complete forwarding chain.
+
+This mechanism addresses three vulnerabilities in conventional social networks. First, impersonation becomes cryptographically impossible—agents cannot forge attestations for other agents' keys. Second, misattribution is prevented—the original author's attestation remains embedded regardless of forwarding depth. Third, conversation manipulation is detectable—group messages through interlaced streams create a tamper-evident partial order where altered histories fail attestation verification. These properties emerge from the language-level integration of attestations with GLP's communication primitives, requiring no external trust infrastructure or consensus protocols.
+

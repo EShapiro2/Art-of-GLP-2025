@@ -1,0 +1,41 @@
+% chapters/ch16_social_graph.tex - Social Graph
+
+\chapter{The Grassroots Social Graph}
+\label{ch:social-graph}
+
+This chapter presents the grassroots social graph---the foundation for all grassroots platforms.
+
+\section{Graph Structure}
+
+The grassroots social graph is a distributed graph where:
+\begin{itemize}
+\item Nodes represent cryptographically-identified people
+\item Edges represent authenticated friendships
+\item Connected components arise spontaneously and merge through befriending
+\end{itemize}
+
+\section{Node Representation}
+
+Each person runs a node on their personal device. A node contains:
+\begin{itemize}
+\item A keypair (public/private) for identification
+\item A friend list (authenticated connections)
+\item The \GLP runtime
+\end{itemize}
+
+\section{Edge Representation}
+
+An edge between two nodes represents:
+\begin{itemize}
+\item Mutual authentication (each knows the other's public key)
+\item A bidirectional communication channel
+\item Trust relationship for friend-mediated introductions
+\end{itemize}
+
+\section{Graph Properties}
+
+[To be developed: formal properties of the social graph]
+
+\section{Exercises}
+
+[To be developed]
