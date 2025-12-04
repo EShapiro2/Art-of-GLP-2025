@@ -374,7 +374,7 @@ The \texttt{observe} program appears to violate SRSW: the reader \texttt{X?} occ
 The guard \texttt{ground(X)} explicitly enables this relaxation:
 \begin{verbatim}
 observe([X|Xs], [Y1?|Ys1?], [Y2?|Ys2?]) :-
-    ground(X) |
+    ground(X?) |
     Y1 = X?, Y2 = X?,
     observe(Xs?, Ys1, Ys2).
 \end{verbatim}
