@@ -29,13 +29,62 @@ The book transforms the GLP-2025 paper into textbook form:
 3. **Permissions**:
    - Claude can only push to `claude/...` branches
    - User merges into `main` for Overleaf sync
-4. **To merge Claude's work into main** (user runs):
+
+## Syncing with Overleaf - Step by Step
+
+### Initial Setup (one time)
+
+1. **Link Overleaf to GitHub:**
+   - In Overleaf: New Project → Import from GitHub
+   - Select `EShapiro2/Art-of-GLP-2025`
+   - Overleaf syncs with `main` branch
+
+2. **Clone repo locally (if not already done):**
    ```bash
-   git fetch origin
-   git checkout main
-   git merge origin/claude/<branch-name>
-   git push origin main
+   git clone git@github.com:EShapiro2/Art-of-GLP-2025.git ~/Art-of-GLP-2025
    ```
+
+3. **Use SSH (avoids password issues):**
+   ```bash
+   cd ~/Art-of-GLP-2025
+   git remote set-url origin git@github.com:EShapiro2/Art-of-GLP-2025.git
+   ```
+
+### After Claude Code Makes Changes
+
+Claude pushes to `claude/<branch-name>`. To get changes into Overleaf:
+
+```bash
+cd ~/Art-of-GLP-2025
+git fetch origin
+git checkout main
+git merge origin/claude/<branch-name> --allow-unrelated-histories
+git push origin main
+```
+
+**Note:** `--allow-unrelated-histories` may be needed if histories diverged.
+
+**If merge opens an editor (vim):**
+- Press `Esc`, type `:wq`, press `Enter`
+
+### After Editing in Overleaf
+
+Push from Overleaf to GitHub (Menu → GitHub → Push), then:
+
+```bash
+cd ~/Art-of-GLP-2025
+git pull origin main
+```
+
+### Quick Reference
+
+| Action | Command |
+|--------|---------|
+| Get Claude's changes | `git fetch origin` |
+| Switch to main | `git checkout main` |
+| Merge Claude's branch | `git merge origin/claude/<branch> --allow-unrelated-histories` |
+| Push to GitHub/Overleaf | `git push origin main` |
+| Pull Overleaf changes | `git pull origin main` |
 
 ## Working Rules
 
