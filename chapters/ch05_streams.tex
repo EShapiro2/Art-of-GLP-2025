@@ -3,85 +3,125 @@
 \chapter{Streams}
 \label{ch:streams}
 
-Streams---incrementally constructed, potentially unbounded lists---are the fundamental data structure for \GLP programming. This chapter introduces stream programming techniques.
+Streams---incrementally constructed lists---are the fundamental communication mechanism in \GLP. A producer extends a stream; a consumer reads from it. Reader/writer pairs synchronize their interaction.
 
-\section{What is a Stream?}
+\section{Producer and Consumer}
 
-A stream is a list that may not be fully constructed yet. The tail might be a reader variable, awaiting a future value:
-
+\Program{Stream Producer}
 \begin{verbatim}
-[1, 2, 3 | Tail?]
+producer([N?|Xs?], N) :- N1 := N? + 1, producer(Xs, N1?).
 \end{verbatim}
 
-This represents a stream with known elements 1, 2, 3, and an unknown continuation $Tail?$.
+The producer takes two arguments: the stream to extend and the current value. It writes the current value to the stream head, increments, and recurses. The stream argument is a writer; the producer owns it.
 
-\section{Generating Streams}
-
-\Program{Natural Numbers Generator}
+\Program{Stream Consumer}
 \begin{verbatim}
-nats(N, [N? | Ns?]) :-
-    N1 is N + 1,
-    nats(N1?, Ns).
+consumer([X|Xs], Sum) :- Sum1 := Sum? + X?, consumer(Xs?, Sum1?).
 \end{verbatim}
 
-This generates an infinite stream of natural numbers starting from $N$.
+The consumer reads from the stream head, adds it to the running sum, and recurses. The stream argument is a reader; the consumer observes it.
 
-\section{Consuming Streams}
+\section{Concurrent Execution}
 
-\Program{Stream Printer}
+Running producer and consumer together:
+
 \begin{verbatim}
-print_stream([X? | Xs?]) :-
-    print(X?),
-    print_stream(Xs?).
-print_stream([]).
+GLP> producer(Xs, 0), consumer(Xs?, 0).
 \end{verbatim}
 
-\section{Transforming Streams}
+The producer owns the stream writer \verb|Xs|; the consumer holds the reader \verb|Xs?|. They execute concurrently, synchronized by the stream.
 
-\Program{Stream Map}
+With a reduction limit of 8:
+
 \begin{verbatim}
-map(F?, [], []).
-map(F?, [X? | Xs?], [Y? | Ys?]) :-
-    call(F?, X?, Y),
-    map(F?, Xs?, Ys).
+GLP> producer(Xs, 0), consumer(Xs?, 0).  [limit 8]
+
+producer(Xs, 0), consumer(Xs?, 0)
+  -> producer writes Xs = [0|Xs1]
+producer(Xs1, 1), consumer([0|Xs1]?, 0)
+  -> consumer reads 0, computes 0+0=0
+producer(Xs1, 1), consumer(Xs1?, 0)
+  -> producer writes Xs1 = [1|Xs2]
+producer(Xs2, 2), consumer([1|Xs2]?, 0)
+  -> consumer reads 1, computes 0+1=1
+producer(Xs2, 2), consumer(Xs2?, 1)
+  -> producer writes Xs2 = [2|Xs3]
+producer(Xs3, 3), consumer([2|Xs3]?, 1)
+  -> consumer reads 2, computes 1+2=3
+producer(Xs3, 3), consumer(Xs3?, 3)
+  -> producer writes Xs3 = [3|Xs4]
+producer(Xs4, 4), consumer([3|Xs4]?, 3)
+
+Xs = [0, 1, 2, 3 | Xs4]
+-> limit reached
 \end{verbatim}
 
-\section{Filtering Streams}
+The trace shows interleaved execution. Neither process dominates; fairness ensures both make progress. After 8 reductions, the stream contains \verb|[0, 1, 2, 3 | ...]| and the sum is 3.
 
-\Program{Stream Filter}
+\section{Suspension and Synchronization}
+
+What if the consumer runs faster than the producer? It suspends:
+
 \begin{verbatim}
-filter(P?, [], []).
-filter(P?, [X? | Xs?], Ys?) :-
-    ( call(P?, X?) -> Ys = [X? | Ys1?], filter(P?, Xs?, Ys1)
-    ; filter(P?, Xs?, Ys)
-    ).
+GLP> consumer(Xs?, 0).  [Xs unbound]
+
+consumer(Xs?, 0)
+  -> suspended on Xs?
 \end{verbatim}
 
-\section{The Merge Program}
+The consumer cannot match \verb|[X|Xs]| against an unbound variable. It waits until someone writes to \verb|Xs|.
 
-We revisit merge as the paradigmatic stream combinator:
+When the producer writes:
 
-\Program{Fair Stream Merger}
 \begin{verbatim}
-merge([X|Xs],Ys,[X?|Zs?]) :- merge(Ys?,Xs?,Zs).
-merge(Xs,[Y|Ys],[Y?|Zs?]) :- merge(Xs?,Ys?,Zs).
-merge([],[],[]).
+GLP> Xs = [1|Xs1], consumer(Xs?, 0).
+
+consumer([1|Xs1]?, 0)
+  -> consumer reads 1, computes 0+1=1
+consumer(Xs1?, 1)
+  -> suspended on Xs1?
 \end{verbatim}
 
-\section{Stream Networks}
+The consumer processes one element and suspends again, waiting for more data.
 
-Streams can be connected to form processing networks. This is explored in the next chapter.
+\section{Stream Termination}
 
-\section{Exercises}
+The programs above run forever. To terminate, the producer closes the stream:
 
-\begin{enumerate}
-\item[$\star$] Write a \verb|take(N, Stream, Prefix)| that extracts the first $N$ elements.
+\Program{Bounded Producer}
+\begin{verbatim}
+producer([], 0).
+producer([N?|Xs?], N) :- N > 0 | N1 := N? - 1, producer(Xs, N1?).
+\end{verbatim}
 
-\item[$\star$] Write a \verb|drop(N, Stream, Suffix)| that skips the first $N$ elements.
+\Program{Terminating Consumer}
+\begin{verbatim}
+consumer([], Sum, Sum?).
+consumer([X|Xs], Sum, Result?) :-
+    Sum1 := Sum? + X?, consumer(Xs?, Sum1?, Result).
+\end{verbatim}
 
-\item[$\star\star$] Write a \verb|zip(Xs, Ys, Pairs)| that combines two streams into pairs.
+\begin{verbatim}
+GLP> producer(Xs, 3), consumer(Xs?, 0, R).
 
-\item[$\star\star$] Write a \verb|scan(Op, Init, Xs, Ys)| that computes running totals.
+producer(Xs, 3), consumer(Xs?, 0, R)
+  -> producer writes Xs = [3|Xs1]
+producer(Xs1, 2), consumer([3|Xs1]?, 0, R)
+  -> consumer reads 3
+producer(Xs1, 2), consumer(Xs1?, 3, R)
+  -> producer writes Xs1 = [2|Xs2]
+producer(Xs2, 1), consumer([2|Xs2]?, 3, R)
+  -> consumer reads 2
+producer(Xs2, 1), consumer(Xs2?, 5, R)
+  -> producer writes Xs2 = [1|Xs3]
+producer(Xs3, 0), consumer([1|Xs3]?, 5, R)
+  -> consumer reads 1
+producer(Xs3, 0), consumer(Xs3?, 6, R)
+  -> producer writes Xs3 = []
+consumer([], 6, R)
+  -> consumer terminates
+R = 6
+-> succeeds
+\end{verbatim}
 
-\item[$\star\star\star$] Implement the Sieve of Eratosthenes as a stream network.
-\end{enumerate}
+The producer counts down from 3, producing \verb|[3, 2, 1]|, then closes with \verb|[]|. The consumer sums to 6 and binds the result.

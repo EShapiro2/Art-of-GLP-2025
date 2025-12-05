@@ -56,13 +56,12 @@ Claude pushes to `claude/<branch-name>`. To get changes into Overleaf:
 
 ```bash
 cd ~/Art-of-GLP-2025
-git fetch origin
-git checkout main
-git merge origin/claude/<branch-name> --allow-unrelated-histories -m "Merge claude changes"
+git fetch origin claude/<branch-name>
+git merge -m "Merge claude/<branch-name> into main" origin/claude/<branch-name>
 git push origin main
 ```
 
-**Note:** `--allow-unrelated-histories` may be needed if histories diverged.
+Then in Overleaf: Menu → GitHub → Pull
 
 ### After Editing in Overleaf
 
@@ -72,16 +71,6 @@ Push from Overleaf to GitHub (Menu → GitHub → Push), then:
 cd ~/Art-of-GLP-2025
 git pull origin main
 ```
-
-### Quick Reference
-
-| Action | Command |
-|--------|---------|
-| Get Claude's changes | `git fetch origin` |
-| Switch to main | `git checkout main` |
-| Merge Claude's branch | `git merge origin/claude/<branch> --allow-unrelated-histories -m "Merge"` |
-| Push to GitHub/Overleaf | `git push origin main` |
-| Pull Overleaf changes | `git pull origin main` |
 
 ## Working Rules
 
