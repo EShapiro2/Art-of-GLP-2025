@@ -217,8 +217,164 @@ merge([],[],[]).
 [Streams chapter to be developed]
 
 \chapter{Programming Techniques}
+\label{ch:techniques}
 
-[Programming techniques chapter to be developed]
+This chapter presents programming techniques that exploit \GLP's concurrent execution model.
+
+\section{Logic Gates}
+
+Digital circuits provide a natural example of dataflow computation. We define basic gates as facts:
+
+\begin{verbatim}
+and(1,1,1).
+and(1,0,0).
+and(0,1,0).
+and(0,0,0).
+
+or(1,1,1).
+or(1,0,1).
+or(0,1,1).
+or(0,0,0).
+
+not(1,0).
+not(0,1).
+
+xor(1,1,0).
+xor(1,0,1).
+xor(0,1,1).
+xor(0,0,0).
+\end{verbatim}
+
+Each gate suspends until its inputs are bound:
+
+\begin{verbatim}
+GLP> and(1,1,X).
+and(1,1,X) :- true
+X = 1
+-> succeeds
+
+GLP> and(1,0,X).
+and(1,0,X) :- true
+X = 0
+-> succeeds
+\end{verbatim}
+
+Compound gates compose simpler ones. Note the output parameter pattern: the reader \verb|Z?| in the head receives the goal's variable, and the writer \verb|Z| in the body produces the value.
+
+\begin{verbatim}
+nand(A,B,Z?) :- and(A?,B?,W), not(W?,Z).
+\end{verbatim}
+
+\begin{verbatim}
+GLP> nand(1,1,X).
+nand(1,1,X) :- and(1,1,X1), not(X1?,X2)
+and(1,1,X1) :- true
+not(1,X2) :- true
+X = 0
+-> succeeds
+
+GLP> nand(0,1,X).
+nand(0,1,X) :- and(0,1,X1), not(X1?,X2)
+and(0,1,X1) :- true
+not(0,X2) :- true
+X = 1
+-> succeeds
+\end{verbatim}
+
+A half-adder takes two input bits and produces a sum and carry. Since \verb|A?| and \verb|B?| each appear twice in the body (in both \verb|xor| and \verb|and|), we need \verb|ground| guards:
+
+\begin{verbatim}
+half_adder(A,B,Sum?,Carry?) :-
+    ground(A?), ground(B?) |
+    xor(A?,B?,Sum), and(A?,B?,Carry).
+\end{verbatim}
+
+\begin{verbatim}
+GLP> half_adder(1,1,S,C).
+half_adder(1,1,S,C) :- xor(1,1,X1), and(1,1,X2)
+xor(1,1,X1) :- true
+and(1,1,X2) :- true
+S = 0
+C = 1
+-> succeeds
+
+GLP> half_adder(1,0,S,C).
+half_adder(1,0,S,C) :- xor(1,0,X1), and(1,0,X2)
+xor(1,0,X1) :- true
+and(1,0,X2) :- true
+S = 1
+C = 0
+-> succeeds
+\end{verbatim}
+
+A full-adder adds three bits: two inputs and a carry-in. Each reader appears only once in the body, so no guards are needed:
+
+\begin{verbatim}
+full_adder(A,B,Cin,Sum?,Cout?) :-
+    half_adder(A?,B?,S1,C1),
+    half_adder(S1?,Cin?,Sum,C2),
+    or(C1?,C2?,Cout).
+\end{verbatim}
+
+The trace shows dataflow: the second half-adder and \verb|or| suspend until the first half-adder produces results:
+
+\begin{verbatim}
+GLP> full_adder(1,1,1,S,C).
+full_adder(1,1,1,S,C) :- half_adder(1,1,X1,X2),
+    half_adder(X1?,1,X3,X4), or(X2?,X4?,X5)
+half_adder(1,1,X1,X2) :- xor(1,1,X6), and(1,1,X7)
+half_adder(X1?,1,X3,X4) -> suspended
+or(X2?,X4?,X5) -> suspended
+xor(1,1,X6) :- true
+and(1,1,X7) :- true
+half_adder(0,1,X3,X4) :- xor(0,1,X8), and(0,1,X9)
+or(1,X4?,X5) -> suspended
+xor(0,1,X8) :- true
+and(0,1,X9) :- true
+or(1,0,X5) :- true
+S = 1
+C = 1
+-> succeeds
+\end{verbatim}
+
+An n-bit ripple-carry adder chains full-adders, with each stage's carry-out feeding the next stage's carry-in:
+
+\begin{verbatim}
+adder([],[],Cin,[Cin?]).
+adder([A|As],[B|Bs],Cin,[S?|Ss?]) :-
+    full_adder(A?,B?,Cin?,S,Cout),
+    adder(As?,Bs?,Cout?,Ss).
+\end{verbatim}
+
+Adding 101 + 110 (5 + 6, LSB first):
+
+\begin{verbatim}
+GLP> adder([1,0,1],[1,1,0],0,R).
+adder([1,0,1],[1,1,0],0,R) :- full_adder(1,1,0,X1,X2),
+    adder([0,1],[1,0],X2?,X3)
+full_adder(1,1,0,X1,X2) :- half_adder(1,1,X4,X5),
+    half_adder(X4?,0,X6,X7), or(X5?,X7?,X8)
+adder([0,1],[1,0],X2?,X3) -> suspended
+half_adder(1,1,X4,X5) :- xor(1,1,X9), and(1,1,X10)
+half_adder(X4?,0,X6,X7) -> suspended
+or(X5?,X7?,X8) -> suspended
+xor(1,1,X9) :- true
+and(1,1,X10) :- true
+half_adder(0,0,X6,X7) :- xor(0,0,X11), and(0,0,X12)
+or(1,X7?,X8) -> suspended
+xor(0,0,X11) :- true
+and(0,0,X12) :- true
+or(1,0,X8) :- true
+adder([0,1],[1,0],1,X3) :- full_adder(0,1,1,X13,X14),
+    adder([1],[0],X14?,X15)
+...
+R = [0,0,0,1]
+-> succeeds
+\end{verbatim}
+
+The result \verb|[0,0,0,1]| is 1011 in binary (LSB first), which is 11 in decimal: $5 + 6 = 11$.
+
+The trace shows the ripple-carry behavior: each \verb|adder| stage suspends waiting for the carry from the previous stage, then reactivates when the carry arrives.
 
 \chapter{Simulating Multiagent Systems}
 \label{ch:plays}
