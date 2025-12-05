@@ -72,6 +72,10 @@ If writer-to-writer assignments were allowed then, by the single-writer restrict
 The occurs check condition for the reader counterpart ensures that no writer is bound to a term containing its paired reader, preventing the formation of circular terms, as proven in Proposition~\ref{proposition:acyclicity}.
 \end{remark}
 
+\begin{remark}[Writer-to-Writer and Suspension]
+By the formal definition, unifying two writers $X$ and $Y$ would suspend on an empty set: the regular mgu $\{X := Y\}$ exists but is not a writer mgu (violating condition 2), and the suspension set $W_\sigma = \emptyset$ since no reader is mapped to a non-variable. However, suspending on an empty set means waiting for nothing—guaranteed deadlock. By SRSW, after binding $X$ to $Y$, no other occurrence of either writer remains to instantiate them, so their paired readers $X?$ and $Y?$ are abandoned. The implementation therefore fails immediately on writer-to-writer unification rather than suspending uselessly. This is a pragmatic extension: early detection of inevitable deadlock.
+\end{remark}
+
 Renaming  (Definition~\ref{definition:renaming}) is extended to respect variable pairing:
 \begin{definition}[GLP Renaming]\label{definition:GLP-renaming}
  Two GLP terms $T, T'$ have a variable in common if for some writer $X\in V$, either $X$ or $X?$ occur in $T$ and either $X$ or $X?$ occur in $T'$. A \temph{GLP renaming} is a renaming substitution $\sigma: \mathcal{V} \mapsto \mathcal{V}$ such that for each $X\in V$: $X\sigma \in V$ and $X?\sigma = (X\sigma)?$.
