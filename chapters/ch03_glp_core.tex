@@ -72,6 +72,10 @@ If writer-to-writer assignments were allowed then, by the single-writer restrict
 The occurs check condition for the reader counterpart ensures that no writer is bound to a term containing its paired reader, preventing the formation of circular terms, as proven in Proposition~\ref{proposition:acyclicity}.
 \end{remark}
 
+\begin{remark}[Writer-to-Writer and Suspension]
+By the formal definition, unifying two writers $X$ and $Y$ would suspend on an empty set: the regular mgu $\{X := Y\}$ exists but is not a writer mgu (violating condition 2), and the suspension set $W_\sigma = \emptyset$ since no reader is mapped to a non-variable. However, suspending on an empty set means waiting for nothing—guaranteed deadlock. By SRSW, after binding $X$ to $Y$, no other occurrence of either writer remains to instantiate them, so their paired readers $X?$ and $Y?$ are abandoned. The implementation therefore fails immediately on writer-to-writer unification rather than suspending uselessly. This is a pragmatic extension: early detection of inevitable deadlock.
+\end{remark}
+
 Renaming  (Definition~\ref{definition:renaming}) is extended to respect variable pairing:
 \begin{definition}[GLP Renaming]\label{definition:GLP-renaming}
  Two GLP terms $T, T'$ have a variable in common if for some writer $X\in V$, either $X$ or $X?$ occur in $T$ and either $X$ or $X?$ occur in $T'$. A \temph{GLP renaming} is a renaming substitution $\sigma: \mathcal{V} \mapsto \mathcal{V}$ such that for each $X\in V$: $X\sigma \in V$ and $X?\sigma = (X\sigma)?$.
@@ -148,3 +152,78 @@ In any $GLP$ run $G_0 \rightarrow G_1 \rightarrow \cdots$, if $G_i \rightarrow G
 \begin{restatable}[Monotonicity]{proposition}{Monotonicity}\label{proposition:GLP-monotonicity}
 In any $GLP$ run $G_0 \rightarrow G_1 \rightarrow \cdots$, if atom $A \in G_i$ can reduce with clause $C$, then for any $j > i$, either $A$ has been reduced by step $j$, or there exists $A' \in G_j$ where $A' = A\tau$ for some reader substitution $\tau$, and $A'$ can reduce with $C$.
 \end{restatable}
+
+\subsection{Deterministic Transition System for Concurrent GLP}\label{subsection:irGLP}
+
+This section specifies a workstation (single-agent) implementation-ready transition system for GLP with deterministic execution.
+
+The nondeterministic GLP transition system (Definition~\ref{definition:GLP-ts}) specifies \emph{what} computations are valid without prescribing \emph{how} to execute them. The implementation-ready transition system makes three deterministic choices:
+\begin{enumerate}
+    \item \textbf{Goal order}: Goals are processed front-to-back from an ordered queue. The first goal is selected for reduction.
+    \item \textbf{Clause order}: Clauses are tried top-to-bottom. The ``first applicable clause'' is the textually first clause in $M$ for which reduction succeeds.
+    \item \textbf{Unification order}: Compound term arguments are unified left-to-right, depth-first. Unification stops at the first suspension or failure encountered.
+\end{enumerate}
+
+The left-to-right unification order means: if argument $i$ causes suspension but argument $j > i$ would cause failure, the implementation suspends rather than fails. When the suspended reader is later instantiated and the goal retried, the failure at argument $j$ will then be detected. This is \emph{sound}---suspension is conservative, never incorrectly succeeding---but may delay failure detection.
+
+\begin{definition}[Depth-First Writer Unification]\label{definition:df-unification}
+The \temph{depth-first writer unification} of terms $T_1$ and $T_2$, denoted $\mathit{dfunify}(T_1, T_2)$, is defined recursively:
+\begin{enumerate}
+    \item If $T_1$ and $T_2$ are identical: \emph{succeeds} with $\emptyset$.
+    \item If $T_1$ is a writer:
+    \begin{itemize}
+        \item If $T_2$ is a writer: \emph{fails}.
+        \item Otherwise: \emph{succeeds} with $\{T_1 := T_2\}$.
+    \end{itemize}
+    \item If $T_2$ is a writer: \emph{succeeds} with $\{T_2 := T_1\}$.
+    \item If $T_1$ is a reader: \emph{suspends} on $\{T_1\}$.
+    \item If $T_2$ is a reader: \emph{suspends} on $\{T_2\}$.
+    \item If $T_1 = f(S_1, \ldots, S_n)$ and $T_2 = g(R_1, \ldots, R_m)$:
+    \begin{itemize}
+        \item If $f \neq g$ or $n \neq m$: \emph{fails}.
+        \item Otherwise, for $i = 1, \ldots, n$ in order:
+        \begin{itemize}
+            \item Compute $\mathit{dfunify}(S_i\sigma_{i-1}, R_i\sigma_{i-1})$ where $\sigma_0 = \emptyset$.
+            \item If it fails: \emph{fails}.
+            \item If it suspends on $W$: \emph{suspends} on $W$.
+            \item If it succeeds with $\sigma'$: let $\sigma_i = \sigma_{i-1} \cup \sigma'$ and continue.
+        \end{itemize}
+        \item \emph{Succeeds} with $\sigma_n$.
+    \end{itemize}
+\end{enumerate}
+\end{definition}
+
+\begin{definition}[irGLP Configuration]
+An \emph{irGLP configuration} over program $M$ is a triple $R = (Q, S, F)$ where:
+\begin{itemize}
+\item $Q \in \mathcal{A}^*$ is a sequence of active goals
+\item $S \subseteq \mathcal{A} \times 2^{V?}$ contains suspended goals with their suspension sets
+\item $F \subseteq \mathcal{A}$ contains failed goals
+\end{itemize}
+\end{definition}
+
+The irGLP reduction extends GLP reduction by activating goals that were suspended on variables instantiated by the reduction, and explicitly failing goals that do not succeed or suspend.
+
+\begin{definition}[irGLP Goal/Clause Reduction]
+Given configuration $(Q, S, F)$ with $Q = A\cdot Q'$, clause $C \in M$ with head $H$ and body $B$ (renamed apart from $A$), the \emph{irGLP reduction} of $A$ with $C$:
+\begin{itemize}
+\item \textbf{succeeds with} $(B, \hat\sigma, R)$ if $\mathit{dfunify}(A, H)$ succeeds with $\hat\sigma$, and $R = \{G : (G, W) \in S \wedge X?\in W \wedge X?\hat\sigma? \neq X?\}$
+\item \textbf{suspends with} $W$ if $\mathit{dfunify}(A, H)$ suspends on $W$
+\item \textbf{fails} if $\mathit{dfunify}(A, H)$ fails
+\end{itemize}
+\end{definition}
+
+\begin{definition}[Implementation-Ready GLP Transition System]
+The transition system $\text{irGLP} = (\mathcal{C}, c_0, \mathcal{T})$ over $M$ and initial goal $G_0$ has configurations $\mathcal{C}$ being all irGLP configurations over $M$, with initial configuration $c_0 = (G_0, \emptyset, \emptyset)$, and transitions $\mathcal{T}$ being all transitions $(Q, S, F) \rightarrow (Q', S', F')$ where $Q = A \cdot Q_r$ and:
+    \begin{enumerate}
+    \item \textbf{Reduce:} If irGLP reduction of $A$ with first applicable clause $C \in M$ succeeds with $(B, \hat\sigma, R)$:
+        \begin{itemize}
+        \item \textbf{Activate:}  $S' = S \setminus \{(G, W) : G \in R\}$,  $F' = F$
+        \item \textbf{Schedule:} $Q' = (Q_r \cdot B \cdot R)\hat\sigma\hat\sigma?$
+        \end{itemize}
+    \item \textbf{Suspend:} Else if $W = \bigcup_{C \in M} W_{C} \neq \emptyset$ then $Q' = Q_r$, $S' = S \cup \{(A, W)\}$, $F' = F$
+    \item \textbf{Fail:} Else, $Q' = Q_r$, $S' = S$, $F' = F \cup \{A\}$.
+    \end{enumerate}
+\end{definition}
+
+A key simplification compared to the GLP operational semantics is the immediate application of reader substitutions during reduction rather than through asynchronous communication. This is appropriate for workstation execution where all variables are local.
