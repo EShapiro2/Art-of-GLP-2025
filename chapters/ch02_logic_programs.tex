@@ -1,258 +1,92 @@
-% chapters/ch02_logic_programs.tex - Logic Programs
+\section{Logic Programs}\label{section:lp}
 
-\chapter{Logic Programs}
-\label{ch:lp}
+Here we introduce transition systems, providing the formal framework for the operational semantics of both Logic Programs and GLP.
+We recall standard Logic Programs (LP): syntax, most-general unifier (mgu), operational semantics via nondeterministic goal/clause reduction, compositional semantics, and a proof that LP computations are deductions.
 
-Before we can understand \GLP, we must understand its foundation: logic programs. This chapter introduces logic programming from the ground up, establishing concepts and notation used throughout the book.
 
-\section{What is a Logic Program?}
+\subsection{Transition Systems}
 
-A logic program is a collection of \emph{clauses} that define relationships between objects. Unlike imperative programs that describe step-by-step procedures, logic programs describe \emph{what is true}---the system figures out \emph{how} to compute.
 
-Consider this simple example:
+We use $\subset$ to denote the strict subset relation, $\subseteq$ when equality is also possible, and $a\ne b \in S$ as a shorthand for $a\ne b\wedge a\in S \wedge b\in S$.
+%
+The following definition uses `configuration' rather than the more standard `state'  to avoid confusion with the `local state' of agents in a multiagent transition system, Definition~\ref{definition:mts}.
 
-\begin{verbatim}
-parent(tom, mary).
-parent(tom, james).
-parent(mary, ann).
-
-grandparent(X, Z) :- parent(X, Y), parent(Y, Z).
-\end{verbatim}
-
-The first three lines are \emph{facts}: Tom is a parent of Mary, Tom is a parent of James, and Mary is a parent of Ann.
-
-The fourth line is a \emph{rule}: X is a grandparent of Z if X is a parent of some Y, and Y is a parent of Z.
-
-Given the query \verb|grandparent(tom, ann)|, the system can deduce that it is true: Tom is Mary's parent, and Mary is Ann's parent, so Tom is Ann's grandparent.
-
-\section{Terms, Atoms, and Clauses}
-
-Let us define the building blocks of logic programs.
-
-\mypara{Terms} A \emph{term} is a data object. Terms are built from:
+\begin{definition}[Transition System]\label{definition:ts}
+A \temph{transition system} is a tuple $TS = (C, c0, T)$ where:
 \begin{itemize}
-\item \textbf{Constants}: Lowercase identifiers like \verb|tom|, \verb|mary|, numbers like \verb|42|, \verb|3.14|
-\item \textbf{Variables}: Uppercase identifiers like \verb|X|, \verb|Person|, \verb|Result|
-\item \textbf{Compound terms}: A functor applied to arguments, like \verb|person(tom, 42)| or \verb|[1,2,3]|
+    \item $C$ is an arbitrary set of \temph{configurations}
+    \item $c0 \in C$ is a designated \temph{initial configuration}
+    \item $T \subseteq C \times C$ is a \temph{transition relation}. A transition $(c,c') \in T$ is also written as $c \rightarrow c' \in T$.
 \end{itemize}
+A transition $c \rightarrow c' \in T$ is \temph{enabled} from configuration $c$. A configuration $c$ is \temph{terminal} if no transitions are enabled from $c$. A \temph{computation} is a (finite or infinite) sequence of configurations where for each two consecutive configurations $(c,c')$ in the sequence, $c \rightarrow c' \in T$. A \temph{run} is a computation starting from $c0$, which is \temph{complete} if it is infinite or ends in a terminal configuration.
+\end{definition}
 
-Lists are a special case of compound terms:
-\begin{itemize}
-\item \verb|[]| is the empty list
-\item \verb|[X|Xs]| is a list with head \verb|X| and tail \verb|Xs|
-\item \verb|[1,2,3]| is sugar for \verb|[1|[2|[3|[]]]]|
-\end{itemize}
 
-\mypara{Atoms} An \emph{atom} is a predicate applied to terms. For example:
-\begin{itemize}
-\item \verb|parent(tom, mary)| --- the atom stating Tom is Mary's parent
-\item \verb|append([1,2], [3,4], Result)| --- the atom relating two lists to their concatenation
-\end{itemize}
+\subsection{Logic Programs Syntax}
 
-\mypara{Clauses} A \emph{clause} has the form:
-\begin{verbatim}
-Head :- Body.
-\end{verbatim}
-where Head is an atom and Body is a conjunction of atoms. A clause with an empty body is written simply as \verb|Head.| and called a \emph{fact}.
-
-\begin{formal}{Logic Programs Syntax}
-We denote by $V$ the set of all variables and $\calT$ the set of all terms. The formal syntax is defined as follows:
-
-\begin{fdef}[Syntax]
-\begin{align*}
-\text{Variable} \quad X &::= \text{uppercase identifier} \\
-\text{Constant} \quad c &::= \text{lowercase identifier} \mid \text{number} \\
-\text{Term} \quad T &::= X \mid c \mid f(T_1, \ldots, T_n) \\
-\text{Atom} \quad A &::= p(T_1, \ldots, T_n) \\
-\text{Goal} \quad G &::= A_1, \ldots, A_n \\
-\text{Clause} \quad C &::= A \text{ :- } G \mid A \\
-\text{Program} \quad M &::= C_1, \ldots, C_m
-\end{align*}
-\end{fdef}
-
-We use $\calA$ for the set of all atoms, $\calG$ for all goals, and for a program $M$, $\calA(M)$ and $\calG(M)$ for atoms and goals restricted to $M$'s vocabulary.
-\end{formal}
-
-\section{The Append Program}
-
-The quintessential logic program defines list concatenation:
-
-\Program{Append}
+The syntax of Logic Programs follows the standard in logic programming and Prolog, and is formally defined in Appendix~\ref{appendix:lp}. We note that $V$ denotes the set of all variables and $\calT$ the set of all terms.
+We recall the quintessential logic program for list concatenation as an example:
+\begin{example}[Append]
 \begin{verbatim}
 append([X|Xs], Ys, [X|Zs]) :- append(Xs, Ys, Zs).
 append([], Ys, Ys).
 \end{verbatim}
-
-This program defines when a list is the concatenation of two others:
-\begin{itemize}
-\item The first clause: A list starting with \verb|X| concatenated with \verb|Ys| produces a list starting with \verb|X|, if the tail \verb|Xs| concatenated with \verb|Ys| produces \verb|Zs|.
-\item The second clause: The empty list concatenated with any list \verb|Ys| produces \verb|Ys|.
-\end{itemize}
-
-The beauty is that this single definition supports multiple \emph{modes} of use:
-\begin{itemize}
-\item \verb|append([1,2], [3,4], Z)| computes \verb|Z = [1,2,3,4]|
-\item \verb|append([1,2], Y, [1,2,3,4])| computes \verb|Y = [3,4]|
-\item \verb|append(X, Y, [1,2,3])| enumerates all ways to split the list
-\end{itemize}
-
-By convention, we use plural variable names like \verb|Xs| to denote a list of \verb|X|'s.
-
-\section{Declarative Reading}
-
-A clause $A$ \verb|:-| $B$ can be read as a logical implication: $B$ implies $A$. More precisely, it is a universally-quantified formula:
-\[
-\forall \bar{X}.\, (B \Rightarrow A)
-\]
-where $\bar{X}$ are all variables in the clause.
-
-A program is the conjunction of its clauses. The append program asserts:
-\begin{enumerate}
-\item For all X, Xs, Ys, Zs: if append(Xs, Ys, Zs) then append([X|Xs], Ys, [X|Zs])
-\item For all Ys: append([], Ys, Ys)
-\end{enumerate}
-
-A query asks whether a goal is a logical consequence of the program. The system's job is to find a \emph{proof}---or equivalently, a \emph{computation}.
-
-\section{Substitution and Unification}
-
-Computation in logic programs revolves around \emph{substitution} and \emph{unification}.
-
-\mypara{Substitution} A substitution maps variables to terms. We write $\{X := T\}$ for the substitution that maps $X$ to $T$. Applying substitution $\sigma$ to term $T$ produces $T\sigma$---the result of replacing each variable by its mapped term.
-
-For example:
-\begin{itemize}
-\item \verb|[X|Xs]{X := 1, Xs := [2,3]}| = \verb|[1,2,3]|
-\item \verb|parent(X, Y){X := tom}| = \verb|parent(tom, Y)|
-\end{itemize}
-
-\mypara{Unification} Two terms \emph{unify} if there exists a substitution making them identical. The \emph{most general unifier (mgu)} is the simplest such substitution---it doesn't instantiate variables more than necessary.
-
-Examples:
-\begin{itemize}
-\item \verb|f(X, b)| and \verb|f(a, Y)| unify with mgu $\{X := a, Y := b\}$
-\item \verb|f(X, X)| and \verb|f(a, b)| do not unify (X cannot be both a and b)
-\item \verb|f(X, Y)| and \verb|f(Y, X)| unify with mgu $\{X := Y\}$ (or equivalently $\{Y := X\}$)
-\end{itemize}
-
-\begin{formal}{Substitution and Unification}
-\begin{fdef}[Substitution, Instance, Unifier, Most-General Unifier]
-\label{def:substitution}
-A \emph{substitution} $\sigma$ is an idempotent function $\sigma: V \to \calT$, meaning $T\sigma\sigma = T\sigma$ for all terms $T$.
-
-\begin{itemize}
-\item $V_\sigma := \{ X \in V \mid X\sigma \ne X\}$ is the \emph{domain} of $\sigma$
-\item $T\sigma$ is the term obtained by replacing each $X \in T$ by $X\sigma$
-\item $T' = T\sigma$ means $T'$ is an \emph{instance} of $T$
-\item $\sigma$ is a \emph{unifier} of $T, T'$ if $T\sigma = T'\sigma$
-\item $\sigma$ is a \emph{most-general unifier (mgu)} if it is as general as any other unifier
-\end{itemize}
-\end{fdef}
-
-We view a substitution equivalently as a set of assignments $\{X_1 := T_1, \ldots, X_n := T_n\}$.
-\end{formal}
-
-\section{Goal Reduction}
-
-Computation proceeds by \emph{goal reduction}. Given a goal (a conjunction of atoms), we:
-\begin{enumerate}
-\item Select an atom from the goal
-\item Find a clause whose head unifies with the atom
-\item Replace the atom with the clause body, applying the unifier
-\end{enumerate}
-
-This is repeated until the goal becomes empty (success) or no clause applies (failure).
-
-\begin{example}[Computing with Append]
-Query: \verb|append([1,2], [3], Z)|
-
-\begin{enumerate}
-\item Goal: \verb|append([1,2], [3], Z)|
-\item Unify with clause 1: mgu = $\{X := 1, Xs := [2], Ys := [3], Zs := Z'\}$
-\item New goal: \verb|append([2], [3], Z')| with $Z = [1|Z']$
-\item Unify with clause 1: mgu = $\{X := 2, Xs := [], Ys := [3], Zs := Z''\}$
-\item New goal: \verb|append([], [3], Z'')| with $Z' = [2|Z'']$
-\item Unify with clause 2: mgu = $\{Ys := [3], Z'' := [3]\}$
-\item Goal is empty: success with $Z = [1,2,3]$
-\end{enumerate}
+Logically, a logic program clause $A$\verb|:-| $B$ is a universally-quantified implication in which $B$ implies $A$, and a program is a conjunction of its clauses.
+By convention, we use plural variable names like \verb|Xs| to denote a list of \verb|X|'s,
 \end{example}
 
-\begin{formal}{Logic Programs Transition System}
-\begin{fdef}[Renaming]
-A \emph{renaming} is a substitution $\sigma: V \to V$ mapping variables to variables. A renaming $\sigma$ \emph{renames $T'$ apart from $T$} if $T'\sigma$ and $T$ share no variables.
-\end{fdef}
+\subsection{Logic Programs Operational Semantics}
 
-\begin{fdef}[LP Goal/Clause Reduction]
-Given LP goal $A$ and clause $C$, with $H$ \texttt{:-} $B$ being $C$ renamed apart from $A$:
+\begin{definition}[Substitution, Instance, Unifier, Most-General Unifier]\label{definition:substitution}
+A \temph{substitution} $\sigma$ is an idempotent function $\sigma: V \xrightarrow{} \calT$, namely a mapping from variables to terms applied to a fixed point. By convention, $\sigma(x)=x\sigma$.
 \begin{itemize}
-\item The reduction \emph{succeeds with result} $(B, \sigma)$ if $A$ and $H$ have mgu $\sigma$
-\item Otherwise it \emph{fails}
+    \item Given a substitution $\sigma$, $V_\sigma := \{ X \in V ~|~ X\sigma \ne X\}$.
+    \item Given a term $T \in \calT$ and a substitution $\sigma$,  $T\sigma$ is the term obtained from $T$ by replacing every variable $X \in T$ by the term $X\sigma$.
+    \item The partial order on terms $\preceq \subset \calT \times \calT$ is defined by $T \preceq T'$, or $T'$ is an \temph{instance} of $T$, if there is a substitution $\sigma$ for which $T\sigma = T'$.
+    If $T \ne T\sigma$ we say that $\sigma$ \temph{instantiates} $T$.
+
+    \item For substitutions $\sigma$ and $\sigma'$, $\sigma \preceq \sigma'$ if for every $T \in \calT$, $T\sigma \preceq T\sigma'$, $\sigma$ is \temph{as general as}  $\sigma'$ if $\sigma \preceq \sigma'$.
+    \item A substitution $\sigma$ is a \temph{unifier} of two terms $T, T' \in \calT$ if $T\sigma = T'\sigma$; it is a \temph{most-general unifier (mgu)} of $T, T'$ if in addition it is as general as any other unifier of $T$ and $T'$.
 \end{itemize}
-\end{fdef}
+\end{definition}
 
-\begin{fdef}[Logic Programs Transition System]
-\label{def:lp-ts}
-A transition system $LP = (C, c0, T)$ for program $M$ and initial goal $G_0$ where:
-\begin{itemize}
-\item $C = \calG(M)$ is the set of all goals
-\item $c0 = G_0$ is the initial goal
-\item $T$ contains all transitions $G \to G'$ where: for some $A \in G$ and $C \in M$, the reduction of $A$ with $C$ succeeds with $(B, \sigma)$, and $G' = (G \setminus \{A\} \cup B)\sigma$
-\end{itemize}
-\end{fdef}
+Namely, a most general unifier is frugal in not instantiating variables more than necessary.
 
-A configuration is also called a \emph{resolvent}, a tribute to resolution theorem proving.
-\end{formal}
+\begin{remark}[Substitution as Assignment Set]
+We  view a substitution $\sigma$ equivalently as a set of assignments $\{X_1:=T_1, \ldots, X_n:=T_n\}$ where $X_i\sigma = T_i$ and $T_i=T_i\sigma=T$. Thus the singleton substitution mapping $X$ to $T$ is $\{X:=T\}$, its application $T\sigma$ may be written $T\{X:=T\}$, the empty substitution is $\emptyset$, and composition of commutative substitutions corresponds to set union.
+\end{remark}
 
-\section{Nondeterminism}
+\begin{definition}[Renaming, Rename apart]\label{definition:renaming}
+A \temph{renaming} is a substitution $\sigma: V \mapsto V$ that maps variables to variables.
+A renaming $\sigma$ renames $T'$ \temph{apart from} $T$ if $T'\sigma$ and $T$  have no variable in common.
+\end{definition}
+We assume a fixed renaming-apart function, so that the result of renaming $T'$ apart from $T$ is well defined.
+Next we define the operational semantics of Logic Programs via a transition system.
 
-Logic programs have two forms of nondeterminism:
-\begin{itemize}
-\item \textbf{And-nondeterminism}: Which atom to select from the goal
-\item \textbf{Or-nondeterminism}: Which clause to use for reduction
-\end{itemize}
+\newcommand{\ohad}[1]{\textcolor{teal}{Ohad says: #1}}
+\ohad{I would like to go over def 3 together, " fixed renaming-apart function" fixed? }
 
-Prolog resolves or-nondeterminism through depth-first search with backtracking. \GLP takes a different approach: \emph{committed choice}---the first applicable clause is chosen, with no backtracking.
+\begin{definition}[LP Goal/Clause Reduction]\label{definition:logic-goal-clause-reduction}
+Given LP goal $A$ and clause $C$,  with $H \verb|:-| B$ being the result of renaming $C$ apart from $A$, the \temph{LP reduction} of $A$ with $C$ \temph{succeeds with result} $(B,\sigma)$ if $A$ and $H$ have an mgu $\sigma$,  else \temph{fails}.
+\end{definition}
 
-\section{Computations as Deductions}
+\begin{definition}[Logic Programs Transition System]\label{definition:lp-ts}
+A transition system $LP = (C,c0, T)$ is a \temph{Logic Programs transition system} for a logic program $M$ and initial goal $G_0 \in \mathcal{G}(M)$ if
+$C=\mathcal{G}(M)$, $c0=G_0$, and $T$
+is the set of all transitions $G \rightarrow G' \in \mathcal{G}(M)^2$ such that for some atom $A \in G$ and clause $C \in M$  the LP reduction of $A$ with $C$ succeeds with result $(B,\sigma)$, and $G' = (G \setminus \{A\} \cup B)\sigma$.
+\end{definition}
+We write $G \xrightarrow{\sigma} G'$ when we want to make the substitution of a reduction explicit.
+As a tribute to resolution theorem proving~\cite{robinson1965machine}—the intellectual ancestor of logic programming—a configuration of $LP$ is also referred to as a \emph{resolvent}.
 
-The fundamental property of logic programs is that computations correspond to logical deductions.
+Logic Programs have two forms of nondeterminism: the choice of $A\in G$, called \emph{and-nondeterminism}, and then choice of  $C\in M$, called \emph{or-nondeterminism}.  Thus, as an abstract model of computation, LP  are  closely-related to \emph{Alternating Turing Machines}, a generalization of Nondeterministic Turing Machines~\cite{shapiro1984alternation}.
 
-\begin{formal}{LP Computation is Deduction}
-\begin{fdef}[Proper Run and Outcome]
-A run $\rho: G_0 \xrightarrow{\sigma_1} G_1 \xrightarrow{\sigma_2} \cdots \xrightarrow{\sigma_n} G_n$ is \emph{proper} if fresh variables introduced at step $i$ do not appear in earlier goals.
+\begin{definition}[Proper Run and Outcome]\label{definition:proper-run}
+A run $\rho: G_0 \xrightarrow{\sigma_1} G_1 \xrightarrow{\sigma_2} \cdots \xrightarrow{\sigma_n} G_n$ of $LP$ is \temph{proper} if for any $1\le i<  n$,  a variable that occurs in  $G_{i+1}$ but not in  $G_i$ also does not occur in any $G_j$, $j<i$.   If proper, the \temph{outcome} of $\rho$ is $(G_0 \verb|:-| G_n)\sigma$ where $\sigma = \sigma_1 \circ \sigma_2 \circ \cdots \circ \sigma_n$.
+\end{definition}
+It so happens that the set of all outcomes of all proper runs of a logic program constitutes its fully-abstract compositional semantics~\cite{gaifman1989fully}.
+Next we prove the key safety property of LP:
 
-The \emph{outcome} of a proper run is $(G_0 \text{ :- } G_n)\sigma$ where $\sigma = \sigma_1 \circ \cdots \circ \sigma_n$.
-\end{fdef}
-
-\begin{fprop}[LP Computation is Deduction]
-\label{prop:lp-deduction}
-The outcome $(G_0 \text{ :- } G_n)\sigma$ of a proper run is a logical consequence of $M$.
-\end{fprop}
-
-This means: if a computation produces a result, that result is logically entailed by the program.
-\end{formal}
-
-\section{From LP to GLP}
-
-Logic programs provide a clean foundation, but they lack:
-\begin{itemize}
-\item \textbf{Concurrency}: Multiple goals proceeding in parallel
-\item \textbf{Communication}: Data flowing between concurrent processes
-\item \textbf{Security}: Protection in distributed settings
-\end{itemize}
-
-The next chapter extends logic programs to \GLP, addressing these limitations while preserving the fundamental property that computations are deductions.
-
-\section{Exercises}
-
-\begin{enumerate}
-\item[$\star$] Write a logic program for \verb|member(X, List)| that succeeds if \verb|X| is an element of \verb|List|.
-
-\item[$\star$] Write a logic program for \verb|reverse(List, Reversed)| that reverses a list.
-
-\item[$\star\star$] Trace the execution of \verb|append(X, Y, [a,b,c])| showing all solutions.
-
-\item[$\star\star$] Write a logic program for \verb|permutation(List, Perm)| that generates all permutations.
-
-\item[$\star\star\star$] Prove that for any terminating computation with \verb|append|, the third argument equals the concatenation of the first two.
-\end{enumerate}
+\begin{restatable}[LP Computation is Deduction]{proposition}{LPComputationisDeduction}\label{proposition:LP-computation-deduction}
+The outcome\linebreak $(G_0$ :- $G_n)\sigma$
+of a proper run $\rho: G_0 \xrightarrow{\sigma_1} G_1 \xrightarrow{\sigma_2} \cdots \xrightarrow{\sigma_n} G_n$ of $LP$, where $\sigma = \sigma_1 \circ \sigma_2 \circ \cdots \circ \sigma_n$,  is a logical consequence of $M$.
+\end{restatable}
