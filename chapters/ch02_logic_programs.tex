@@ -63,9 +63,6 @@ A renaming $\sigma$ renames $T'$ \temph{apart from} $T$ if $T'\sigma$ and $T$  h
 We assume a fixed renaming-apart function, so that the result of renaming $T'$ apart from $T$ is well defined.
 Next we define the operational semantics of Logic Programs via a transition system.
 
-\newcommand{\ohad}[1]{\textcolor{teal}{Ohad says: #1}}
-\ohad{I would like to go over def 3 together, " fixed renaming-apart function" fixed? }
-
 \begin{definition}[LP Goal/Clause Reduction]\label{definition:logic-goal-clause-reduction}
 Given LP goal $A$ and clause $C$,  with $H \verb|:-| B$ being the result of renaming $C$ apart from $A$, the \temph{LP reduction} of $A$ with $C$ \temph{succeeds with result} $(B,\sigma)$ if $A$ and $H$ have an mgu $\sigma$,  else \temph{fails}.
 \end{definition}
