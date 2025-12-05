@@ -125,3 +125,223 @@ R = 6
 \end{verbatim}
 
 The producer counts down from 3, producing \verb|[3, 2, 1]|, then closes with \verb|[]|. The consumer sums to 6 and binds the result.
+
+\section{Stream Merging}
+
+The \verb|merge| program combines two input streams into one output stream:
+
+\begin{verbatim}
+merge([X|Xs],Ys,[X?|Zs?]) :- merge(Ys?,Xs?,Zs).
+merge(Xs,[Y|Ys],[Y?|Zs?]) :- merge(Xs?,Ys?,Zs).
+merge([],[],[]).
+\end{verbatim}
+
+Note the argument swapping in the recursive calls: \verb|merge(Ys?,Xs?,Zs)| ensures fair interleaving when both streams are available.
+
+\subsection{Tracing a Merge Computation}
+
+Let us trace a computation with the merge program to see how asynchronous communication works.
+
+Initial goal: \verb|merge([1,2], [a,b], Out)|
+
+\begin{enumerate}
+\item Configuration: goal is \verb|merge([1,2], [a,b], Out)|, no pending messages.
+
+\item \textbf{Reduce} with clause 1:
+\begin{itemize}
+\item Unify head: $\{X := 1, Xs := [2], Ys := [a,b], Out := [1|Z_1?]\}$
+\item New goal: \verb|merge([a,b], [2], Z_1)|
+\item The output $Out$ is now $[1|Z_1?]$---the first element is determined, the tail awaits.
+\end{itemize}
+
+\item \textbf{Reduce} with clause 1 (arguments were swapped):
+\begin{itemize}
+\item Unify: extracts $a$ from first argument
+\item New goal: \verb|merge([2], [b], Z_2)|
+\item Now $Z_1 = [a|Z_2?]$, so $Out = [1,a|Z_2?]$
+\end{itemize}
+
+\item Continue alternating until both input lists are empty...
+
+\item Final result: $Out = [1, a, 2, b]$
+\end{enumerate}
+
+The output stream is constructed incrementally. Each reduction step extends the output by one element while the tail remains a future (unbound reader). This incremental construction is the essence of stream processing in GLP.
+
+\section{Difference Lists}
+
+A \emph{difference list} is a classic logic programming technique that enables O(1) list concatenation. In standard list append, we must traverse the entire first list to find its end—O(n) complexity. With difference lists, we maintain direct access to the tail, enabling constant-time append.
+
+\subsection{Representation}
+
+A difference list represents a list as two components:
+\begin{itemize}
+\item The \emph{head}: a list structure with an unbound variable at its end (a ``hole'')
+\item The \emph{tail}: the variable that fills the hole
+\end{itemize}
+
+For example, the list \verb|[1,2]| as a difference list:
+\begin{verbatim}
+Head: [1,2|T?]    (structure with hole T?)
+Tail: T           (writer that can fill the hole)
+\end{verbatim}
+
+The reader \verb|T?| in the structure awaits a value; the writer \verb|T| can provide it. Together they form a reader/writer pair. The ``list'' is the structure \verb|[1,2|T?]|; we hold \verb|T| to enable extension.
+
+An empty difference list is simply:
+\begin{verbatim}
+Head: T?
+Tail: T
+\end{verbatim}
+The head \emph{is} the hole—nothing precedes it.
+
+\subsection{Constant-Time Append}
+
+To append two difference lists, we unify the first tail with the second head. This fills the first list's hole with the second list's structure:
+
+\begin{verbatim}
+append(H1, T1?, T1, T2?, H1?, T2).
+\end{verbatim}
+
+The arguments are:
+\begin{enumerate}
+\item \verb|H1|: first difference list head (input)
+\item \verb|T1?|: first difference list tail as reader (input, forms pair with arg 3)
+\item \verb|T1|: second difference list head (input, writer bound to second head)
+\item \verb|T2?|: second difference list tail as reader (input)
+\item \verb|H1?|: result head (output, same structure as first head)
+\item \verb|T2|: result tail (output, same as second tail)
+\end{enumerate}
+
+The key insight is arguments 2 and 3: \verb|T1?| and \verb|T1| form a reader/writer pair within the clause. The goal passes the first tail writer at position 2 and the second head at position 3. The clause binds them together.
+
+\subsection{Traced Example}
+
+Let us append \verb|[1,2]| and \verb|[3,4]| represented as difference lists:
+
+\begin{verbatim}
+DL1: head = [1,2|T1?], tail = T1
+DL2: head = [3,4|T2?], tail = T2
+\end{verbatim}
+
+Goal:
+\begin{verbatim}
+append([1,2|T1?], T1, [3,4|T2?], T2, H, T?)
+\end{verbatim}
+
+The caller will receive the result as \verb|(H?, T)|—a difference list they can further extend.
+
+\begin{verbatim}
+GLP> append([1,2|T1?], T1, [3,4|T2?], T2, H, T?).
+append([1,2|T1?], T1, [3,4|T2?], T2, H, T?) :- true
+  T1 = [3,4|T2?]
+  H = [1,2|T1?]
+-> succeeds
+\end{verbatim}
+
+After reduction:
+\begin{itemize}
+\item \verb|T1| is bound to \verb|[3,4|T2?]|
+\item Therefore \verb|T1?| (in the structure \verb|[1,2|T1?]|) receives \verb|[3,4|T2?]|
+\item The structure becomes \verb|[1,2,3,4|T2?]|
+\item \verb|H| is bound to this structure
+\item The result tail \verb|T| is unified with \verb|T2|
+\end{itemize}
+
+The caller now has:
+\begin{verbatim}
+Result: head = H? = [1,2,3,4|T?], tail = T
+\end{verbatim}
+
+The append completed in constant time—no traversal, just unification.
+
+\subsection{Step-by-Step Unification}
+
+To see precisely how SRSW enables this, let us trace the depth-first unification with the clause renamed apart:
+
+\begin{verbatim}
+Clause: append(Ha, Ta?, Ta, Tb?, Ha?, Tb).
+Goal:   append([1,2|T1?], T1, [3,4|T2?], T2, H, T?)
+\end{verbatim}
+
+\begin{center}
+\begin{tabular}{clll}
+\textbf{Arg} & \textbf{Goal} & \textbf{Head} & \textbf{Binding} \\
+\hline
+1 & \verb|[1,2|T1?]| & \verb|Ha| & \verb|Ha := [1,2|T1?]| \\
+2 & \verb|T1| & \verb|Ta?| & \verb|T1 := Ta?| \\
+3 & \verb|[3,4|T2?]| & \verb|Ta| & \verb|Ta := [3,4|T2?]| \\
+4 & \verb|T2| & \verb|Tb?| & \verb|T2 := Tb?| \\
+5 & \verb|H| & \verb|Ha?| & \verb|H := Ha?| \\
+6 & \verb|T?| & \verb|Tb| & \verb|Tb := T?| \\
+\end{tabular}
+\end{center}
+
+The critical binding is at argument 3: \verb|Ta := [3,4|T2?]|. Its reader counterpart delivers:
+\[
+\mathtt{Ta?} := \mathtt{[3,4|T2?]}
+\]
+
+Since argument 2 bound \verb|T1 := Ta?|, and \verb|T1| is a writer in the goal, the reader counterpart delivers:
+\[
+\mathtt{T1?} := \mathtt{Ta?} := \mathtt{[3,4|T2?]}
+\]
+
+This instantiates the hole in \verb|[1,2|T1?]|, completing the append.
+
+\subsection{Converting Lists to Difference Lists}
+
+To use difference lists, we often need to convert from standard lists:
+
+\begin{verbatim}
+list_to_dl([], T?, T).
+list_to_dl([X|Xs], [X?|Ys?], T) :- list_to_dl(Xs?, Ys, T?).
+\end{verbatim}
+
+\begin{verbatim}
+GLP> list_to_dl([1,2,3], H, T?).
+list_to_dl([1,2,3], H, T?) :- list_to_dl([2,3], Y1, T?)
+list_to_dl([2,3], Y1, T?) :- list_to_dl([3], Y2, T?)
+list_to_dl([3], Y2, T?) :- list_to_dl([], Y3, T?)
+list_to_dl([], Y3, T?) :- true
+  H = [1,2,3|T?]
+-> succeeds
+\end{verbatim}
+
+The result is a difference list \verb|(H?, T)| = \verb|([1,2,3|T?], T)|.
+
+\subsection{Converting Difference Lists to Lists}
+
+To close a difference list into a standard list, bind the tail to empty:
+
+\begin{verbatim}
+dl_to_list(H?, T, H) :- T = [].
+\end{verbatim}
+
+Or simply unify the tail with \verb|[]| directly in the calling context.
+
+\begin{verbatim}
+GLP> list_to_dl([1,2], H, T?), T = [].
+  H = [1,2]
+-> succeeds
+\end{verbatim}
+
+\subsection{Why Difference Lists Work in GLP}
+
+Difference lists rely on the ability to:
+\begin{enumerate}
+\item Hold an ``open'' structure with an unbound variable at the end
+\item Later instantiate that variable to extend the structure
+\end{enumerate}
+
+In GLP, this maps naturally to reader/writer pairs:
+\begin{itemize}
+\item The structure contains a \emph{reader} at the hole position
+\item We hold the paired \emph{writer} to fill it later
+\item SRSW ensures exactly one writer exists—no conflicts
+\item When the writer is bound, the reader receives the value
+\end{itemize}
+
+The \verb|append| clause uses an intermediate reader/writer pair (\verb|Ta?/Ta|) to mediate the binding. The caller's first-tail-writer binds to \verb|Ta?|; the second head binds to \verb|Ta|. The reader counterpart of the second binding flows through to fill the first list's hole.
+
+This is O(1) because no traversal occurs—just six unifications regardless of list length.

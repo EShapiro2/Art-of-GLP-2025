@@ -76,6 +76,50 @@ The occurs check condition for the reader counterpart ensures that no writer is 
 By the formal definition, unifying two writers $X$ and $Y$ would suspend on an empty set: the regular mgu $\{X := Y\}$ exists but is not a writer mgu (violating condition 2), and the suspension set $W_\sigma = \emptyset$ since no reader is mapped to a non-variable. However, suspending on an empty set means waiting for nothing—guaranteed deadlock. By SRSW, after binding $X$ to $Y$, no other occurrence of either writer remains to instantiate them, so their paired readers $X?$ and $Y?$ are abandoned. The implementation therefore fails immediately on writer-to-writer unification rather than suspending uselessly. This is a pragmatic extension: early detection of inevitable deadlock.
 \end{remark}
 
+\subsection{Understanding Writer Unification}
+
+The definition of writer unification has three cases in priority order: succeed, suspend, fail. To determine the outcome for two terms, work through the cases systematically.
+
+\mypara{Deriving outcomes from the definition}
+Given two terms to unify:
+\begin{enumerate}
+    \item First, check if a \emph{writer mgu} exists---a most general unifier that satisfies all three conditions of a writer substitution (only binds writers, no writer-to-writer bindings, no cycles through readers).
+    \item If yes, unification \emph{succeeds} with that substitution.
+    \item If no writer mgu exists, check if a \emph{regular mgu} exists (standard unification ignoring reader/writer distinctions).
+    \item If a regular mgu exists, compute the suspension set $W_\sigma$: the goal readers that would be mapped to non-variables. Unification \emph{suspends} on $W_\sigma$.
+    \item If no regular mgu exists, unification \emph{fails}.
+\end{enumerate}
+
+\mypara{Example derivations}
+Consider unifying goal $g$ with clause head $h$ in the following cases:
+
+\begin{itemize}
+\item $g = f(X, a)$, $h = f(b, Y)$: Regular mgu is $\{X := b, Y := a\}$. This binds only writers to non-writers. All three conditions of writer substitution are satisfied. \emph{Succeeds} with $\{X := b, Y := a\}$.
+
+\item $g = f(X?, a)$, $h = f(b, Y)$: Regular mgu would be $\{X? := b, Y := a\}$. But this binds reader $X?$, violating condition 1 of writer substitution. No writer mgu exists. Regular mgu exists, so compute $W_\sigma = \{X?\}$ (goal reader mapped to non-variable $b$). \emph{Suspends} on $\{X?\}$.
+
+\item $g = f(a, b)$, $h = f(a, c)$: No mgu exists ($b \neq c$). \emph{Fails}.
+
+\item $g = f(X)$, $h = f(Y)$: Regular mgu is $\{X := Y\}$ (or $\{Y := X\}$). Both $X$ and $Y$ are writers, so this violates condition 2 of writer substitution. No writer mgu. But regular mgu exists with $W_\sigma = \emptyset$ (no readers involved). By the formal definition, this would \emph{suspend on $\emptyset$}---but as noted above, the implementation treats this as failure.
+\end{itemize}
+
+\mypara{Summary of unification outcomes}
+The following table summarizes writer unification outcomes, derived from the formal definition:
+
+\begin{center}
+\begin{tabular}{lll}
+\textbf{Goal} & \textbf{Head} & \textbf{Result} \\
+\hline
+$f(\ldots)$ & $g(\ldots)$ & fails (different functors) \\
+ground & ground & succeeds if equal, fails if different \\
+writer & writer & fails (pragmatic---abandoned readers) \\
+writer & non-writer & succeeds, writer bound \\
+reader & writer & succeeds, writer bound to reader \\
+reader & non-writer & suspends \\
+compound & compound & recursive unification \\
+\end{tabular}
+\end{center}
+
 Renaming  (Definition~\ref{definition:renaming}) is extended to respect variable pairing:
 \begin{definition}[GLP Renaming]\label{definition:GLP-renaming}
  Two GLP terms $T, T'$ have a variable in common if for some writer $X\in V$, either $X$ or $X?$ occur in $T$ and either $X$ or $X?$ occur in $T'$. A \temph{GLP renaming} is a renaming substitution $\sigma: \mathcal{V} \mapsto \mathcal{V}$ such that for each $X\in V$: $X\sigma \in V$ and $X?\sigma = (X\sigma)?$.
@@ -226,4 +270,43 @@ The transition system $\text{irGLP} = (\mathcal{C}, c_0, \mathcal{T})$ over $M$ 
     \end{enumerate}
 \end{definition}
 
-A key simplification compared to the GLP operational semantics is the immediate application of reader substitutions during reduction rather than through asynchronous communication. This is appropriate for workstation execution where all variables are local.
+\begin{remark}[Immediate vs.\ Asynchronous Communication]
+The GLP transition system (Definition~\ref{definition:GLP-ts}) models communication asynchronously in two steps:
+\begin{enumerate}
+\item \textbf{Reduce}: The writer substitution $\hat\sigma$ is applied to the goal. Its reader counterpart $\hat\sigma?$ is added to the pending substitution $\sigma$.
+\item \textbf{Communicate}: Later, an assignment $\{X? := T\}$ is selected from $\sigma$ and applied to the goal.
+\end{enumerate}
+
+The irGLP transition system combines these into a single step. The Schedule operation applies both the writer substitution and its reader counterpart immediately:
+\[
+Q' = (Q_r \cdot B \cdot R)\hat\sigma\hat\sigma?
+\]
+
+This simplification is valid for single-agent execution because all variables are local---there is no network delay between writer and reader. The observable behavior is identical: the reader receives its value before any subsequent goal can observe it.
+
+In multiagent GLP, where readers and writers may reside on different machines, the two-step model becomes essential. The pending substitution $\sigma$ represents messages in flight between agents.
+\end{remark}
+
+\begin{remark}[Scheduling Freedom]
+The monotonicity property (Proposition~\ref{proposition:GLP-monotonicity}) ensures that a goal reducible in configuration $c$ remains reducible in any subsequent configuration. This provides significant scheduling freedom:
+\begin{itemize}
+\item \textbf{Any fair schedule works}: As long as every reducible goal eventually gets a turn, the computation makes progress.
+\item \textbf{No complex failure handling}: Unlike systems where delays can cause failures, a message arriving late in GLP does not invalidate pending computations.
+\item \textbf{Distributed execution}: In a distributed setting, network delays affect performance but not correctness.
+\end{itemize}
+The GLP fairness requirement is simply: a goal that can be reduced is eventually reduced.
+\end{remark}
+
+\section{Exercises}
+
+\begin{enumerate}
+\item Trace the full computation of \verb|merge([1], [a], Out)| showing all configurations.
+
+\item What happens if we query \verb|merge(X, Y, [1,2,3])| with $X$ and $Y$ uninstantiated? Explain why.
+
+\item Explain why monotonicity fails in standard LP. Give a concrete example where a reducible goal becomes unreducible.
+
+\item Design a goal that never terminates but is fair (every subgoal gets reduced infinitely often).
+
+\item Prove that if all goals in a GLP computation eventually become reducible, the computation is deadlock-free.
+\end{enumerate}

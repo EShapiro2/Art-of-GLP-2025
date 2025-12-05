@@ -1,0 +1,248 @@
+\chapter{GLP Reference Manual}
+\label{app:glp-reference}
+
+This appendix provides a complete reference for GLP syntax, guards, system predicates, and built-in operations.
+
+\section{Lexical Syntax}
+
+\mypara{Variables}
+A \emph{writer} is an alphanumeric string beginning with an uppercase letter: \verb|X|, \verb|X1|, \verb|Xs|, \verb|MyVar|. A \emph{reader} is a writer followed by \verb|?|: \verb|X?|, \verb|Xs?|. The underscore \verb|_| is an anonymous variable (don't-care), matching any value without binding.
+
+\mypara{Constants}
+An \emph{atom} is a string beginning with a lowercase letter: \verb|a|, \verb|foo|, \verb|myAtom|. Quoted strings are also atoms: \verb|'Hello World'|, \verb|','|.
+
+\mypara{Numbers}
+Integers: \verb|0|, \verb|42|, \verb|-17|. Floats: \verb|3.14|, \verb|-0.001|, \verb|2.5e10|.
+
+\mypara{Compound Terms}
+A \emph{structure} has a functor (atom) and arguments: \verb|point(X,Y)|, \verb|node(Left,Value,Right)|. The functor's \emph{arity} is its argument count.
+
+\mypara{Lists}
+The empty list is \verb|[]|. A non-empty list is \verb|[Head|Tail]| where \verb|Head| is the first element and \verb|Tail| is the rest. Syntactic sugar: \verb|[1,2,3]| means \verb|[1|[2|[3|[]]]]|. Mixed notation: \verb|[1,2|Xs]| means \verb|[1|[2|Xs]]|.
+
+\section{Clause Syntax}
+
+A \emph{clause} has the form:
+\begin{verbatim}
+Head :- Guard | Body.
+\end{verbatim}
+where \verb|Guard| and \verb|Body| are optional. A \emph{unit clause} (fact) is just \verb|Head.|
+
+The guard separator is \verb$|$. The body is a comma-separated conjunction of goals.
+
+\mypara{SRSW Requirement}
+Each variable in a clause must occur exactly twice: once as a writer, once as a reader. Exception: anonymous variables \verb|_| occur once.
+
+\section{Guard Predicates}
+
+Guards appear between the head and \verb$|$, testing conditions without side effects. A clause is applicable only if its guard succeeds.
+
+\subsection{Built-in Guards}
+
+\begin{description}
+\item[\texttt{ground(X)}] Succeeds if \verb|X| contains no unbound variables. With this guard, the clause body may contain multiple occurrences of \verb|X?| without violating SRSW, enabling safe replication of ground terms.
+
+\item[\texttt{known(X)}] Succeeds if \verb|X| is not an unbound variable (though it may contain unbound variables in subterms).
+
+\item[\texttt{integer(X)}] Succeeds if \verb|X| is bound to an integer.
+
+\item[\texttt{number(X)}] Succeeds if \verb|X| is bound to a number (integer or float).
+
+\item[\texttt{atom(X)}] Succeeds if \verb|X| is bound to an atom.
+
+\item[\texttt{compound(X)}] Succeeds if \verb|X| is bound to a compound term.
+
+\item[\texttt{is\_list(X)}] Succeeds if \verb|X| is bound to a proper list.
+
+\item[\texttt{writer(X)}] Succeeds if \verb|X| is an unbound writer variable.
+
+\item[\texttt{reader(X)}] Succeeds if \verb|X| is an unbound reader variable. Note: this guard is non-monotonic.
+
+\item[\texttt{otherwise}] Succeeds if all previous clauses for this predicate failed (not suspended). Enables default case handling.
+
+\item[\texttt{X = Y}] Succeeds if \verb|X| and \verb|Y| are identical (without unification).
+
+\item[\texttt{X =\textbackslash= Y}] Succeeds if unification of \verb|X| and \verb|Y| would fail.
+
+\item[\texttt{X == Y}] Succeeds if \verb|X| and \verb|Y| are structurally identical.
+
+\item[\texttt{X =:= Y}] Succeeds if \verb|X| and \verb|Y| evaluate to equal numbers.
+
+\item[\texttt{X =\textbackslash= Y}] Succeeds if \verb|X| and \verb|Y| evaluate to different numbers.
+
+\item[\texttt{X < Y}] Succeeds if \verb|X| evaluates to less than \verb|Y|.
+
+\item[\texttt{X > Y}] Succeeds if \verb|X| evaluates to greater than \verb|Y|.
+
+\item[\texttt{X =< Y}] Succeeds if \verb|X| evaluates to less than or equal to \verb|Y|.
+
+\item[\texttt{X >= Y}] Succeeds if \verb|X| evaluates to greater than or equal to \verb|Y|.
+\end{description}
+
+\subsection{Defined Guard Predicates}
+
+Users may define guard predicates as unit clauses:
+\begin{verbatim}
+channel(ch(In?, Out)).
+empty_channel(ch([], Out)).
+\end{verbatim}
+
+When used in a guard, the call is unfolded to equality tests:
+\begin{verbatim}
+foo(X) :- channel(X?) | ...
+\end{verbatim}
+becomes effectively:
+\begin{verbatim}
+foo(ch(In?, Out)) :- ...
+\end{verbatim}
+
+\section{System Predicates}
+
+System predicates execute atomically with goal reduction, providing access to runtime services.
+
+\begin{description}
+\item[\texttt{X? := Expr}] Evaluate arithmetic expression \verb|Expr| and bind result to \verb|X|. The expression must be ground. See Section~\ref{sec:arithmetic} for operators.
+
+\item[\texttt{current\_time(T)}] Bind \verb|T| to the current system timestamp (milliseconds since epoch).
+
+\item[\texttt{variable\_name(X, Name)}] Bind \verb|Name| to a unique string identifier for variable \verb|X|.
+
+\item[\texttt{functor(Term, F, N)}] Unify \verb|F| with the functor and \verb|N| with the arity of \verb|Term|.
+
+\item[\texttt{arg(N, Term, Arg)}] Unify \verb|Arg| with the \verb|N|th argument of \verb|Term| (1-indexed).
+
+\item[\texttt{copy\_term(Term, Copy)}] Create \verb|Copy| as a renamed copy of \verb|Term| with fresh variables.
+
+\item[\texttt{abort(Message)}] Terminate execution with error message.
+\end{description}
+
+\section{Arithmetic}
+\label{sec:arithmetic}
+
+Arithmetic expressions are evaluated using the \verb|:=| operator:
+\begin{verbatim}
+Result? := Expression
+\end{verbatim}
+
+The expression must be ground at evaluation time. The definition:
+\begin{verbatim}
+X? := E :- ground(E?) | evaluate(E?, X).
+\end{verbatim}
+
+\subsection{Arithmetic Operators}
+
+\begin{center}
+\begin{tabular}{lll}
+\textbf{Operator} & \textbf{Description} & \textbf{Example} \\
+\hline
+\verb|X + Y| & Addition & \verb|R := 3 + 4| \\
+\verb|X - Y| & Subtraction & \verb|R := 7 - 2| \\
+\verb|X * Y| & Multiplication & \verb|R := 3 * 4| \\
+\verb|X / Y| & Division (float result) & \verb|R := 7 / 2| \\
+\verb|X // Y| & Integer division & \verb|R := 7 // 2| \\
+\verb|X mod Y| & Modulo & \verb|R := 7 mod 3| \\
+\verb|-X| & Unary negation & \verb|R := -5| \\
+\verb|abs(X)| & Absolute value & \verb|R := abs(-5)| \\
+\verb|sqrt(X)| & Square root & \verb|R := sqrt(16)| \\
+\verb|sin(X)| & Sine (radians) & \verb|R := sin(3.14)| \\
+\verb|cos(X)| & Cosine (radians) & \verb|R := cos(0)| \\
+\verb|tan(X)| & Tangent (radians) & \verb|R := tan(0.5)| \\
+\verb|exp(X)| & Exponential ($e^X$) & \verb|R := exp(1)| \\
+\verb|ln(X)| & Natural logarithm & \verb|R := ln(2.718)| \\
+\verb|log(X)| & Base-10 logarithm & \verb|R := log(100)| \\
+\verb|min(X,Y)| & Minimum & \verb|R := min(3,5)| \\
+\verb|max(X,Y)| & Maximum & \verb|R := max(3,5)| \\
+\verb|X ** Y| & Exponentiation & \verb|R := 2 ** 10| \\
+\end{tabular}
+\end{center}
+
+\subsection{Bitwise Operators}
+
+\begin{center}
+\begin{tabular}{lll}
+\textbf{Operator} & \textbf{Description} & \textbf{Example} \\
+\hline
+\verb|X /\\ Y| & Bitwise AND & \verb|R := 5 /\\ 3| \\
+\verb|X \\/ Y| & Bitwise OR & \verb|R := 5 \\/ 3| \\
+\verb|X xor Y| & Bitwise XOR & \verb|R := 5 xor 3| \\
+\verb|\\X| & Bitwise complement & \verb|R := \\5| \\
+\verb|X << N| & Left shift & \verb|R := 1 << 4| \\
+\verb|X >> N| & Right shift & \verb|R := 16 >> 2| \\
+\end{tabular}
+\end{center}
+
+\section{Channel Abstractions}
+
+Channels provide bidirectional communication. A channel is represented as \verb|ch(In?, Out)| where \verb|In?| is the input stream reader and \verb|Out| is the output stream writer.
+
+\begin{verbatim}
+% Send message X on channel, return updated channel
+send(X, ch(In, [X?|Out?]), ch(In?, Out)).
+
+% Receive message X from channel, return updated channel
+receive(X?, ch([X|In], Out?), ch(In?, Out)).
+
+% Create paired channels for bidirectional communication
+new_channel(ch(Xs?, Ys), ch(Ys?, Xs)).
+\end{verbatim}
+
+These are typically defined as guard predicates for use in clause heads:
+\begin{verbatim}
+relay(In, Out?, Ch) :-
+    In? = [X|In1], send(X?, Ch?, Ch1) |
+    relay(In1?, Out, Ch1?).
+\end{verbatim}
+
+\section{Standard Library Predicates}
+
+\subsection{List Operations}
+
+\begin{verbatim}
+% Append two lists
+append([], Ys?, Ys).
+append([X|Xs], Ys, [X?|Zs?]) :- append(Xs?, Ys?, Zs).
+
+% List length
+length([], 0?).
+length([_|Xs], N?) :- length(Xs?, N1), N := N1? + 1.
+
+% List membership (suspends until found or list exhausted)
+member(X?, [X|_]).
+member(X, [_|Xs]) :- member(X?, Xs?).
+
+% Reverse a list
+reverse(Xs, Ys?) :- reverse_acc(Xs?, [], Ys).
+reverse_acc([], Acc?, Acc).
+reverse_acc([X|Xs], Acc, Ys?) :- reverse_acc(Xs?, [X?|Acc?], Ys).
+\end{verbatim}
+
+\subsection{Stream Operations}
+
+\begin{verbatim}
+% Merge two streams fairly
+merge([X|Xs], Ys, [X?|Zs?]) :- merge(Ys?, Xs?, Zs).
+merge(Xs, [Y|Ys], [Y?|Zs?]) :- merge(Xs?, Ys?, Zs).
+merge([], [], []).
+
+% Distribute stream to multiple consumers (requires ground elements)
+distribute([X|Xs], [X|Ys1?], [X|Ys2?]) :-
+    ground(X?) | distribute(Xs?, Ys1, Ys2).
+distribute([], [], []).
+
+% Tag stream elements with source identifier
+tag_stream(Name, [M|In], [msg(Name?, M?)|Out]) :-
+    tag_stream(Name?, In?, Out?).
+tag_stream(_, [], []).
+\end{verbatim}
+
+\section{Execution Model Summary}
+
+\begin{enumerate}
+\item Goals are selected from the active queue (FIFO).
+\item Clauses are tried top-to-bottom until one succeeds.
+\item Unification proceeds left-to-right, depth-first.
+\item If unification requires binding a reader, the goal suspends.
+\item When a writer is bound, goals suspended on its reader are reactivated.
+\item Failed goals (no clause matches, no suspension possible) are recorded.
+\item Computation terminates when the active queue is empty.
+\end{enumerate}
