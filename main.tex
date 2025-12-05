@@ -221,6 +221,165 @@ merge([],[],[]).
 
 This chapter presents programming techniques that exploit \GLP's concurrent execution model.
 
+\section{Programming with Constants}
+
+The simplest \GLP programs transform constant values. These programs illustrate fundamental patterns of reader/writer variable usage and clause selection.
+
+\subsection{Unary Predicates}
+
+A unary predicate with one reader parameter defines a property:
+
+\begin{verbatim}
+zero(0).
+one(1).
+positive(1).
+\end{verbatim}
+
+These succeed when called with matching constants:
+
+\begin{verbatim}
+GLP> zero(0).
+zero(0) :- true
+-> succeeds
+
+GLP> zero(1).
+-> fails (no matching clause)
+
+GLP> positive(1).
+positive(1) :- true
+-> succeeds
+\end{verbatim}
+
+A unary predicate with one writer parameter generates a value:
+
+\begin{verbatim}
+default_value(42?).
+initial_state(ready?).
+\end{verbatim}
+
+\begin{verbatim}
+GLP> default_value(X).
+default_value(X) :- true
+X = 42
+-> succeeds
+\end{verbatim}
+
+\subsection{Parameter Passing Patterns}
+
+Binary predicates combine input and output parameters. The most common pattern: reader for input, writer for output.
+
+\begin{verbatim}
+successor(0, 1?).
+successor(1, 2?).
+successor(2, 3?).
+\end{verbatim}
+
+\begin{verbatim}
+GLP> successor(0, X).
+successor(0, X) :- true
+X = 1
+-> succeeds
+
+GLP> successor(2, X).
+successor(2, X) :- true
+X = 3
+-> succeeds
+
+GLP> successor(5, X).
+-> fails (no matching clause)
+\end{verbatim}
+
+Multiple outputs use multiple writers:
+
+\begin{verbatim}
+decompose(10, 1?, 0?).
+decompose(23, 2?, 3?).
+\end{verbatim}
+
+\begin{verbatim}
+GLP> decompose(23, Tens, Units).
+decompose(23, Tens, Units) :- true
+Tens = 2
+Units = 3
+-> succeeds
+\end{verbatim}
+
+\subsection{Clause Selection by Mode}
+
+Readers in clause heads enable pattern matching---clause selection based on input values.
+
+\begin{verbatim}
+color_code(red, 1?).
+color_code(green, 2?).
+color_code(blue, 3?).
+\end{verbatim}
+
+The first argument (reader) selects the clause; the second (writer) delivers the result:
+
+\begin{verbatim}
+GLP> color_code(red, X).
+color_code(red, X) :- true
+X = 1
+-> succeeds
+
+GLP> color_code(blue, X).
+color_code(blue, X) :- true
+X = 3
+-> succeeds
+\end{verbatim}
+
+Multiple readers enable multi-way dispatch:
+
+\begin{verbatim}
+combine(red, blue, purple?).
+combine(red, yellow, orange?).
+combine(blue, yellow, green?).
+\end{verbatim}
+
+\begin{verbatim}
+GLP> combine(red, blue, X).
+combine(red, blue, X) :- true
+X = purple
+-> succeeds
+
+GLP> combine(blue, yellow, X).
+combine(blue, yellow, X) :- true
+X = green
+-> succeeds
+\end{verbatim}
+
+\subsection{Bidirectional Predicates}
+
+Some predicates work in multiple modes. The \verb|not| gate from the next section is bidirectional:
+
+\begin{verbatim}
+not(1, 0).
+not(0, 1).
+\end{verbatim}
+
+With both parameters as readers, either can drive clause selection:
+
+\begin{verbatim}
+GLP> not(1, X).
+not(1, X) :- true
+X = 0
+-> succeeds
+
+GLP> not(X, 1).
+not(X, 1) :- true
+X = 0
+-> succeeds
+\end{verbatim}
+
+However, with both unbound:
+
+\begin{verbatim}
+GLP> not(X, Y).
+-> suspended (waiting for binding)
+\end{verbatim}
+
+The goal suspends because no clause head uniquely matches. This demonstrates \GLP's data-driven execution: computation proceeds when sufficient input is available.
+
 \section{Logic Gates}
 
 Digital circuits provide a natural example of dataflow computation. We define basic gates as facts:
