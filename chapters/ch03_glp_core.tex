@@ -152,3 +152,42 @@ In any $GLP$ run $G_0 \rightarrow G_1 \rightarrow \cdots$, if $G_i \rightarrow G
 \begin{restatable}[Monotonicity]{proposition}{Monotonicity}\label{proposition:GLP-monotonicity}
 In any $GLP$ run $G_0 \rightarrow G_1 \rightarrow \cdots$, if atom $A \in G_i$ can reduce with clause $C$, then for any $j > i$, either $A$ has been reduced by step $j$, or there exists $A' \in G_j$ where $A' = A\tau$ for some reader substitution $\tau$, and $A'$ can reduce with $C$.
 \end{restatable}
+
+\subsection{Deterministic Transition System for Concurrent GLP}\label{subsection:irGLP}
+
+This section specifies a workstation (single-agent) implementation-ready transition system for GLP with deterministic execution.
+
+\begin{definition}[irGLP Configuration]
+An \emph{irGLP configuration} over program $M$ is a triple $R = (Q, S, F)$ where:
+\begin{itemize}
+\item $Q \in \mathcal{A}^*$ is a sequence of active goals
+\item $S \subseteq \mathcal{A} \times 2^{V?}$ contains suspended goals with their suspension sets
+\item $F \subseteq \mathcal{A}$ contains failed goals
+\end{itemize}
+\end{definition}
+
+The irGLP reduction extends GLP reduction by activating goals that were suspended on variables instantiated by the reduction, and explicitly failing goals that do not succeed or suspend.
+
+\begin{definition}[irGLP Goal/Queue Reduction]
+Given configuration $(Q, S, F)$ with $Q = A\cdot Q'$ and clause $C \in M$, the \emph{irGLP reduction} of $A$ with $C$:
+\begin{itemize}
+\item \textbf{succeeds with} $(B, \hat\sigma, R)$ if the GLP reduction of $A$ with $C$ succeeds with $(B, \hat\sigma)$ and $R = \{G : (G, W) \in S \wedge X?\in W \wedge X?\hat\sigma? \neq X?\}$
+\item \textbf{suspends with} $W_C$ if GLP reduction of $A$ with $C$ suspends on readers $W_C$
+\item \textbf{fails} otherwise
+\end{itemize}
+\end{definition}
+
+\begin{definition}[Implementation-Ready GLP Transition System]
+The transition system $\text{irGLP} = (\mathcal{C}, c_0, \mathcal{T})$ over $M$ and initial goal $G_0$ has configurations $\mathcal{C}$ being all irGLP configurations over $M$, with initial configuration $c_0 = (G_0, \emptyset, \emptyset)$, and transitions $\mathcal{T}$ being all transitions $(Q, S, F) \rightarrow (Q', S', F')$ where $Q = A \cdot Q_r$ and:
+    \begin{enumerate}
+    \item \textbf{Reduce:} If GLP reduction of $A$ with first applicable clause $C \in M$ succeeds with $(B, \hat\sigma,R)$:
+        \begin{itemize}
+        \item \textbf{Activate:}  $S' = S \setminus \{(G, W) : G \in R\}$,  $F' = F$
+        \item \textbf{Schedule:} $Q' = (Q_r \cdot B \cdot R)\hat\sigma\hat\sigma?$
+        \end{itemize}
+    \item \textbf{Suspend:} Else if $W = \bigcup_{C \in M} W_{C} \neq \emptyset$ then $Q' = Q_r$, $S' = S \cup \{(A, W)\}$, $F' = F$
+    \item \textbf{Fail:} Else,  $Q' = Q_r$, $S' = S$, $F' = F \cup \{A\}$.
+    \end{enumerate}
+\end{definition}
+
+A key restriction compared to the GLP operational semantics is the immediate application of reader substitutions during reduction rather than through asynchronous communication. This simplification is appropriate for workstation execution where all variables are local.
