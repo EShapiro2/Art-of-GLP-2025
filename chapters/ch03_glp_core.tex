@@ -270,4 +270,43 @@ The transition system $\text{irGLP} = (\mathcal{C}, c_0, \mathcal{T})$ over $M$ 
     \end{enumerate}
 \end{definition}
 
-A key simplification compared to the GLP operational semantics is the immediate application of reader substitutions during reduction rather than through asynchronous communication. This is appropriate for workstation execution where all variables are local.
+\begin{remark}[Immediate vs.\ Asynchronous Communication]
+The GLP transition system (Definition~\ref{definition:GLP-ts}) models communication asynchronously in two steps:
+\begin{enumerate}
+\item \textbf{Reduce}: The writer substitution $\hat\sigma$ is applied to the goal. Its reader counterpart $\hat\sigma?$ is added to the pending substitution $\sigma$.
+\item \textbf{Communicate}: Later, an assignment $\{X? := T\}$ is selected from $\sigma$ and applied to the goal.
+\end{enumerate}
+
+The irGLP transition system combines these into a single step. The Schedule operation applies both the writer substitution and its reader counterpart immediately:
+\[
+Q' = (Q_r \cdot B \cdot R)\hat\sigma\hat\sigma?
+\]
+
+This simplification is valid for single-agent execution because all variables are local---there is no network delay between writer and reader. The observable behavior is identical: the reader receives its value before any subsequent goal can observe it.
+
+In multiagent GLP, where readers and writers may reside on different machines, the two-step model becomes essential. The pending substitution $\sigma$ represents messages in flight between agents.
+\end{remark}
+
+\begin{remark}[Scheduling Freedom]
+The monotonicity property (Proposition~\ref{proposition:GLP-monotonicity}) ensures that a goal reducible in configuration $c$ remains reducible in any subsequent configuration. This provides significant scheduling freedom:
+\begin{itemize}
+\item \textbf{Any fair schedule works}: As long as every reducible goal eventually gets a turn, the computation makes progress.
+\item \textbf{No complex failure handling}: Unlike systems where delays can cause failures, a message arriving late in GLP does not invalidate pending computations.
+\item \textbf{Distributed execution}: In a distributed setting, network delays affect performance but not correctness.
+\end{itemize}
+The GLP fairness requirement is simply: a goal that can be reduced is eventually reduced.
+\end{remark}
+
+\section{Exercises}
+
+\begin{enumerate}
+\item Trace the full computation of \verb|merge([1], [a], Out)| showing all configurations.
+
+\item What happens if we query \verb|merge(X, Y, [1,2,3])| with $X$ and $Y$ uninstantiated? Explain why.
+
+\item Explain why monotonicity fails in standard LP. Give a concrete example where a reducible goal becomes unreducible.
+
+\item Design a goal that never terminates but is fair (every subgoal gets reduced infinitely often).
+
+\item Prove that if all goals in a GLP computation eventually become reducible, the computation is deadlock-free.
+\end{enumerate}
