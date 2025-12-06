@@ -55,10 +55,7 @@ The book transforms the GLP-2025 paper into textbook form:
 Claude pushes to `claude/<branch-name>`. To get changes into Overleaf:
 
 ```bash
-cd ~/Art-of-GLP-2025
-git fetch origin claude/<branch-name>
-git merge -m "Merge claude/<branch-name> into main" origin/claude/<branch-name>
-git push origin main
+cd ~/Art-of-GLP-2025 && git fetch origin claude/<branch-name> && git merge -m "Merge claude branch" origin/claude/<branch-name> && git push origin main
 ```
 
 Then in Overleaf: Menu → GitHub → Pull
@@ -68,8 +65,7 @@ Then in Overleaf: Menu → GitHub → Pull
 Push from Overleaf to GitHub (Menu → GitHub → Push), then:
 
 ```bash
-cd ~/Art-of-GLP-2025
-git pull origin main
+cd ~/Art-of-GLP-2025 && git pull origin main
 ```
 
 ## Working Rules
