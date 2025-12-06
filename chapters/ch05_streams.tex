@@ -200,6 +200,83 @@ Out = [a, x, 1, p, b, y, 2, q]
 
 For $n$ input streams, the resulting tree has height $\lceil \log_2 n \rceil$ and guarantees $O(n)$ bounded-waiting with $O(\log n)$ delay.
 
+\section{Stream Distribution}
+
+Distribution is the dual of merging: one input stream to many output streams. Two fundamental patterns serve most needs.
+
+\subsection{Broadcast Distribution}
+
+Broadcast sends each input element to all output streams:
+
+\begin{verbatim}
+distribute([X|Xs], [X?|Ys?], [X?|Zs?]) :- ground(X?) | distribute(Xs?, Ys, Zs).
+distribute([], [], []).
+\end{verbatim}
+
+The \verb|ground(X?)| guard is essential. Without it, placing \verb|X| in multiple output positions would create multiple writer occurrences, violating SRSW. The guard verifies that \verb|X| contains no unbound variables, making replication safe---a ground term cannot expose writers to multiple readers. With the guard satisfied, multiple reader occurrences \verb|X?| are permitted.
+
+\begin{verbatim}
+GLP> distribute([a,b,c], Y, Z).
+distribute([a, b, c], Y, Z) :- distribute([b, c], X1, X2)
+distribute([b, c], X1, X2) :- distribute([c], X3, X4)
+distribute([c], X3, X4) :- distribute([], X5, X6)
+distribute([], X5, X6) :- true
+Y = [a, b, c]
+Z = [a, b, c]
+→ succeeds
+\end{verbatim}
+
+The pattern generalizes to $n$ outputs:
+
+\begin{verbatim}
+distribute3([X|Xs], [X?|Y1?], [X?|Y2?], [X?|Y3?]) :-
+    ground(X?) | distribute3(Xs?, Y1, Y2, Y3).
+distribute3([], [], [], []).
+\end{verbatim}
+
+\subsection{Indexed Distribution}
+
+Indexed distribution routes each message to a specific output based on a tag:
+
+\begin{verbatim}
+distribute_indexed([send(1,X)|In], [X?|Out1?], Out2) :-
+    distribute_indexed(In?, Out1, Out2).
+distribute_indexed([send(2,X)|In], Out1, [X?|Out2?]) :-
+    distribute_indexed(In?, Out1, Out2).
+distribute_indexed([], [], []).
+\end{verbatim}
+
+Each input message is wrapped as \verb|send(N,X)| where \verb|N| indicates the destination. Pattern matching on \verb|N| selects the appropriate output stream. No guard is needed here since each \verb|X| goes to exactly one output.
+
+\begin{verbatim}
+GLP> distribute_indexed([send(1,a), send(2,b), send(1,c), send(2,d)], Y, Z).
+distribute_indexed([send(1, a), ...], Y, Z) :- distribute_indexed([send(2, b), ...], X1, X2)
+distribute_indexed([send(2, b), ...], X1, X2) :- distribute_indexed([send(1, c), ...], X3, X4)
+distribute_indexed([send(1, c), ...], X3, X4) :- distribute_indexed([send(2, d)], X5, X6)
+distribute_indexed([send(2, d)], X5, X6) :- distribute_indexed([], X7, X8)
+distribute_indexed([], X7, X8) :- true
+Y = [a, c]
+Z = [b, d]
+→ succeeds
+\end{verbatim}
+
+Messages tagged with \verb|send(1,_)| are routed to the first output, \verb|send(2,_)| to the second.
+
+\subsection{Duality with Merging}
+
+Distribution and merging are duals:
+
+\begin{center}
+\begin{tabular}{lll}
+\textbf{Operation} & \textbf{Direction} & \textbf{Pattern} \\
+\hline
+Merge & many-to-one & multiple inputs, single output \\
+Distribute & one-to-many & single input, multiple outputs \\
+\end{tabular}
+\end{center}
+
+Together they enable complex stream topologies: a process can receive from multiple sources via merge, transform the data, and distribute results to multiple consumers. The metainterpreter with run control in Chapter~\ref{ch:metainterpreters} uses distribution to broadcast control messages to all concurrent subgoals.
+
 \section{Cooperative Stream Production}
 
 Multiple producers can cooperate on a single stream by passing the tail writer between them. Each producer extends the stream and hands control to the next:
