@@ -9,43 +9,49 @@ This appendix provides solutions to selected exercises from the main text.
 
 \subsection{Exercise~\ref{ex:biased-merge}: Biased Merge}
 
-Write \verb|biased_merge(Xs, Ys, Zs)| that takes all available elements from \verb|Xs| before taking from \verb|Ys|.
+Implement a biased merge operator that maintains fairness in dynamically-constructed trees by tracking subtree weights.
 
 \begin{verbatim}
-% Take from Xs while it has elements ready
-biased_merge([X|Xs], Ys, [X?|Zs?]) :- biased_merge(Xs?, Ys?, Zs).
+% Biased merge with weight tracking
+% Bx, By: weights of left and right subtrees
+% N: counter for current priority stream
 
-% When Xs tail is unbound (writer), take from Ys
-biased_merge(Xs, [Y|Ys], [Y?|Zs?]) :- writer(Xs?) |
-    biased_merge(Xs?, Ys?, Zs).
+bmerge(X, Y, [started?|Z?]) :- bmerge(1, 1, 1, X?, Y?, Z).
 
-% Termination
-biased_merge([], [], []).
-biased_merge([], [Y|Ys], [Y?|Zs?]) :- biased_merge([], Ys?, Zs).
-biased_merge([X|Xs], [], [X?|Zs?]) :- biased_merge(Xs?, [], Zs).
+% Counter exhausted: switch priorities
+bmerge(Bx, By, 0, X, Y, Z?) :- bmerge(By?, Bx?, By?, Y?, X?, Z).
+
+% Forward from high-priority stream
+bmerge(Bx, By, N, [M|X], Y, Out?) :- N? > 0 |
+    forward_msg(M?, Bx?, By?, N?, X?, Y?, Out).
+
+% Forward from low-priority stream (only if high-priority has no message)
+bmerge(Bx, By, N, X, [M|Y], Out?) :- N? > 0, reader(X?) |
+    forward_msg(M?, By?, Bx?, N?, Y?, X?, Out).
+
+% End of stream
+bmerge(_, _, _, [], Y, [halted?|Y?]).
+bmerge(_, _, _, X, [], [halted?|X?]).
+
+% Handle control messages
+forward_msg(started, Bx, By, N, X, Y, [started?|Z?]) :-
+    Bx1 := Bx? + 1,
+    bmerge(Bx1?, By?, N?, X?, Y?, Z).
+forward_msg(halted, Bx, By, N, X, Y, [halted?|Z?]) :-
+    Bx1 := Bx? - 1,
+    bmerge(Bx1?, By?, N?, X?, Y?, Z).
+forward_msg(M, Bx, By, N, X, Y, [M?|Z?]) :-
+    M =\= started, M =\= halted |
+    N1 := N? - 1,
+    bmerge(Bx?, By?, N1?, X?, Y?, Z).
 \end{verbatim}
 
-The key insight is the \verb|writer(Xs?)| guard in the second clause. This guard succeeds only when the tail of \verb|Xs| is an unbound writer---meaning the producer hasn't yet generated more elements. Only then do we take from \verb|Ys|.
+The key ideas:
+\begin{itemize}
+\item Each merge node tracks \verb|Bx| and \verb|By|, the weights of its subtrees
+\item When \verb|started| arrives, increment the weight; when \verb|halted| arrives, decrement
+\item The counter \verb|N| determines how many messages to forward from the high-priority side before switching
+\item When \verb|N| reaches 0, swap priorities: the other stream becomes high-priority with counter reset to its weight
+\end{itemize}
 
-The first clause has no guard and matches whenever \verb|Xs| has an element. Since clauses are tried in order and the first always succeeds when \verb|Xs| is non-empty, elements from \verb|Xs| take priority.
-
-The last three clauses handle termination: when one stream closes (\verb|[]|), drain the other.
-
-\paragraph{Trace Example}
-
-Consider two producers with different speeds:
-
-\begin{verbatim}
-fast([1,2,3], done).
-slow([a|Tail?], Done?) :- pause, slow_cont(Tail, Done).
-slow_cont([b], done).
-\end{verbatim}
-
-The fast producer emits all elements immediately. The slow producer emits \verb|a|, pauses, then emits \verb|b|.
-
-\begin{verbatim}
-GLP> fast(F, _), slow(S, _), biased_merge(F?, S?, Out).
-Out = [1, 2, 3, a, b]
-\end{verbatim}
-
-All of \verb|F|'s elements appear first because they're immediately available. The \verb|writer| guard on \verb|S|'s tail fails while \verb|F| has elements. Only after \verb|F| is exhausted does the merge take from \verb|S|.
+This achieves linear bounded-waiting: in a tree with $n$ leaves, a message waits at most $O(n)$ messages before exiting the root.
