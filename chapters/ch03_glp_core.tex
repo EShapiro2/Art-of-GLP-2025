@@ -72,8 +72,19 @@ If writer-to-writer assignments were allowed then, by the single-writer restrict
 The occurs check condition for the reader counterpart ensures that no writer is bound to a term containing its paired reader, preventing the formation of circular terms, as proven in Proposition~\ref{proposition:acyclicity}.
 \end{remark}
 
-\begin{remark}[Writer-to-Writer and Suspension]
-By the formal definition, unifying two writers $X$ and $Y$ would suspend on an empty set: the regular mgu $\{X := Y\}$ exists but is not a writer mgu (violating condition 2), and the suspension set $W_\sigma = \emptyset$ since no reader is mapped to a non-variable. However, suspending on an empty set means waiting for nothing—guaranteed deadlock. By SRSW, after binding $X$ to $Y$, no other occurrence of either writer remains to instantiate them, so their paired readers $X?$ and $Y?$ are abandoned. The implementation therefore fails immediately on writer-to-writer unification rather than suspending uselessly. This is a pragmatic extension: early detection of inevitable deadlock.
+\begin{remark}[Writer-to-Writer Failure]
+The formal definition as stated would have writer-to-writer unification suspend on an empty set: the regular mgu $\{X := Y\}$ exists but violates condition 2, and $W_\sigma = \emptyset$ since no readers are involved.
+
+However, suspending on an empty set is operationally meaningless---there is nothing to wait for. By the SRSW requirement, after binding writer $X$ to writer $Y$, no other occurrence of either writer remains to instantiate them. Their paired readers $X?$ and $Y?$ would be \emph{abandoned}---forever waiting for values that will never arrive.
+
+More importantly, writer-to-writer failure is \emph{semantically significant} for clause selection. Programs can use WxW failure to discriminate between clauses based on whether an argument position contains a writer or reader tail. For example, an observer of a cooperatively-constructed stream uses two clauses:
+\begin{verbatim}
+observe([X|Xs], Ys?, ...) :- ...   % first stream producing
+observe([X|Xs?], Ys, ...) :- ...   % second stream producing
+\end{verbatim}
+Clause selection depends on WxW failure: if the goal has a writer tail, it fails against a clause head with a writer tail, succeeding against one with a reader tail.
+
+Therefore, writer-to-writer unification \emph{fails} rather than suspending. This should be understood as part of the formal semantics: the definition of writer mgu (Definition~\ref{definition:GLP-unification}) excludes writer-to-writer bindings, and when the only regular mgu is excluded, the terms have no writer mgu, hence no regular mgu satisfying the requirements, hence unification fails.
 \end{remark}
 
 \subsection{Understanding Writer Unification}
