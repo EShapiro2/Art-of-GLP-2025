@@ -18,7 +18,7 @@ bmerge(Bx, By, N, [M|X], Y, Out?) :- N? > 0 |
     forward_msg(M?, Bx?, By?, N?, X?, Y?, Out).
 
 % Forward from low-priority stream (only if high-priority has no message)
-bmerge(Bx, By, N, X, [M|Y], Out?) :- N? > 0, reader(X?) |
+bmerge(Bx, By, N, X, [M|Y], Out?) :- N? > 0, unknown(X?) |
     forward_msg(M?, By?, Bx?, N?, Y?, X?, Out).
 
 % End of stream
