@@ -92,6 +92,10 @@ collect_tips([[Block|Bs]|Others], [Block?|Tips?], ...) :-
 \item[\texttt{X =< Y}] Succeeds if \verb|X| evaluates to less than or equal to \verb|Y|.
 
 \item[\texttt{X >= Y}] Succeeds if \verb|X| evaluates to greater than or equal to \verb|Y|.
+
+\item[\texttt{wait(Duration)}] Suspends for \verb|Duration| milliseconds, then succeeds. Uses standard GLP suspension mechanism: creates a fresh reader/writer pair, starts a timer, suspends on the reader. When the timer fires, it binds the writer, reactivating the goal via the normal ROQ mechanism.
+
+\item[\texttt{wait\_until(Timestamp)}] Succeeds if the current time (milliseconds since epoch) is greater than or equal to \verb|Timestamp|. \textbf{Note:} This is a test, not a blocking wait. If the time has not yet passed, it \emph{fails} (not suspends), allowing the next clause to be tried.
 \end{description}
 
 \subsection{Defined Guard Predicates}
@@ -119,6 +123,8 @@ System predicates execute atomically with goal reduction, providing access to ru
 \item[\texttt{X? := Expr}] Evaluate arithmetic expression \verb|Expr| and bind result to \verb|X|. The expression must be ground. See Section~\ref{sec:arithmetic} for operators.
 
 \item[\texttt{current\_time(T)}] Bind \verb|T| to the current system timestamp (milliseconds since epoch).
+
+\item[\texttt{get\_time(T)}] Synonym for \verb|current_time(T)|. Binds \verb|T| to current timestamp.
 
 \item[\texttt{variable\_name(X, Name)}] Bind \verb|Name| to a unique string identifier for variable \verb|X|.
 
