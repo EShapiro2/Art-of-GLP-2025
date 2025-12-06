@@ -1,183 +1,155 @@
-% chapters/ch05_streams.tex - Streams
-
 \chapter{Streams}
 \label{ch:streams}
 
-Streams---incrementally constructed lists---are the fundamental communication mechanism in \GLP. A producer extends a stream; a consumer reads from it. Reader/writer pairs synchronize their interaction.
+\section{Introduction}
 
-\section{Producer and Consumer}
+A \emph{stream} is an incrementally-constructed, potentially-indefinite list. Unlike a complete list that exists all at once, a stream is built element by element during computation. The producer may continue indefinitely, or may eventually close the stream by binding its tail to the empty list \verb|[]|.
 
-\Program{Stream Producer}
-\begin{verbatim}
-producer([N?|Xs?], N) :- N1 := N? + 1, producer(Xs, N1?).
-\end{verbatim}
+This distinction has important consequences for consumer design:
+\begin{itemize}
+\item If a stream is \emph{bounded} (will eventually close), the consumer should have a clause for \verb|[]| to handle termination.
+\item If a stream is \emph{indefinite} (never intended to close), the consumer should \emph{not} have a clause for \verb|[]|. Instead, it should fail if the stream unexpectedly terminates, signaling an error condition.
+\end{itemize}
 
-The producer takes two arguments: the stream to extend and the current value. It writes the current value to the stream head, increments, and recurses. The stream argument is a writer; the producer owns it.
+This design principle ensures that protocol violations are detected rather than silently ignored.
 
-\Program{Stream Consumer}
-\begin{verbatim}
-consumer([X|Xs], Sum) :- Sum1 := Sum? + X?, consumer(Xs?, Sum1?).
-\end{verbatim}
+\section{Producers and Consumers}
 
-The consumer reads from the stream head, adds it to the running sum, and recurses. The stream argument is a reader; the consumer observes it.
+The simplest stream pattern pairs a producer that generates elements with a consumer that processes them. Consider a producer that counts down from $N$:
 
-\section{Concurrent Execution}
-
-Running producer and consumer together:
-
-\begin{verbatim}
-GLP> producer(Xs, 0), consumer(Xs?, 0).
-\end{verbatim}
-
-The producer owns the stream writer \verb|Xs|; the consumer holds the reader \verb|Xs?|. They execute concurrently, synchronized by the stream.
-
-With a reduction limit of 8:
-
-\begin{verbatim}
-GLP> producer(Xs, 0), consumer(Xs?, 0).  [limit 8]
-
-producer(Xs, 0), consumer(Xs?, 0)
-  -> producer writes Xs = [0|Xs1]
-producer(Xs1, 1), consumer([0|Xs1]?, 0)
-  -> consumer reads 0, computes 0+0=0
-producer(Xs1, 1), consumer(Xs1?, 0)
-  -> producer writes Xs1 = [1|Xs2]
-producer(Xs2, 2), consumer([1|Xs2]?, 0)
-  -> consumer reads 1, computes 0+1=1
-producer(Xs2, 2), consumer(Xs2?, 1)
-  -> producer writes Xs2 = [2|Xs3]
-producer(Xs3, 3), consumer([2|Xs3]?, 1)
-  -> consumer reads 2, computes 1+2=3
-producer(Xs3, 3), consumer(Xs3?, 3)
-  -> producer writes Xs3 = [3|Xs4]
-producer(Xs4, 4), consumer([3|Xs4]?, 3)
-
-Xs = [0, 1, 2, 3 | Xs4]
--> limit reached
-\end{verbatim}
-
-The trace shows interleaved execution. Neither process dominates; fairness ensures both make progress. After 8 reductions, the stream contains \verb|[0, 1, 2, 3 | ...]| and the sum is 3.
-
-\section{Suspension and Synchronization}
-
-What if the consumer runs faster than the producer? It suspends:
-
-\begin{verbatim}
-GLP> consumer(Xs?, 0).  [Xs unbound]
-
-consumer(Xs?, 0)
-  -> suspended on Xs?
-\end{verbatim}
-
-The consumer cannot match \verb|[X|Xs]| against an unbound variable. It waits until someone writes to \verb|Xs|.
-
-When the producer writes:
-
-\begin{verbatim}
-GLP> Xs = [1|Xs1], consumer(Xs?, 0).
-
-consumer([1|Xs1]?, 0)
-  -> consumer reads 1, computes 0+1=1
-consumer(Xs1?, 1)
-  -> suspended on Xs1?
-\end{verbatim}
-
-The consumer processes one element and suspends again, waiting for more data.
-
-\section{Stream Termination}
-
-The programs above run forever. To terminate, the producer closes the stream:
-
-\Program{Bounded Producer}
 \begin{verbatim}
 producer([], 0).
-producer([N?|Xs?], N) :- N > 0 | N1 := N? - 1, producer(Xs, N1?).
+producer([N?|Xs?], N) :- N? > 0 | N1 := N? - 1, producer(Xs, N1?).
 \end{verbatim}
 
-\Program{Terminating Consumer}
+The producer has two clauses:
+\begin{itemize}
+\item When $N = 0$, close the stream with \verb|[]|
+\item Otherwise, emit $N$ as the head, decrement, and continue with the tail
+\end{itemize}
+
+Note the output parameter pattern: the stream head \verb|[N?|Xs?]| uses readers in the structure, paired with writers \verb|N| and \verb|Xs| that produce values.
+
+A consumer that sums stream elements:
+
 \begin{verbatim}
 consumer([], Sum, Sum?).
-consumer([X|Xs], Sum, Result?) :-
-    Sum1 := Sum? + X?, consumer(Xs?, Sum1?, Result).
+consumer([X|Xs], Sum, Result?) :- ground(X?) |
+    Sum1 := Sum? + X?,
+    consumer(Xs?, Sum1?, Result).
 \end{verbatim}
+
+The \verb|ground(X?)| guard ensures we only consume elements that are fully available.
+
+\subsection{Concurrent Execution}
+
+When producer and consumer run concurrently, they interleave:
 
 \begin{verbatim}
-GLP> producer(Xs, 3), consumer(Xs?, 0, R).
-
-producer(Xs, 3), consumer(Xs?, 0, R)
-  -> producer writes Xs = [3|Xs1]
-producer(Xs1, 2), consumer([3|Xs1]?, 0, R)
-  -> consumer reads 3
-producer(Xs1, 2), consumer(Xs1?, 3, R)
-  -> producer writes Xs1 = [2|Xs2]
-producer(Xs2, 1), consumer([2|Xs2]?, 3, R)
-  -> consumer reads 2
-producer(Xs2, 1), consumer(Xs2?, 5, R)
-  -> producer writes Xs2 = [1|Xs3]
-producer(Xs3, 0), consumer([1|Xs3]?, 5, R)
-  -> consumer reads 1
-producer(Xs3, 0), consumer(Xs3?, 6, R)
-  -> producer writes Xs3 = []
-consumer([], 6, R)
-  -> consumer terminates
-R = 6
--> succeeds
+GLP> producer(H, 5), consumer(H?, 0, R).
+producer(X1, 5) :- :=/2(X3, -(5, 1)), producer(X4, X3?)
+consumer([5 | X4?], 0, X2) :- :=/2(X5, +(0, 5)), consumer(X4?, X5?, X6)
+...
+producer(X20, 0) :- true
+consumer([], 15, X22) :- true
+R = 15
+→ succeeds
 \end{verbatim}
 
-The producer counts down from 3, producing \verb|[3, 2, 1]|, then closes with \verb|[]|. The consumer sums to 6 and binds the result.
+The trace shows interleaving: the producer emits an element, the consumer processes it, the producer emits another, and so on. Neither runs to completion before the other starts—they cooperate through the shared stream.
 
 \section{Stream Merging}
 
-The \verb|merge| program combines two input streams into one output stream:
+Multiple input streams can be merged into a single output stream:
 
 \begin{verbatim}
-merge([X|Xs],Ys,[X?|Zs?]) :- merge(Ys?,Xs?,Zs).
-merge(Xs,[Y|Ys],[Y?|Zs?]) :- merge(Xs?,Ys?,Zs).
-merge([],[],[]).
+merge([X|Xs], Ys, [X?|Zs?]) :- merge(Ys?, Xs?, Zs).
+merge(Xs, [Y|Ys], [Y?|Zs?]) :- merge(Xs?, Ys?, Zs).
+merge([], [], []).
 \end{verbatim}
 
-Note the argument swapping in the recursive calls: \verb|merge(Ys?,Xs?,Zs)| ensures fair interleaving when both streams are available.
+The first two clauses swap the input streams after each element, ensuring fair interleaving. The third clause terminates when both inputs are exhausted.
 
 \subsection{Tracing a Merge Computation}
-
-Let us trace a computation with the merge program to see how asynchronous communication works.
 
 Initial goal: \verb|merge([1,2], [a,b], Out)|
 
 \begin{enumerate}
-\item Configuration: goal is \verb|merge([1,2], [a,b], Out)|, no pending messages.
-
-\item \textbf{Reduce} with clause 1:
+\item \textbf{Reduce} with clause 1: extract \verb|1|, swap inputs
 \begin{itemize}
-\item Unify head: $\{X := 1, Xs := [2], Ys := [a,b], Out := [1|Z_1?]\}$
-\item New goal: \verb|merge([a,b], [2], Z_1)|
-\item The output $Out$ is now $[1|Z_1?]$---the first element is determined, the tail awaits.
+\item New goal: \verb|merge([a,b], [2], Z1)|
+\item Output so far: \verb|Out = [1|Z1?]|
 \end{itemize}
 
-\item \textbf{Reduce} with clause 1 (arguments were swapped):
+\item \textbf{Reduce} with clause 1: extract \verb|a|, swap inputs
 \begin{itemize}
-\item Unify: extracts $a$ from first argument
-\item New goal: \verb|merge([2], [b], Z_2)|
-\item Now $Z_1 = [a|Z_2?]$, so $Out = [1,a|Z_2?]$
+\item New goal: \verb|merge([2], [b], Z2)|
+\item Output so far: \verb|Out = [1,a|Z2?]|
 \end{itemize}
 
-\item Continue alternating until both input lists are empty...
+\item Continue alternating...
 
-\item Final result: $Out = [1, a, 2, b]$
+\item Final result: \verb|Out = [1, a, 2, b]|
 \end{enumerate}
 
-The output stream is constructed incrementally. Each reduction step extends the output by one element while the tail remains a future (unbound reader). This incremental construction is the essence of stream processing in GLP.
+The output stream is constructed incrementally. Each reduction extends the output by one element while the tail remains a future.
+
+\section{Cooperative Stream Production}
+
+Multiple producers can cooperate on a single stream by passing the tail writer between them. Each producer extends the stream and hands control to the next:
+
+\begin{verbatim}
+% Bob produces two a's then hands tail to Alice
+bob([a,a|Tail?], Result?) :- alice(Tail, Result).
+
+% Alice produces three b's then hands tail to Bob
+alice([b,b,b|Tail?], Result?) :- bob_finish(Tail, Result).
+
+% Bob produces two more a's then closes
+bob_finish([a,a], done).
+\end{verbatim}
+
+\begin{verbatim}
+GLP> bob(Stream, Done).
+bob(X1, X2) :- alice(X3, X4)
+alice(X3, X4) :- bob_finish(X5, X6)
+bob_finish(X5, X6) :- true
+Stream = [a, a, b, b, b, a, a]
+Done = done
+→ succeeds
+\end{verbatim}
+
+The stream is produced cooperatively: Bob writes \verb|[a,a|...]|, Alice continues with \verb|[b,b,b|...]|, Bob finishes with \verb|[a,a]|.
+
+A reader walks the stream until hitting the end:
+
+\begin{verbatim}
+reader([], Count, Count?).
+reader([X|Xs], Count, Result?) :- ground(X?) |
+    Count1 := Count? + 1,
+    reader(Xs?, Count1?, Result).
+\end{verbatim}
+
+\begin{verbatim}
+GLP> bob(Stream, _), reader(Stream?, 0, Count).
+...
+reader([], 7, X22) :- true
+Count = 7
+→ succeeds
+\end{verbatim}
+
+The reader counts 7 elements: two a's, three b's, two more a's.
 
 \section{Difference Lists}
 
-A \emph{difference list} is a classic logic programming technique that enables O(1) list concatenation. In standard list append, we must traverse the entire first list to find its end—O(n) complexity. With difference lists, we maintain direct access to the tail, enabling constant-time append.
+A \emph{difference list} represents the difference between two potentially-indefinite streams. While streams may be unbounded, their difference is always finite—hence it represents a list.
 
 \subsection{Representation}
 
-A difference list represents a list as two components:
+A difference list has two components:
 \begin{itemize}
 \item The \emph{head}: a list structure with an unbound variable at its end (a ``hole'')
-\item The \emph{tail}: the variable that fills the hole
+\item The \emph{tail}: the writer variable that can fill the hole
 \end{itemize}
 
 For example, the list \verb|[1,2]| as a difference list:
@@ -186,82 +158,91 @@ Head: [1,2|T?]    (structure with hole T?)
 Tail: T           (writer that can fill the hole)
 \end{verbatim}
 
-The reader \verb|T?| in the structure awaits a value; the writer \verb|T| can provide it. Together they form a reader/writer pair. The ``list'' is the structure \verb|[1,2|T?]|; we hold \verb|T| to enable extension.
-
-An empty difference list is simply:
+An empty difference list:
 \begin{verbatim}
 Head: T?
 Tail: T
 \end{verbatim}
-The head \emph{is} the hole—nothing precedes it.
+
+The ``list'' is whatever lies between the current head and the eventual tail binding.
+
+\subsection{Creating Difference Lists}
+
+To create a difference list with $N$ empty slots:
+
+\begin{verbatim}
+create_dl(0, H?, H).
+create_dl(N, [_|H?], T) :- N? > 0 | N1 := N? - 1, create_dl(N1?, H, T?).
+\end{verbatim}
+
+\begin{verbatim}
+GLP> create_dl(3, H, T?).
+create_dl(3, H, T) :- :=/2(X1, -(3, 1)), create_dl(X1?, X2, T?)
+...
+H = [_, _, _ | T?]
+T = <unbound>
+→ succeeds
+\end{verbatim}
+
+The result is a structure with three empty slots, followed by the open tail.
+
+\subsection{Converting Lists}
+
+To convert a standard list to a difference list:
+
+\begin{verbatim}
+list_to_dl([], T?, T).
+list_to_dl([X|Xs], [X?|Ys?], T) :- list_to_dl(Xs?, Ys, T?).
+\end{verbatim}
+
+\begin{verbatim}
+GLP> list_to_dl([1, 2, 3], H, T?).
+list_to_dl([1, 2, 3], H, T?) :- list_to_dl([2, 3], X1, T?)
+...
+H = [1, 2, 3 | T?]
+T = <unbound>
+→ succeeds
+\end{verbatim}
+
+To close a difference list into a standard list, bind the tail to empty:
+
+\begin{verbatim}
+close_dl(H?, [], H).
+\end{verbatim}
+
+\begin{verbatim}
+GLP> close_dl(H, [], [a, b, c]).
+H = [a, b, c]
+→ succeeds
+\end{verbatim}
 
 \subsection{Constant-Time Append}
 
-To append two difference lists, we unify the first tail with the second head. This fills the first list's hole with the second list's structure:
+The power of difference lists: O(1) concatenation. To append two difference lists, unify the first tail with the second head:
 
 \begin{verbatim}
-append(H1, T1?, T1, T2?, H1?, T2).
+append_dl(H1, T1?, T1, T2?, H1?, T2).
 \end{verbatim}
 
 The arguments are:
 \begin{enumerate}
 \item \verb|H1|: first difference list head (input)
-\item \verb|T1?|: first difference list tail as reader (input, forms pair with arg 3)
-\item \verb|T1|: second difference list head (input, writer bound to second head)
-\item \verb|T2?|: second difference list tail as reader (input)
-\item \verb|H1?|: result head (output, same structure as first head)
-\item \verb|T2|: result tail (output, same as second tail)
+\item \verb|T1?|: first tail as reader (pairs with arg 3)
+\item \verb|T1|: second head (input, bound to close first tail)
+\item \verb|T2?|: second tail as reader (input)
+\item \verb|H1?|: result head (output)
+\item \verb|T2|: result tail (output)
 \end{enumerate}
 
-The key insight is arguments 2 and 3: \verb|T1?| and \verb|T1| form a reader/writer pair within the clause. The goal passes the first tail writer at position 2 and the second head at position 3. The clause binds them together.
+The key is arguments 2 and 3: \verb|T1?| and \verb|T1| form a reader/writer pair within the clause. The goal passes the first tail writer at position 2 and the second head at position 3. The clause binds them together through the pair.
 
-\subsection{Traced Example}
+\subsection{Detailed Unification Trace}
 
-Let us append \verb|[1,2]| and \verb|[3,4]| represented as difference lists:
-
-\begin{verbatim}
-DL1: head = [1,2|T1?], tail = T1
-DL2: head = [3,4|T2?], tail = T2
-\end{verbatim}
-
-Goal:
-\begin{verbatim}
-append([1,2|T1?], T1, [3,4|T2?], T2, H, T?)
-\end{verbatim}
-
-The caller will receive the result as \verb|(H?, T)|—a difference list they can further extend.
+Let us append \verb|[1,2]| and \verb|[3,4]|:
 
 \begin{verbatim}
-GLP> append([1,2|T1?], T1, [3,4|T2?], T2, H, T?).
-append([1,2|T1?], T1, [3,4|T2?], T2, H, T?) :- true
-  T1 = [3,4|T2?]
-  H = [1,2|T1?]
--> succeeds
-\end{verbatim}
-
-After reduction:
-\begin{itemize}
-\item \verb|T1| is bound to \verb|[3,4|T2?]|
-\item Therefore \verb|T1?| (in the structure \verb|[1,2|T1?]|) receives \verb|[3,4|T2?]|
-\item The structure becomes \verb|[1,2,3,4|T2?]|
-\item \verb|H| is bound to this structure
-\item The result tail \verb|T| is unified with \verb|T2|
-\end{itemize}
-
-The caller now has:
-\begin{verbatim}
-Result: head = H? = [1,2,3,4|T?], tail = T
-\end{verbatim}
-
-The append completed in constant time—no traversal, just unification.
-
-\subsection{Step-by-Step Unification}
-
-To see precisely how SRSW enables this, let us trace the depth-first unification with the clause renamed apart:
-
-\begin{verbatim}
-Clause: append(Ha, Ta?, Ta, Tb?, Ha?, Tb).
-Goal:   append([1,2|T1?], T1, [3,4|T2?], T2, H, T?)
+Goal:   append_dl([1,2|T1?], T1, [3,4|T2?], T2, H, T?)
+Clause: append_dl(Ha, Ta?, Ta, Tb?, Ha?, Tb).
 \end{verbatim}
 
 \begin{center}
@@ -282,59 +263,24 @@ The critical binding is at argument 3: \verb|Ta := [3,4|T2?]|. Its reader counte
 \mathtt{Ta?} := \mathtt{[3,4|T2?]}
 \]
 
-Since argument 2 bound \verb|T1 := Ta?|, and \verb|T1| is a writer in the goal, the reader counterpart delivers:
+Since argument 2 bound \verb|T1 := Ta?|, the reader counterpart flows through:
 \[
-\mathtt{T1?} := \mathtt{Ta?} := \mathtt{[3,4|T2?]}
+\mathtt{T1?} := \mathtt{[3,4|T2?]}
 \]
 
-This instantiates the hole in \verb|[1,2|T1?]|, completing the append.
+This fills the hole in \verb|[1,2|T1?]|, yielding \verb|[1,2,3,4|T2?]|.
 
-\subsection{Converting Lists to Difference Lists}
-
-To use difference lists, we often need to convert from standard lists:
-
-\begin{verbatim}
-list_to_dl([], T?, T).
-list_to_dl([X|Xs], [X?|Ys?], T) :- list_to_dl(Xs?, Ys, T?).
-\end{verbatim}
-
-\begin{verbatim}
-GLP> list_to_dl([1,2,3], H, T?).
-list_to_dl([1,2,3], H, T?) :- list_to_dl([2,3], Y1, T?)
-list_to_dl([2,3], Y1, T?) :- list_to_dl([3], Y2, T?)
-list_to_dl([3], Y2, T?) :- list_to_dl([], Y3, T?)
-list_to_dl([], Y3, T?) :- true
-  H = [1,2,3|T?]
--> succeeds
-\end{verbatim}
-
-The result is a difference list \verb|(H?, T)| = \verb|([1,2,3|T?], T)|.
-
-\subsection{Converting Difference Lists to Lists}
-
-To close a difference list into a standard list, bind the tail to empty:
-
-\begin{verbatim}
-dl_to_list(H?, T, H) :- T = [].
-\end{verbatim}
-
-Or simply unify the tail with \verb|[]| directly in the calling context.
-
-\begin{verbatim}
-GLP> list_to_dl([1,2], H, T?), T = [].
-  H = [1,2]
--> succeeds
-\end{verbatim}
+The append completed in constant time—six unifications regardless of list length.
 
 \subsection{Why Difference Lists Work in GLP}
 
-Difference lists rely on the ability to:
+Difference lists rely on:
 \begin{enumerate}
-\item Hold an ``open'' structure with an unbound variable at the end
-\item Later instantiate that variable to extend the structure
+\item Holding an ``open'' structure with an unbound reader at the end
+\item Later instantiating the paired writer to extend the structure
 \end{enumerate}
 
-In GLP, this maps naturally to reader/writer pairs:
+In GLP, this maps to reader/writer pairs:
 \begin{itemize}
 \item The structure contains a \emph{reader} at the hole position
 \item We hold the paired \emph{writer} to fill it later
@@ -342,6 +288,181 @@ In GLP, this maps naturally to reader/writer pairs:
 \item When the writer is bound, the reader receives the value
 \end{itemize}
 
-The \verb|append| clause uses an intermediate reader/writer pair (\verb|Ta?/Ta|) to mediate the binding. The caller's first-tail-writer binds to \verb|Ta?|; the second head binds to \verb|Ta|. The reader counterpart of the second binding flows through to fill the first list's hole.
+\section{Bounded Buffers}
 
-This is O(1) because no traversal occurs—just six unifications regardless of list length.
+When a fast producer meets a slow consumer, unbounded buffering can exhaust memory. A \emph{bounded buffer} limits how far the producer can advance beyond the consumer.
+
+\subsection{List-Based Bounded Buffer}
+
+The simplest technique: the consumer's pattern determines buffer capacity. Consider:
+
+\begin{verbatim}
+bb_consumer([X1,X2|Xs?]) :- ground(X1?) | bb_consumer([X2?|Xs]).
+\end{verbatim}
+
+The pattern \verb|[X1,X2|Xs?]| requires \emph{two} elements to be visible before consuming one. This creates backpressure: if the producer is only one element ahead, the consumer suspends.
+
+The buffer capacity is one: the producer can be at most one element ahead of the consumer.
+
+For buffer size $N$, require $N+1$ visible elements:
+\begin{verbatim}
+% Buffer size 2
+bb_cons2([X1,X2,X3|Xs?]) :- ground(X1?) | bb_cons2([X2?,X3?|Xs]).
+\end{verbatim}
+
+\subsection{Difference List Bounded Buffer}
+
+With difference lists, buffer capacity is explicit. The consumer creates the buffer and advances the tail as it consumes:
+
+\begin{verbatim}
+% Create buffer with N slots
+create_dl(0, H?, H).
+create_dl(N, [_|H?], T) :- N? > 0 | N1 := N? - 1, create_dl(N1?, H, T?).
+
+% Producer fills slots
+bb_producer([], 0).
+bb_producer([N?|Xs?], N) :- N? > 0 | N1 := N? - 1, bb_producer(Xs, N1?).
+
+% Consumer reads and advances tail to free slots
+consumer([], Sum, Sum?).
+consumer([X|Xs], Sum, Result?) :- ground(X?) |
+    Sum1 := Sum? + X?,
+    consumer(Xs?, Sum1?, Result).
+\end{verbatim}
+
+\begin{verbatim}
+GLP> create_dl(2, H, T?), bb_producer(H?, 5), consumer(H?, 0, R).
+...
+R = 15
+→ succeeds
+\end{verbatim}
+
+The \verb|create_dl(2, H, T?)| creates two empty slots. The producer fills slots from the head; the consumer reads from the head. The difference between producer position and consumer position is bounded by the initial buffer size.
+
+\section{Stream Transducers}
+
+A \emph{transducer} transforms an input stream into an output stream. Each element of input produces zero, one, or more elements of output.
+
+\subsection{Copier}
+
+The identity transducer:
+
+\begin{verbatim}
+copier([], []).
+copier([X|Xs], [X?|Ys?]) :- copier(Xs?, Ys).
+\end{verbatim}
+
+\begin{verbatim}
+GLP> copier([1, 2, 3], Out).
+Out = [1, 2, 3]
+→ succeeds
+\end{verbatim}
+
+\subsection{Duplicator}
+
+Each input element appears twice in output:
+
+\begin{verbatim}
+duplicator([], []).
+duplicator([X|Xs], [X?,X?|Ys?]) :- ground(X?) | duplicator(Xs?, Ys).
+\end{verbatim}
+
+The \verb|ground(X?)| guard enables two occurrences of \verb|X?| without violating SRSW.
+
+\begin{verbatim}
+GLP> duplicator([1, 2], Out).
+Out = [1, 1, 2, 2]
+→ succeeds
+\end{verbatim}
+
+\subsection{Separator}
+
+Insert a marker (here, 0) after each element:
+
+\begin{verbatim}
+separator([], []).
+separator([X|Xs], [X?,0|Ys?]) :- separator(Xs?, Ys).
+\end{verbatim}
+
+\begin{verbatim}
+GLP> separator([a, b], Out).
+Out = [a, 0, b, 0]
+→ succeeds
+\end{verbatim}
+
+\subsection{Differentiator}
+
+Output the difference between consecutive elements:
+
+\begin{verbatim}
+differentiator([], []).
+differentiator([_], []).
+differentiator([X,Y|Xs], [D?|Ds?]) :- ground(X?), ground(Y?) |
+    D := Y? - X?,
+    differentiator([Y?|Xs?], Ds).
+\end{verbatim}
+
+\begin{verbatim}
+GLP> differentiator([1, 4, 7], Out).
+Out = [3, 3]
+→ succeeds
+\end{verbatim}
+
+The sequence 1, 4, 7 has differences 3, 3.
+
+\subsection{Integrator}
+
+Output the running sum:
+
+\begin{verbatim}
+integrator(Xs, Ys?) :- integrator_acc(Xs?, 0, Ys).
+integrator_acc([], _, []).
+integrator_acc([X|Xs], Acc, [Sum?|Ys?]) :- ground(X?) |
+    Sum := Acc? + X?,
+    integrator_acc(Xs?, Sum?, Ys).
+\end{verbatim}
+
+\begin{verbatim}
+GLP> integrator([1, 2, 3, 4], Out).
+Out = [1, 3, 6, 10]
+→ succeeds
+\end{verbatim}
+
+The running sums: 1, 1+2=3, 1+2+3=6, 1+2+3+4=10.
+
+\subsection{Chaining Transducers}
+
+Transducers compose naturally:
+
+\begin{verbatim}
+GLP> duplicator([1,2], Mid), separator(Mid?, Out).
+duplicator([1, 2], X1) :- duplicator([2], X3)
+separator([1, 1 | X3?], Out) :- separator([1 | X3?], X6)
+...
+Out = [1, 0, 1, 0, 2, 0, 2, 0]
+→ succeeds
+\end{verbatim}
+
+The trace shows interleaving: \verb|duplicator| produces elements that \verb|separator| immediately processes.
+
+\section{Stream Observers}
+
+[To be developed]
+
+\section{Exercises}
+
+\begin{enumerate}
+\item Write a transducer \verb|filter(Pred, In, Out)| that outputs only elements satisfying predicate \verb|Pred|.
+
+\item Write \verb|take(N, In, Out)| that outputs the first $N$ elements of a stream.
+
+\item Write \verb|zip(Xs, Ys, Zs)| that pairs corresponding elements: \verb|zip([1,2], [a,b], Zs)| yields \verb|Zs = [(1,a), (2,b)]|.
+
+\item Implement a round-robin scheduler: given a list of streams, output one element from each in turn.
+
+\item Design a difference list representation for queues with O(1) enqueue and dequeue. Test with concurrent producers and consumers.
+
+\item Explain why the \verb|differentiator| needs two elements visible (\verb|[X,Y|Xs]|) while most transducers need only one.
+
+\item The \verb|integrator| and \verb|differentiator| are inverses in calculus. Show that \verb|integrator| followed by \verb|differentiator| on \verb|[1,2,3,4]| yields \verb|[1,2,3,4]| (after handling boundary).
+\end{enumerate}
