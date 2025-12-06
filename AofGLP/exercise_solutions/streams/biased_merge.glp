@@ -1,17 +1,38 @@
-% Topic: Biased merge exercise solution
-% Section: Streams - Exercise 8
+% Topic: Biased merge with weight tracking
+% Section: Streams - Exercise (Biased Merge)
 %
 % Test goals:
-% biased_merge([1,2,3], [a,b,c], Out).
+% bmerge([a,b,c], [1,2,3], Out).
 
-% Take from Xs while it has elements ready
-biased_merge([X|Xs], Ys, [X?|Zs?]) :- biased_merge(Xs?, Ys?, Zs).
+% Biased merge with weight tracking
+% Bx, By: weights of left and right subtrees
+% N: counter for current priority stream
 
-% When Xs tail is unbound (writer), take from Ys
-biased_merge(Xs, [Y|Ys], [Y?|Zs?]) :- writer(Xs?) |
-    biased_merge(Xs?, Ys?, Zs).
+bmerge(X, Y, [started?|Z?]) :- bmerge(1, 1, 1, X?, Y?, Z).
 
-% Termination
-biased_merge([], [], []).
-biased_merge([], [Y|Ys], [Y?|Zs?]) :- biased_merge([], Ys?, Zs).
-biased_merge([X|Xs], [], [X?|Zs?]) :- biased_merge(Xs?, [], Zs).
+% Counter exhausted: switch priorities
+bmerge(Bx, By, 0, X, Y, Z?) :- bmerge(By?, Bx?, By?, Y?, X?, Z).
+
+% Forward from high-priority stream
+bmerge(Bx, By, N, [M|X], Y, Out?) :- N? > 0 |
+    forward_msg(M?, Bx?, By?, N?, X?, Y?, Out).
+
+% Forward from low-priority stream (only if high-priority has no message)
+bmerge(Bx, By, N, X, [M|Y], Out?) :- N? > 0, reader(X?) |
+    forward_msg(M?, By?, Bx?, N?, Y?, X?, Out).
+
+% End of stream
+bmerge(_, _, _, [], Y, [halted?|Y?]).
+bmerge(_, _, _, X, [], [halted?|X?]).
+
+% Handle control messages
+forward_msg(started, Bx, By, N, X, Y, [started?|Z?]) :-
+    Bx1 := Bx? + 1,
+    bmerge(Bx1?, By?, N?, X?, Y?, Z).
+forward_msg(halted, Bx, By, N, X, Y, [halted?|Z?]) :-
+    Bx1 := Bx? - 1,
+    bmerge(Bx1?, By?, N?, X?, Y?, Z).
+forward_msg(M, Bx, By, N, X, Y, [M?|Z?]) :-
+    M =\= started, M =\= halted |
+    N1 := N? - 1,
+    bmerge(Bx?, By?, N1?, X?, Y?, Z).
