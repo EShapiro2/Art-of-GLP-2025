@@ -42,7 +42,7 @@ eliminates the need for distributed atomic unification~\cite{kleinman1990distrib
 
 \mypara{No writer-to-writer binding (WxW)}
 In addition, GLP requires \emph{no writer-to-writer} binding (WxW).  A reader/writer pair $X?/X$ is a communication channel from the writer $X$ to the reader $X?$.
-It two writers $X$ and $Y$ are unified during execution, the SRSW requirement implies that no occurrences of either $X$ or $Y$ are left to instantiate them, and therefore their paired readers $X?$ and $Y?$ will be left \emph{abandoned}.  Combined,  the WxW and SRSW restrictions ensure that communication channels are properly closed, with no reader is left abandoned by their paired variable.\footnote{We discuss below a relaxation, allowing a reader to abandon its paired writer using anonymous variables $_$, which useful in case there is no need to read the channel any more.}
+It two writers $X$ and $Y$ are unified during execution, the SRSW requirement implies that no occurrences of either $X$ or $Y$ are left to instantiate them, and therefore their paired readers $X?$ and $Y?$ will be left \emph{abandoned}.  Combined,  the WxW and SRSW restrictions ensure that communication channels are properly closed, with no reader is left abandoned by their paired variable.\footnote{We discuss below a relaxation, allowing a reader to abandon its paired writer using anonymous variables \verb|_|, which is useful in case there is no need to read the channel any more.}
 
 \subsection{GLP Operational semantics}
 
