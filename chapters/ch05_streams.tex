@@ -64,7 +64,11 @@ The trace shows interleaving: the producer emits an element, the consumer proces
 
 \section{Stream Merging}
 
-Multiple input streams can be merged into a single output stream:
+Multiple input streams can be merged into a single output stream. Merging is fundamental to concurrent programming: it lets multiple producers contribute to a single consumer.
+
+\subsection{Simple Fair Merge}
+
+The basic merge alternates between two input streams:
 
 \begin{verbatim}
 merge([X|Xs], Ys, [X?|Zs?]) :- merge(Ys?, Xs?, Zs).
@@ -74,29 +78,105 @@ merge([], [], []).
 
 The first two clauses swap the input streams after each element, ensuring fair interleaving. The third clause terminates when both inputs are exhausted.
 
-\subsection{Tracing a Merge Computation}
+\begin{verbatim}
+GLP> merge([1,2], [a,b], Out).
+merge([1, 2], [a, b], Out) :- merge([a, b], [2], X1)
+merge([a, b], [2], X1) :- merge([2], [b], X2)
+merge([2], [b], X2) :- merge([b], [], X3)
+merge([b], [], X3) :- merge([], [], X4)
+merge([], [], X4) :- true
+Out = [1, a, 2, b]
+→ succeeds
+\end{verbatim}
 
-Initial goal: \verb|merge([1,2], [a,b], Out)|
+\begin{remark}[Biased Merge]
+This merge is \emph{biased}: when both streams have elements ready, it always takes from the first. True fairness requires nondeterminism or external arbitration. For many applications, bias is acceptable---the key property is that neither stream is starved indefinitely.
+\end{remark}
+
+\subsection{Dynamic Merge}
+
+Often we don't know in advance how many streams to merge. A \emph{dynamic merge} accepts new streams at runtime:
+
+\begin{verbatim}
+% Control stream carries add(Stream) messages
+dynamic_merge([], Out, Out?).
+dynamic_merge([add(S)|Ctrl], In, Out?) :-
+    dynamic_merge(Ctrl?, Merged?, Out),
+    merge(S?, In?, Merged).
+\end{verbatim}
+
+Each \verb|add(S)| message creates a new merge node combining stream \verb|S| with the accumulated input.
+
+\begin{verbatim}
+GLP> dynamic_merge([add([1,2]), add([a,b])], [], Out).
+% [PLACEHOLDER: Insert actual trace here]
+Out = [a, 1, b, 2]
+→ succeeds
+\end{verbatim}
+
+\subsection{The Problem with Dynamic Trees}
+
+Dynamic merge builds a tree structure, but the shape depends on arrival order:
+
+\begin{verbatim}
+Control: [add(S1), add(S2), add(S3)]
+
+Builds:     merge
+           /     \
+        merge    S3
+       /    \
+      S1    S2
+\end{verbatim}
+
+This creates a \emph{linear chain}: S1 passes through two merge nodes to reach the output, while S3 passes through one. Streams added earlier suffer higher latency.
+
+Worse, with $N$ streams the leftmost stream has $O(N)$ latency. For fair treatment, we want $O(\log N)$---a balanced tree.
+
+\subsection{Solutions for Fair Dynamic Merge}
+
+Several approaches address this imbalance:
 
 \begin{enumerate}
-\item \textbf{Reduce} with clause 1: extract \verb|1|, swap inputs
-\begin{itemize}
-\item New goal: \verb|merge([a,b], [2], Z1)|
-\item Output so far: \verb|Out = [1|Z1?]|
-\end{itemize}
+\item \textbf{Rebalancing}: Periodically restructure the merge tree. Complex and may lose elements during restructuring.
 
-\item \textbf{Reduce} with clause 1: extract \verb|a|, swap inputs
-\begin{itemize}
-\item New goal: \verb|merge([2], [b], Z2)|
-\item Output so far: \verb|Out = [1,a|Z2?]|
-\end{itemize}
+\item \textbf{Round-robin at leaves}: Instead of tree merge, use a single coordinator that polls streams in rotation. Simpler but creates a bottleneck.
 
-\item Continue alternating...
+\item \textbf{Static balanced tree}: If the maximum number of streams is known, pre-build a balanced tree and connect streams as they arrive.
 
-\item Final result: \verb|Out = [1, a, 2, b]|
+\item \textbf{Weighted merge}: Give recently-added streams priority to compensate for their shorter path. Approximates fairness without restructuring.
 \end{enumerate}
 
-The output stream is constructed incrementally. Each reduction extends the output by one element while the tail remains a future.
+For most applications, the static balanced approach offers the best tradeoff between fairness and complexity.
+
+\subsection{Static Balanced Merge Tree}
+
+Given $N$ potential streams, build a complete binary tree of merge nodes:
+
+\begin{verbatim}
+% Build balanced merge tree for N streams
+% Returns list of input slots and final output stream
+build_tree(1, [Out?], Out).
+build_tree(N, Slots?, Out) :- N? > 1 |
+    Half := N? // 2,
+    Rest := N? - Half?,
+    build_tree(Half?, Left, L),
+    build_tree(Rest?, Right, R),
+    merge(L?, R?, Out?),
+    append(Left?, Right?, Slots).
+\end{verbatim}
+
+For $N = 4$:
+\begin{verbatim}
+          Out
+           |
+        merge
+       /     \
+    merge   merge
+    /  \    /   \
+   S1  S2  S3   S4
+\end{verbatim}
+
+Every stream passes through exactly $\lceil \log_2 N \rceil$ merge nodes.
 
 \section{Cooperative Stream Production}
 
@@ -654,4 +734,6 @@ The trace shows the observer detecting each handover. When bob hands off to alic
 \item Explain why the \verb|differentiator| needs two elements visible (\verb|[X,Y|Xs]|) while most transducers need only one.
 
 \item The \verb|integrator| and \verb|differentiator| are inverses in calculus. Show that \verb|integrator| followed by \verb|differentiator| on \verb|[1,2,3,4]| yields \verb|[1,2,3,4]| (after handling boundary).
+
+\item \label{ex:biased-merge} Write \verb|biased_merge(Xs, Ys, Zs)| that takes \emph{all} available elements from \verb|Xs| before taking from \verb|Ys|. That is, it takes from \verb|Ys| only when \verb|Xs| suspends (its tail is unbound). Hint: use the \verb|writer| guard. (Solution in Appendix~\ref{app:solutions}.)
 \end{enumerate}

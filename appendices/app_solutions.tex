@@ -1,0 +1,51 @@
+% appendices/app_solutions.tex - Exercise Solutions
+
+\chapter{Selected Exercise Solutions}
+\label{app:solutions}
+
+This appendix provides solutions to selected exercises from the main text.
+
+\section{Chapter~\ref{ch:streams}: Streams}
+
+\subsection{Exercise~\ref{ex:biased-merge}: Biased Merge}
+
+Write \verb|biased_merge(Xs, Ys, Zs)| that takes all available elements from \verb|Xs| before taking from \verb|Ys|.
+
+\begin{verbatim}
+% Take from Xs while it has elements ready
+biased_merge([X|Xs], Ys, [X?|Zs?]) :- biased_merge(Xs?, Ys?, Zs).
+
+% When Xs tail is unbound (writer), take from Ys
+biased_merge(Xs, [Y|Ys], [Y?|Zs?]) :- writer(Xs?) |
+    biased_merge(Xs?, Ys?, Zs).
+
+% Termination
+biased_merge([], [], []).
+biased_merge([], [Y|Ys], [Y?|Zs?]) :- biased_merge([], Ys?, Zs).
+biased_merge([X|Xs], [], [X?|Zs?]) :- biased_merge(Xs?, [], Zs).
+\end{verbatim}
+
+The key insight is the \verb|writer(Xs?)| guard in the second clause. This guard succeeds only when the tail of \verb|Xs| is an unbound writer---meaning the producer hasn't yet generated more elements. Only then do we take from \verb|Ys|.
+
+The first clause has no guard and matches whenever \verb|Xs| has an element. Since clauses are tried in order and the first always succeeds when \verb|Xs| is non-empty, elements from \verb|Xs| take priority.
+
+The last three clauses handle termination: when one stream closes (\verb|[]|), drain the other.
+
+\paragraph{Trace Example}
+
+Consider two producers with different speeds:
+
+\begin{verbatim}
+fast([1,2,3], done).
+slow([a|Tail?], Done?) :- pause, slow_cont(Tail, Done).
+slow_cont([b], done).
+\end{verbatim}
+
+The fast producer emits all elements immediately. The slow producer emits \verb|a|, pauses, then emits \verb|b|.
+
+\begin{verbatim}
+GLP> fast(F, _), slow(S, _), biased_merge(F?, S?, Out).
+Out = [1, 2, 3, a, b]
+\end{verbatim}
+
+All of \verb|F|'s elements appear first because they're immediately available. The \verb|writer| guard on \verb|S|'s tail fails while \verb|F| has elements. Only after \verb|F| is exhausted does the merge take from \verb|S|.
