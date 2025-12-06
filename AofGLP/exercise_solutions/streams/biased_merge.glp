@@ -1,0 +1,17 @@
+% Topic: Biased merge exercise solution
+% Section: Streams - Exercise 8
+%
+% Test goals:
+% biased_merge([1,2,3], [a,b,c], Out).
+
+% Take from Xs while it has elements ready
+biased_merge([X|Xs], Ys, [X?|Zs?]) :- biased_merge(Xs?, Ys?, Zs).
+
+% When Xs tail is unbound (writer), take from Ys
+biased_merge(Xs, [Y|Ys], [Y?|Zs?]) :- writer(Xs?) |
+    biased_merge(Xs?, Ys?, Zs).
+
+% Termination
+biased_merge([], [], []).
+biased_merge([], [Y|Ys], [Y?|Zs?]) :- biased_merge([], Ys?, Zs).
+biased_merge([X|Xs], [], [X?|Zs?]) :- biased_merge(Xs?, [], Zs).
