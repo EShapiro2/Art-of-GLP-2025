@@ -49,6 +49,10 @@ When producer and consumer run concurrently, they interleave:
 GLP> producer(H, 5), consumer(H?, 0, R).
 producer(X1, 5) :- :=/2(X3, -(5, 1)), producer(X4, X3?)
 consumer([5 | X4?], 0, X2) :- :=/2(X5, +(0, 5)), consumer(X4?, X5?, X6)
+:=/2(X3, -(5, 1)) :- true
+producer(X4, 4) :- :=/2(X7, -(4, 1)), producer(X8, X7?)
+:=/2(X5, +(0, 5)) :- true
+consumer([4 | X8?], 5, X6) :- :=/2(X9, +(5, 4)), consumer(X8?, X9?, X10)
 ...
 producer(X20, 0) :- true
 consumer([], 15, X22) :- true
@@ -56,7 +60,7 @@ R = 15
 → succeeds
 \end{verbatim}
 
-The trace shows interleaving: the producer emits an element, the consumer processes it, the producer emits another, and so on. Neither runs to completion before the other starts—they cooperate through the shared stream.
+The trace shows interleaving: the producer emits an element, the consumer processes it, the producer emits another, and so on. Neither runs to completion before the other starts---they cooperate through the shared stream.
 
 \section{Stream Merging}
 
@@ -142,7 +146,7 @@ The reader counts 7 elements: two a's, three b's, two more a's.
 
 \section{Difference Lists}
 
-A \emph{difference list} represents the difference between two potentially-indefinite streams. While streams may be unbounded, their difference is always finite—hence it represents a list.
+A \emph{difference list} represents the difference between two potentially-indefinite streams. While streams may be unbounded, their difference is always finite---hence it represents a list.
 
 \subsection{Representation}
 
@@ -178,7 +182,12 @@ create_dl(N, [_|H?], T) :- N? > 0 | N1 := N? - 1, create_dl(N1?, H, T?).
 \begin{verbatim}
 GLP> create_dl(3, H, T?).
 create_dl(3, H, T) :- :=/2(X1, -(3, 1)), create_dl(X1?, X2, T?)
-...
+:=/2(X1, -(3, 1)) :- true
+create_dl(2, X2, T?) :- :=/2(X3, -(2, 1)), create_dl(X3?, X4, T?)
+:=/2(X3, -(2, 1)) :- true
+create_dl(1, X4, T?) :- :=/2(X5, -(1, 1)), create_dl(X5?, X6, T?)
+:=/2(X5, -(1, 1)) :- true
+create_dl(0, X6, T?) :- true
 H = [_, _, _ | T?]
 T = <unbound>
 → succeeds
@@ -198,7 +207,9 @@ list_to_dl([X|Xs], [X?|Ys?], T) :- list_to_dl(Xs?, Ys, T?).
 \begin{verbatim}
 GLP> list_to_dl([1, 2, 3], H, T?).
 list_to_dl([1, 2, 3], H, T?) :- list_to_dl([2, 3], X1, T?)
-...
+list_to_dl([2, 3], X1, T?) :- list_to_dl([3], X2, T?)
+list_to_dl([3], X2, T?) :- list_to_dl([], X3, T?)
+list_to_dl([], X3, T?) :- true
 H = [1, 2, 3 | T?]
 T = <unbound>
 → succeeds
@@ -207,7 +218,7 @@ T = <unbound>
 To close a difference list into a standard list, bind the tail to empty:
 
 \begin{verbatim}
-close_dl(H?, [], H).
+close_dl(H, T, H?) :- T? = [].
 \end{verbatim}
 
 \begin{verbatim}
@@ -270,7 +281,28 @@ Since argument 2 bound \verb|T1 := Ta?|, the reader counterpart flows through:
 
 This fills the hole in \verb|[1,2|T1?]|, yielding \verb|[1,2,3,4|T2?]|.
 
-The append completed in constant time—six unifications regardless of list length.
+The append completed in constant time---six unifications regardless of list length.
+
+\subsection{Complete Append Example}
+
+Here is a full example: convert two lists to difference lists, append them, and close the result:
+
+\begin{verbatim}
+GLP> list_to_dl([1,2], H1, T1), list_to_dl([3,4], H2, T2),
+     append_dl(H1?, T1, H2?, T2, R, T?), close_dl(R?, T, Result).
+Result = [1, 2, 3, 4]
+→ succeeds
+\end{verbatim}
+
+The sequence:
+\begin{enumerate}
+\item \verb|list_to_dl([1,2], H1, T1)| creates difference list \verb|([1,2|T1?], T1)|
+\item \verb|list_to_dl([3,4], H2, T2)| creates difference list \verb|([3,4|T2?], T2)|
+\item \verb|append_dl| unifies \verb|T1| with \verb|[3,4|T2?]|, filling the first hole
+\item \verb|close_dl| binds \verb|T| to \verb|[]|, closing the result
+\end{enumerate}
+
+All operations except the initial conversions are O(1).
 
 \subsection{Why Difference Lists Work in GLP}
 
@@ -284,7 +316,7 @@ In GLP, this maps to reader/writer pairs:
 \begin{itemize}
 \item The structure contains a \emph{reader} at the hole position
 \item We hold the paired \emph{writer} to fill it later
-\item SRSW ensures exactly one writer exists—no conflicts
+\item SRSW ensures exactly one writer exists---no conflicts
 \item When the writer is bound, the reader receives the value
 \end{itemize}
 
@@ -310,6 +342,33 @@ For buffer size $N$, require $N+1$ visible elements:
 bb_cons2([X1,X2,X3|Xs?]) :- ground(X1?) | bb_cons2([X2?,X3?|Xs]).
 \end{verbatim}
 
+\subsection{Backpressure in Action}
+
+The trace reveals backpressure. With buffer size 2, the consumer requires two visible elements:
+
+\begin{verbatim}
+bb_cons2([X1,X2|Xs?], Sum, Result?) :- ground(X1?) |
+    Sum1 := Sum? + X1?,
+    bb_cons2([X2?|Xs], Sum1?, Result).
+bb_cons2([X], Sum, Result?) :- ground(X?) | Result := Sum? + X?.
+bb_cons2([], Sum, Sum?).
+\end{verbatim}
+
+\begin{verbatim}
+GLP> slow_producer(H, 5), bb_cons2(H?, 0, R).
+slow_producer(X1, 5) :- ...
+bb_cons2([5 | X4?], 0, X2) → suspended    ← waiting for 2nd element
+slow_producer(X4, 4) :- ...
+bb_cons2([5, 4 | X6?], 0, X2) :- ...      ← now has 2, proceeds
+...
+R = 15
+→ succeeds
+\end{verbatim}
+
+The key moment: after the producer emits 5, the consumer sees \verb|[5 | X4?]|---only one element with an unbound tail. The pattern \verb|[X1,X2|Xs?]| requires two, so \verb|bb_cons2| suspends.
+
+Only when the producer emits 4, giving \verb|[5, 4 | X6?]|, can the consumer proceed. This is backpressure: the consumer cannot outpace the producer by more than the buffer size.
+
 \subsection{Difference List Bounded Buffer}
 
 With difference lists, buffer capacity is explicit. The consumer creates the buffer and advances the tail as it consumes:
@@ -331,13 +390,11 @@ consumer([X|Xs], Sum, Result?) :- ground(X?) |
 \end{verbatim}
 
 \begin{verbatim}
-GLP> create_dl(2, H, T?), bb_producer(H?, 5), consumer(H?, 0, R).
-...
-R = 15
+GLP> bb_producer(H, 3), consumer(H?, 0, R).
+H = [3, 2, 1]
+R = 6
 → succeeds
 \end{verbatim}
-
-The \verb|create_dl(2, H, T?)| creates two empty slots. The producer fills slots from the head; the consumer reads from the head. The difference between producer position and consumer position is bounded by the initial buffer size.
 
 \section{Stream Transducers}
 
@@ -354,6 +411,10 @@ copier([X|Xs], [X?|Ys?]) :- copier(Xs?, Ys).
 
 \begin{verbatim}
 GLP> copier([1, 2, 3], Out).
+copier([1, 2, 3], Out) :- copier([2, 3], X1)
+copier([2, 3], X1) :- copier([3], X2)
+copier([3], X2) :- copier([], X3)
+copier([], X3) :- true
 Out = [1, 2, 3]
 → succeeds
 \end{verbatim}
@@ -371,6 +432,9 @@ The \verb|ground(X?)| guard enables two occurrences of \verb|X?| without violati
 
 \begin{verbatim}
 GLP> duplicator([1, 2], Out).
+duplicator([1, 2], Out) :- duplicator([2], X1)
+duplicator([2], X1) :- duplicator([], X2)
+duplicator([], X2) :- true
 Out = [1, 1, 2, 2]
 → succeeds
 \end{verbatim}
@@ -386,6 +450,9 @@ separator([X|Xs], [X?,0|Ys?]) :- separator(Xs?, Ys).
 
 \begin{verbatim}
 GLP> separator([a, b], Out).
+separator([a, b], Out) :- separator([b], X1)
+separator([b], X1) :- separator([], X2)
+separator([], X2) :- true
 Out = [a, 0, b, 0]
 → succeeds
 \end{verbatim}
@@ -404,6 +471,11 @@ differentiator([X,Y|Xs], [D?|Ds?]) :- ground(X?), ground(Y?) |
 
 \begin{verbatim}
 GLP> differentiator([1, 4, 7], Out).
+differentiator([1, 4, 7], Out) :- :=/2(X1, -(4, 1)), differentiator([4 | [7]], X2)
+:=/2(X1, -(4, 1)) :- true
+differentiator([4 | [7]], X2) :- :=/2(X3, -(7, 4)), differentiator([7 | []], X4)
+:=/2(X3, -(7, 4)) :- true
+differentiator([7 | []], X4) :- true
 Out = [3, 3]
 → succeeds
 \end{verbatim}
@@ -417,9 +489,10 @@ Output the running sum:
 \begin{verbatim}
 integrator(Xs, Ys?) :- integrator_acc(Xs?, 0, Ys).
 integrator_acc([], _, []).
-integrator_acc([X|Xs], Acc, [Sum?|Ys?]) :- ground(X?) |
+integrator_acc([X|Xs], Acc, Out?) :- ground(X?) |
     Sum := Acc? + X?,
-    integrator_acc(Xs?, Sum?, Ys).
+    emit_sum(Sum?, Xs?, Out).
+emit_sum(V, Xs, [V?|Ys?]) :- ground(V?) | integrator_acc(Xs?, V?, Ys).
 \end{verbatim}
 
 \begin{verbatim}
@@ -438,7 +511,12 @@ Transducers compose naturally:
 GLP> duplicator([1,2], Mid), separator(Mid?, Out).
 duplicator([1, 2], X1) :- duplicator([2], X3)
 separator([1, 1 | X3?], Out) :- separator([1 | X3?], X6)
-...
+duplicator([2], X3) :- duplicator([], X5)
+separator([1 | [2, 2 | X5?]], X6) :- separator([2, 2 | X5?], X7)
+duplicator([], X5) :- true
+separator([2, 2 | []], X7) :- separator([2 | []], X8)
+separator([2 | []], X8) :- separator([], X9)
+separator([], X9) :- true
 Out = [1, 0, 1, 0, 2, 0, 2, 0]
 → succeeds
 \end{verbatim}
@@ -447,7 +525,118 @@ The trace shows interleaving: \verb|duplicator| produces elements that \verb|sep
 
 \section{Stream Observers}
 
-[To be developed]
+An \emph{observer} monitors a stream without disrupting the communication between producer and consumer. This is useful for logging, debugging, or creating audit trails.
+
+\subsection{Forwarding Observer}
+
+The simplest observer sits between producer and consumer, forwarding elements while creating a copy:
+
+\begin{verbatim}
+observer([X|Xs], [X?|Ys?], [X?|Zs?]) :- ground(X?) | observer(Xs?, Ys, Zs).
+observer([], [], []).
+\end{verbatim}
+
+Arguments:
+\begin{enumerate}
+\item Input stream from producer
+\item Output stream to consumer (forwarded)
+\item Observation stream (copy)
+\end{enumerate}
+
+The \verb|ground(X?)| guard is required because \verb|X?| appears twice---once forwarded to the consumer, once copied to the observation stream.
+
+\begin{verbatim}
+GLP> test_obs1(Sum, Copy).
+producer(X1, 5) :- :=/2(X5, -(5, 1)), producer(X6, X5?)
+observer1([5 | X6?], X2, X3) :- observer1(X6?, X7, X8)
+consumer([5 | X7?], 0, X4) :- :=/2(X9, +(0, 5)), consumer(X7?, X9?, X10)
+...
+observer1([], X31, X32) :- true
+consumer([], 15, X34) :- true
+Sum = 15
+Copy = [5, 4, 3, 2, 1]
+→ succeeds
+\end{verbatim}
+
+The trace shows three-way interleaving: producer emits an element, observer immediately forwards and copies it, consumer processes it---all concurrent through the shared streams.
+
+\subsection{Observing Cooperative Streams}
+
+A harder problem: observe a stream being \emph{cooperatively} constructed, where you don't know in advance which party is writing at any moment.
+
+Consider bob and alice cooperatively writing a stream, handing the tail back and forth. The observer must:
+\begin{enumerate}
+\item Detect who is currently writing
+\item Copy elements to the observation stream
+\item Forward correctly regardless of direction
+\end{enumerate}
+
+\begin{verbatim}
+observe([X|Xs], Ys?, [X?|Zs?]) :- ground(X?) |
+    Ys = [X?|Ys1?], observe(Xs?, Ys1, Zs).
+observe([X|Xs?], Ys, [X?|Zs?]) :- ground(X?) |
+    Ys = [X?|Ys1], observe(Ys1?, Xs, Zs).
+observe([], [], []).
+\end{verbatim}
+
+The two clauses handle opposite directions:
+\begin{itemize}
+\item Clause 1: First argument has writer tail \verb|Xs|, second has reader tail \verb|Ys?|. The first stream is producing.
+\item Clause 2: First argument has reader tail \verb|Xs?|, second has writer tail \verb|Ys|. The second stream is producing.
+\end{itemize}
+
+\subsection{Clause Selection via Writer-to-Writer Failure}
+
+How does clause selection work? Consider a goal where the first stream is producing:
+
+\begin{verbatim}
+Goal: observe([a|Tail], S2?, Copy)    where Tail is a writer
+\end{verbatim}
+
+Try clause 1: \verb|observe([X|Xs], Ys?, ...)|
+\begin{itemize}
+\item Unify goal's \verb|Tail| (writer) with head's \verb|Xs| (writer)
+\item Writer-to-writer unification \emph{fails}
+\item Try next clause
+\end{itemize}
+
+Try clause 2: \verb|observe([X|Xs?], Ys, ...)|
+\begin{itemize}
+\item Unify goal's \verb|Tail| (writer) with head's \verb|Xs?| (reader)
+\item Succeeds: writer bound to reader
+\end{itemize}
+
+When the second stream is producing, the pattern reverses: clause 1 succeeds, clause 2 would fail.
+
+This technique relies on writer-to-writer unification being \emph{immediate failure}, not suspension. If WxW suspended on an empty set, clause 2 would never be tried. The observer pattern demonstrates that WxW failure is semantically meaningful for clause selection, not merely an optimization.
+
+\subsection{Observing Bob and Alice}
+
+Recall cooperative production:
+
+\begin{verbatim}
+bob([a,a|Tail?], Result?) :- alice(Tail, Result).
+alice([b,b,b|Tail?], Result?) :- bob_finish(Tail, Result).
+bob_finish([a,a], done).
+\end{verbatim}
+
+To observe this cooperative stream:
+
+\begin{verbatim}
+GLP> test_obs2(Copy, Done).
+bob(X1, X2) :- alice(X5, X6)
+observe([a, a | X5?], X3, X4) :- =/2(X7, [a | X8?]), observe([a | X5?], X8, X9)
+alice(X5, X6) :- bob_finish(X10, X11)
+observe([a | [b, b, b | X10?]], X8, X9) :- =/2(X12, [a | X13?]), observe([b, b, b | X10?], X13, X14)
+bob_finish(X10, X11) :- true
+...
+observe([], X28, X29) :- true
+Copy = [a, a, b, b, b, a, a]
+Done = done
+→ succeeds
+\end{verbatim}
+
+The trace shows the observer detecting each handover. When bob hands off to alice (the tail \verb|X5| becomes a reader), the observer switches clauses via WxW failure and continues copying from alice's production.
 
 \section{Exercises}
 
