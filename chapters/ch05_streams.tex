@@ -202,99 +202,73 @@ For $n$ input streams, the resulting tree has height $\lceil \log_2 n \rceil$ an
 
 \subsection{Constant-Delay Multiway Merge}
 
-The logarithmic delay of balanced merge trees can be eliminated entirely using \emph{mutual references}---a mechanism for multiple processes to share access to a single output stream endpoint.
+The tree-structured merges described above have $O(\log n)$ delay: each message traverses $\log n$ merge nodes from leaf to root. For applications requiring minimal latency, a \emph{constant-delay} multiway merge is possible using a special data structure called a \emph{mutual reference}.
 
-\paragraph{The Problem with Tree-Based Merges.}
-
-In any tree-based merge, a message from an input stream must traverse the tree to reach the root. Even in a balanced tree with $n$ inputs, each message requires $O(\log n)$ reductions. For $m$ total messages, this gives $O(m \log n)$ total work.
-
-Can we do better? If all $n$ streams could directly append to the same output stream, each append would be $O(1)$, giving $O(m)$ total work regardless of $n$.
-
-\paragraph{Mutual References.}
-
-A \emph{mutual reference} is a mutable pointer that can be shared among multiple processes. In GLP, it points to the current tail of an output stream. The key operation is \emph{atomic append}: a process atomically reads the current tail, extends the stream with a new element, and updates the pointer to the new tail.
-
-The system predicate \verb|mwm(Streams, Out)| creates a multiway merge using mutual references:
-
-\begin{verbatim}
-mwm(Streams, Out?) :-
-    mr_create(Tail, MR),      % Create mutual reference to tail
-    Out = [started?|Tail?],    % Initialize output with started marker
-    mwm1(Streams?, MR?).       % Start copy processes
-\end{verbatim}
-
-The predicate \verb|mr_create(Tail, MR)| creates a mutual reference \verb|MR| initialized to point to \verb|Tail|. The output stream begins with a \verb|started| marker, followed by the tail that will be extended by the copy processes.
-
-\paragraph{Copy Processes.}
-
-Each input stream gets a copy process that forwards messages to the shared output:
-
-\begin{verbatim}
-mwm1([], _).
-mwm1([S|Streams], MR?) :-
-    is_mutual_ref(MR?) |
-    mwm_copy(S?, MR?),
-    mwm1(Streams?, MR?).
-\end{verbatim}
-
-The guard \verb|is_mutual_ref(MR?)| verifies that \verb|MR| is a valid mutual reference. This is necessary because \verb|MR?| appears multiple times---once for each copy process. Unlike \verb|ground|, which allows replication of immutable values, \verb|is_mutual_ref| allows sharing of a mutable reference.
-
-Each copy process reads from its input and appends to the shared output:
-
-\begin{verbatim}
-mwm_copy([X|Xs], MR?) :-
-    is_mutual_ref(MR?) |
-    stream_append(MR?, X?),    % Atomic append to output
-    mwm_copy(Xs?, MR?).
-mwm_copy([], MR?) :-
-    stream_append(MR?, halted?).  % Signal this stream ended
-\end{verbatim}
-
-The \verb|stream_append(MR, X)| operation atomically:
+A mutual reference wraps an unbound writer (the stream's tail) in a mutable container. Multiple concurrent processes can share the same mutual reference and append to the stream via an atomic \verb|stream_append| operation that:
 \begin{enumerate}
-\item Reads the current tail from \verb|MR|
-\item Binds that tail to \verb|[X|NewTail]|
-\item Updates \verb|MR| to point to \verb|NewTail|
+\item Binds the current tail to a new list cell
+\item Updates the mutual reference to point to the new tail
 \end{enumerate}
 
-All copy processes race to append, but the atomic operation ensures no messages are lost or duplicated.
+This destructive update is hidden from the logic level---the mutual reference behaves as a ground term for SRSW purposes.
 
-\paragraph{Termination Detection.}
-
-When all input streams close, the output should close too. The \verb|halted| markers enable termination detection:
+The \verb|mwm/2| system predicate implements multiway merge with constant delay:
 
 \begin{verbatim}
-close_when_done(0, MR?) :-
-    mr_close(MR?).             % Bind tail to []
-close_when_done(N, MR?) :- N? > 0 |
-    mr_wait_halted(MR?),       % Wait for a halted marker
-    N1 := N? - 1,
-    close_when_done(N1?, MR?).
+mwm(In?, Out)
 \end{verbatim}
 
-The process starts with \verb|N| equal to the number of input streams. Each \verb|halted| marker decrements the count. When all streams have halted, \verb|mr_close| binds the output tail to \verb|[]|.
+where \verb|In| is a stream of \verb|stream(Xs)| terms and \verb|Out| is the merged output. Dynamic addition of streams is supported via \verb|merge(NewStream)| messages in the input.
 
-\paragraph{Complexity Analysis.}
+\paragraph{Implementation.} The implementation uses short-circuit termination detection to close the output stream when all input streams are exhausted:
 
-With mutual references:
-\begin{itemize}
-\item Each message append is $O(1)$---no tree traversal
-\item Total work for $m$ messages from $n$ streams: $O(m + n)$
-\item The $+n$ accounts for spawning copy processes and termination detection
-\end{itemize}
+\begin{verbatim}
+mwm(In, Out?) :-
+    allocate_mutual_reference(Ref, Out),
+    mwm1(In?, Ref?, done, Done),
+    close_when_done(Done?, Ref?).
 
-Compare to balanced merge trees: $O(m \log n)$ total work. For large $n$ with many messages per stream, the constant-delay approach is significantly more efficient.
+mwm1([stream(Xs)|Streams], Ref, L, R?) :-
+    is_mutual_ref(Ref?) |
+    mwm_copy(Xs?, Ref?, L?, M),
+    mwm1(Streams?, Ref?, M?, R).
+mwm1([], _, L, L?).
 
-\paragraph{Trade-offs.}
+mwm_copy([X|Xs], Ref, L, R?) :-
+    is_mutual_ref(Ref?) |
+    stream_append(X?, Ref?, Ref1),
+    mwm_copy(Xs?, Ref1?, L?, R).
+mwm_copy([], _, L, L?).
 
-Mutual references introduce shared mutable state, which has implications:
-\begin{itemize}
-\item \textbf{Atomicity overhead}: The \verb|stream_append| operation requires synchronization
-\item \textbf{Fairness}: Unlike binary merge which guarantees alternation, mutual reference merge provides no ordering guarantees among inputs
-\item \textbf{Distributed systems}: Mutual references work within a single agent; distributed multiway merge requires different techniques (see Part II)
-\end{itemize}
+close_when_done(done, Ref) :-
+    is_mutual_ref(Ref?) |
+    close_mutual_reference(Ref?).
+\end{verbatim}
 
-For a detailed treatment of multiway merge and its complexity analysis, see Shapiro and Safra~\cite{shapiro1986multiway}.
+The \verb|is_mutual_ref/1| guard verifies the argument is a mutual reference and signals to the SRSW analyzer that multiple reader occurrences are permitted.
+
+\begin{verbatim}
+GLP> mwm([stream([a,b]), stream([1,2])], Out).
+mwm([stream([a, b]), stream([1, 2])], Out) :-
+    mwm_main([stream([a, b]), stream([1, 2])], MutualRef#0)
+mwm1([stream([a, b]), stream([1, 2])], MutualRef#0, done, X1) :-
+    mwm_copy([a, b], MutualRef#0, done, X2),
+    mwm1([stream([1, 2])], MutualRef#0, X2?, X3)
+close_when_done(X1?, MutualRef#0) → suspended
+mwm_copy([a, b], MutualRef#0, done, X2) :-
+    stream_append(a, MutualRef#0, X4), mwm_copy([b], X4?, done, X5)
+mwm1([stream([1, 2])], MutualRef#0, X2?, X3) :-
+    mwm_copy([1, 2], MutualRef#0, X2?, X6), mwm1([], MutualRef#0, X6?, X7)
+...
+mwm1([], MutualRef#0, done, X7) :- true
+close_when_done(done, MutualRef#0) :- close_mutual_reference(MutualRef#0)
+Out = [a, b, 1, 2]
+→ succeeds
+\end{verbatim}
+
+The trace shows two \verb|mwm_copy| processes running concurrently, both appending to the same output via the shared mutual reference. The \verb|close_when_done| goal suspends until the short-circuit chain collapses (all copies terminate), then closes the stream.
+
+\paragraph{Complexity.} Each \verb|stream_append| executes in $O(1)$ time regardless of stream length or number of input streams. This technique was introduced by Shapiro and Safra~\cite{shapiro1986multiway} for Flat Concurrent Prolog.
 
 \section{Stream Distribution}
 
