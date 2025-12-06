@@ -10,9 +10,8 @@ merge([], Ys, Ys?).
 merge(Xs, [], Xs?).
 
 merge_tree([Xs], Xs?).
-merge_tree(Streams, Out?) :-
-    Streams = [_,_|_] |
-    merge_layer(Streams?, Layer),
+merge_tree([X,Y|Rest], Out?) :-
+    merge_layer([X?,Y?|Rest?], Layer),
     merge_tree(Layer?, Out).
 
 merge_layer([], []).

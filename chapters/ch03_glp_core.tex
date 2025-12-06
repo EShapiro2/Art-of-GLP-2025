@@ -131,6 +131,28 @@ compound & compound & recursive unification \\
 \end{tabular}
 \end{center}
 
+\begin{remark}[Programming Style: Fold Unifications into the Head]
+When a clause needs to test the structure of an argument, fold the pattern directly into the clause head rather than using explicit unification in the guard.
+
+For example, to process a list with at least two elements:
+\begin{verbatim}
+% Avoid: explicit unification in guard
+merge_tree(Streams, Out?) :-
+    Streams = [_,_|_] |
+    merge_layer(Streams?, Layer),
+    merge_tree(Layer?, Out).
+
+% Prefer: pattern in head
+merge_tree([X,Y|Rest], Out?) :-
+    merge_layer([X?,Y?|Rest?], Layer),
+    merge_tree(Layer?, Out).
+\end{verbatim}
+
+The second form is correct GLP style. The first form has \verb|Streams| appearing both in the head (as writer) and in the guard (as another occurrence), which can confuse SRSW analysis. By folding the structural test into the head pattern, the clause clearly shows that \verb|X|, \verb|Y|, and \verb|Rest| are bound by pattern matching and then read in the body.
+
+This principle applies generally: if you find yourself writing \verb|X = Pattern| in a guard where \verb|X| comes from the head, restructure the clause to put the pattern directly in the head.
+\end{remark}
+
 Renaming  (Definition~\ref{definition:renaming}) is extended to respect variable pairing:
 \begin{definition}[GLP Renaming]\label{definition:GLP-renaming}
  Two GLP terms $T, T'$ have a variable in common if for some writer $X\in V$, either $X$ or $X?$ occur in $T$ and either $X$ or $X?$ occur in $T'$. A \temph{GLP renaming} is a renaming substitution $\sigma: \mathcal{V} \mapsto \mathcal{V}$ such that for each $X\in V$: $X\sigma \in V$ and $X?\sigma = (X\sigma)?$.
