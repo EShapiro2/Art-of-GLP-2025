@@ -150,22 +150,24 @@ For most applications, the static balanced approach offers the best tradeoff bet
 
 \subsection{Static Balanced Merge Tree}
 
-Given $N$ potential streams, build a complete binary tree of merge nodes:
+Given a list of streams, build a balanced merge tree by pairing streams layer by layer:
 
 \begin{verbatim}
-% Build balanced merge tree for N streams
-% Returns list of input slots and final output stream
-build_tree(1, [Out?], Out).
-build_tree(N, Slots?, Out) :- N? > 1 |
-    Half := N? // 2,
-    Rest := N? - Half?,
-    build_tree(Half?, Left, L),
-    build_tree(Rest?, Right, R),
-    merge(L?, R?, Out?),
-    append(Left?, Right?, Slots).
+merge_tree([Xs], Xs?).
+merge_tree([X,Y|Rest], Out?) :-
+    merge_layer([X?,Y?|Rest?], Layer),
+    merge_tree(Layer?, Out).
+
+merge_layer([], []).
+merge_layer([Xs], [Xs?]).
+merge_layer([Xs,Ys|Rest], [Zs?|Layer?]) :-
+    merge(Xs?, Ys?, Zs),
+    merge_layer(Rest?, Layer).
 \end{verbatim}
 
-For $N = 4$:
+The \verb|merge_tree| predicate builds a balanced tree bottom-up: \verb|merge_layer| pairs adjacent streams with \verb|merge|, halving the count. This repeats until one stream remains.
+
+For 4 streams \verb|[[a,b], [1,2], [x,y], [p,q]]|:
 \begin{verbatim}
           Out
            |
@@ -173,10 +175,10 @@ For $N = 4$:
        /     \
     merge   merge
     /  \    /   \
-   S1  S2  S3   S4
+  [a,b] [1,2] [x,y] [p,q]
 \end{verbatim}
 
-Every stream passes through exactly $\lceil \log_2 N \rceil$ merge nodes.
+Every stream passes through exactly $\lceil \log_2 N \rceil$ merge nodes, ensuring fair latency.
 
 \section{Cooperative Stream Production}
 

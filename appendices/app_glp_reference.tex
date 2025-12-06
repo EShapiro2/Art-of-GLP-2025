@@ -33,6 +33,17 @@ The guard separator is \verb$|$. The body is a comma-separated conjunction of go
 \mypara{SRSW Requirement}
 Each variable in a clause must occur exactly twice: once as a writer, once as a reader. Exception: anonymous variables \verb|_| occur once.
 
+\mypara{Programming Style: Fold Unifications into the Head}
+Avoid explicit unification \verb|X = Pattern| in guards. Instead, fold the pattern directly into the clause head. This ensures correct SRSW analysis and produces cleaner code.
+
+\begin{verbatim}
+% Avoid:
+process(Xs, Out?) :- Xs = [H,T|Rest] | handle(H?, T?, Rest?, Out).
+
+% Prefer:
+process([H,T|Rest], Out?) :- handle(H?, T?, Rest?, Out).
+\end{verbatim}
+
 \section{Guard Predicates}
 
 Guards appear between the head and \verb$|$, testing conditions without side effects. A clause is applicable only if its guard succeeds.
