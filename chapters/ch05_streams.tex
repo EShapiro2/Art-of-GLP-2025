@@ -62,6 +62,78 @@ R = 15
 
 The trace shows interleaving: the producer emits an element, the consumer processes it, the producer emits another, and so on. Neither runs to completion before the other starts---they cooperate through the shared stream.
 
+\section{List Reversal}
+
+Reversing a list illustrates the difference between naive recursion and efficient iteration with an accumulator.
+
+\subsection{Naive Reverse}
+
+The naive approach: reverse the tail, then append the head at the end.
+
+\begin{verbatim}
+reverse([], []).
+reverse([X|Xs], Ys?) :-
+    reverse(Xs?, Zs),
+    append(Zs?, [X?], Ys).
+
+append([], Ys, Ys?).
+append([X|Xs], Ys, [X?|Zs?]) :- append(Xs?, Ys?, Zs).
+\end{verbatim}
+
+This is correct but inefficient. Each recursive call to \verb|reverse| triggers an \verb|append| that walks the entire accumulated result. For a list of length $n$, the total work is $1 + 2 + \cdots + n = O(n^2)$.
+
+\begin{verbatim}
+GLP> reverse([a,b,c], R).
+reverse([a, b, c], R) :- reverse([b, c], X1), append(X1?, [a], R)
+reverse([b, c], X1) :- reverse([c], X2), append(X2?, [b], X3)
+reverse([c], X2) :- reverse([], X4), append(X4?, [c], X5)
+reverse([], X4) :- true
+append([], [c], X5) :- true
+append([c], [b], X3) :- append([], [b], X6)
+append([], [b], X6) :- true
+append([c, b], [a], R) :- append([b], [a], X7)
+append([b], [a], X7) :- append([], [a], X8)
+append([], [a], X8) :- true
+R = [c, b, a]
+→ succeeds
+\end{verbatim}
+
+The trace reveals the inefficiency: three calls to \verb|reverse|, but six calls to \verb|append|.
+
+\subsection{Reverse with Accumulator}
+
+The efficient version uses an accumulator to build the result during a single pass:
+
+\begin{verbatim}
+reverse(Xs, Ys?) :- reverse_acc(Xs?, [], Ys).
+
+reverse_acc([], Acc, Acc?).
+reverse_acc([X|Xs], Acc, Ys?) :- reverse_acc(Xs?, [X?|Acc?], Ys).
+\end{verbatim}
+
+Each element is prepended to the accumulator as we traverse the list. When we reach the end, the accumulator holds the reversed list. Total work: $O(n)$.
+
+\begin{verbatim}
+GLP> reverse([a,b,c], R).
+reverse([a, b, c], R) :- reverse_acc([a, b, c], [], R)
+reverse_acc([a, b, c], [], R) :- reverse_acc([b, c], [a], X1)
+reverse_acc([b, c], [a], X1) :- reverse_acc([c], [b, a], X2)
+reverse_acc([c], [b, a], X2) :- reverse_acc([], [c, b, a], X3)
+reverse_acc([], [c, b, a], X3) :- true
+R = [c, b, a]
+→ succeeds
+\end{verbatim}
+
+Only four reductions for a three-element list---one per element plus the base case.
+
+\subsection{Iteration vs. Recursion}
+
+The accumulator version is \emph{iterative}: a single process steps through the list, updating its state (the accumulator) at each step. The call to \verb|reverse_acc| in the body is in \emph{tail position}---nothing remains to be done after it returns. The GLP runtime can execute this as a loop.
+
+The naive version spawns a new process for each recursive call, building a chain of suspended \verb|append| goals waiting for their inputs. This is true recursion, but wasteful when a single-pass solution exists.
+
+In general, when processing a list element-by-element with a single output, prefer the accumulator pattern. Reserve true recursion for divide-and-conquer algorithms like sorting, where parallelism provides benefit.
+
 \section{Stream Merging}
 
 Merging combines multiple input streams into a single output stream. This is essential for many-to-one communication: multiple producers sharing a single consumer.
