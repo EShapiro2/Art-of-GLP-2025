@@ -16,7 +16,7 @@ The operational semantics of GLP extends that of LP as follows:
 \begin{enumerate}
 \item \textbf{Synchronisation}: Unification may only instantiate writers, so in addition to succeed/fail, unification may suspend if it requires instantiating readers.
 
-\item \textbf{Communication}: When a unifying writer substitution binds a writer $X$ to a term $T$, the message  $X? := T$ encoding its paired reader assignment is created and added to the configuration. Its application happens asynchronously, realizing a message $T$ from the single occurrence of $X$ to the single occurrence of $X?$. 
+\item \textbf{Communication}: When a unifying writer assignment binds a writer $X$ to a term $T$, the message  $X? := T$ encoding its induced reader assignment is created and added to the configuration. Its application happens asynchronously, realizing a message $T$ from the single occurrence of $X$ to the single occurrence of $X?$. 
 
 \item \textbf{Deterministic clause selection}: The first applicable clause is chosen, not nondeterministically as in LP. This provides for the fairness of \verb|merge| presented above:  As long as the two input streams are available the output dovetails the two inputs, due to switching their order in the recursive call of the first clause; as long as only one stream is available, its elements are copied to the output; and when both streams are unavailable the goal suspends.
 \end{enumerate}
@@ -46,16 +46,16 @@ It two writers $X$ and $Y$ are unified during execution, the SRSW requirement im
 
 \subsection{GLP Operational semantics}
 
-\begin{definition}[Writer and Reader Substitution, Reader Counterpart, Suspension Set, Writer MGU]\label{definition:GLP-unification}
+\begin{definition}[Writer Assignment, Reader Assignment, Induced Reader Assignment, Suspension Set, Writer MGU]\label{definition:GLP-unification}
 
-A substitution $\sigma$ is a \temph{writer substitution} if  $\sigma$: 
+A substitution $\sigma$ is a \temph{writer assignment} if  $\sigma$:
 \begin{enumerate}
     \item only binds writers: $V_\sigma \subset V$
     \item does not bind writers to writers: if $X\ne X\sigma$ for $X\in V$ then $X\sigma\notin V$
     \item does not form cycles through readers:  $X?$ does not occur in $X\sigma$ for any $X \in V_\sigma$
 \end{enumerate}
-A substitution $\sigma$ is a \temph{reader substitution} if $V_\sigma \subset V?$.
-If $\sigma$ is a writer substitution then its \temph{reader counterpart} is the reader substitution  $\sigma?$  defined by $X?\sigma? = X\sigma$ for every $X\in V_\sigma$.
+A substitution $\sigma$ is a \temph{reader assignment} if $V_\sigma \subset V?$.
+If $\sigma$ is a writer assignment then its \temph{induced reader assignment} is the reader assignment  $\sigma?$  defined by $X?\sigma? = X\sigma$ for every $X\in V_\sigma$.
 
 The \temph{suspension set} of a (regular) substitution $\sigma$ is $W_\sigma:= \{X?\in V? : X?\sigma \notin \calV\}$.
 
@@ -69,7 +69,7 @@ The \temph{writer unification} of two terms:
 \begin{remark}
 If a writer mgu exists it is unique, rather than unique up to renaming,  since it does not include writer-to-writer assignments.
 If writer-to-writer assignments were allowed then, by the single-writer restriction, the assignment would leave their two paired readers \emph{abandoned}, namely without a writer that can provide them with a value.   
-The occurs check condition for the reader counterpart ensures that no writer is bound to a term containing its paired reader, preventing the formation of circular terms, as proven in Proposition~\ref{proposition:acyclicity}.
+The occurs check condition for the induced reader assignment ensures that no writer is bound to a term containing its paired reader, preventing the formation of circular terms, as proven in Proposition~\ref{proposition:acyclicity}.
 \end{remark}
 
 Renaming  (Definition~\ref{definition:renaming}) is extended to respect variable pairing:
@@ -85,7 +85,7 @@ Renaming  (Definition~\ref{definition:renaming}) is extended to respect variable
 
 The GLP operational semantics is defined via the following transition system, which employs the notions defined above to extend LP (Definition~\ref{definition:lp-ts}). It abstracts-away goal suspension and failure; these are used in the implementation-ready specifications (Appendixes~\ref{appendix:irGLP} and~\ref{appendix:irmaGLP}) for explicit goal scheduling, suspension and activation.
 \begin{definition}[GLP Transition System]\label{definition:GLP-ts}
-Given a GLP program $M$, an \temph{asynchronous resolvent} over $M$ is a pair $(G,\sigma)$ where $G\in \calG_?(M)$ and $\sigma$ is a reader substitution. 
+Given a GLP program $M$, an \temph{asynchronous resolvent} over $M$ is a pair $(G,\sigma)$ where $G\in \calG_?(M)$ and $\sigma$ is a reader assignment. 
 %
 A transition system $GLP = (\calC,c0,\calT)$ is a \temph{GLP transition system} over $M$ and initial goal $G_0 \in \mathcal{G}_?(M)$ satisfying SRSW if:
 \begin{enumerate}
@@ -146,6 +146,6 @@ In any $GLP$ run $G_0 \rightarrow G_1 \rightarrow \cdots$, if $G_i \rightarrow G
 \end{restatable}
 
 \begin{restatable}[Monotonicity]{proposition}{Monotonicity}\label{proposition:GLP-monotonicity}
-In any $GLP$ run $G_0 \rightarrow G_1 \rightarrow \cdots$, if atom $A \in G_i$ can reduce with clause $C$, then for any $j > i$, either $A$ has been reduced by step $j$, or there exists $A' \in G_j$ where $A' = A\tau$ for some reader substitution $\tau$, and $A'$ can reduce with $C$.
+In any $GLP$ run $G_0 \rightarrow G_1 \rightarrow \cdots$, if atom $A \in G_i$ can reduce with clause $C$, then for any $j > i$, either $A$ has been reduced by step $j$, or there exists $A' \in G_j$ where $A' = A\tau$ for some reader assignment $\tau$, and $A'$ can reduce with $C$.
 \end{restatable}
 

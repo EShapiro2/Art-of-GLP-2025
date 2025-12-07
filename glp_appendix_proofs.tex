@@ -32,19 +32,19 @@ Since $\sigma = \sigma' \circ \sigma_{k+1} = \sigma_1 \circ \cdots \circ \sigma_
 
 \ReaderOnlyInstantiation*
 \begin{proof}
-Consider the transition $G_i \rightarrow G_{i+1}$ via reduction of some atom $A' \in G_i$ with clause $C$. Let $(H \verb|:-| B)$ be the renaming of $C$ apart from $A'$, with writer mgu $\sigma$ and reader counterpart $\sigma?$.
+Consider the transition $G_i \rightarrow G_{i+1}$ via reduction of some atom $A' \in G_i$ with clause $C$. Let $(H \verb|:-| B)$ be the renaming of $C$ apart from $A'$, with writer mgu $\sigma$ and induced reader assignment $\sigma?$.
 
-By Definition~\ref{definition:GLP-ts}, the Reduce transition specifies that $G_{i+1} = (G_i \setminus \{A'\} \cup B)\sigma$, and the configuration's reader substitution is updated with $\sigma?$.
+By Definition~\ref{definition:GLP-ts}, the Reduce transition specifies that $G_{i+1} = (G_i \setminus \{A'\} \cup B)\sigma$, and the configuration's reader assignment is updated with $\sigma?$.
 
 For any atom $A \in G_{i+1}$ that also appeared in $G_i$, we have:
 
 \begin{enumerate}
-\item $A \neq A'$ (A was not the reduced atom). Then $A \in G_i \setminus \{A'\}$. The reduction applies $\sigma$ to all atoms in the resolvent. Since $A$ was in $G_i$ and the clause was renamed apart from the entire goal (including $A$), any writers in $A$ are distinct from $V_\sigma$. Therefore $\sigma$ does not instantiate variables in $A$. Only the reader counterpart $\sigma?$ can affect $A$. Since $\sigma?$ is a reader substitution with $V_{\sigma?} \subset V?$, we have $A$ in $G_{i+1}$ equals $A'\tau$ where $A' \in G_i$ and $\tau = \sigma?$ instantiates only readers.
+\item $A \neq A'$ (A was not the reduced atom). Then $A \in G_i \setminus \{A'\}$. The reduction applies $\sigma$ to all atoms in the resolvent. Since $A$ was in $G_i$ and the clause was renamed apart from the entire goal (including $A$), any writers in $A$ are distinct from $V_\sigma$. Therefore $\sigma$ does not instantiate variables in $A$. Only the induced reader assignment $\sigma?$ can affect $A$. Since $\sigma?$ is a reader assignment with $V_{\sigma?} \subset V?$, we have $A$ in $G_{i+1}$ equals $A'\tau$ where $A' \in G_i$ and $\tau = \sigma?$ instantiates only readers.
 
 \item $A = A'$ (A was the reduced atom). This case cannot occur since $A'$ is removed from the resolvent during reduction and thus cannot appear in $G_{i+1}$.
 \end{enumerate}
 
-Therefore, any atom persisting from $G_i$ to $G_{i+1}$ is instantiated only by the reader substitution $\sigma?$.
+Therefore, any atom persisting from $G_i$ to $G_{i+1}$ is instantiated only by the reader assignment $\sigma?$.
 \qed
 \end{proof}
 
@@ -61,16 +61,16 @@ By induction on run length. The base case holds by assumption. For the inductive
 
 \Acyclicity* 
 \begin{proof}
-By induction on run length. For the base case, $G_0$ contains no circular terms by assumption. For the inductive step, assume $G_i$ contains no circular terms and consider the transition $G_i \rightarrow G_{i+1}$ via reduction of atom $A$ with clause $C$. Let $(H \verb|:-| B)$ be the renaming of $C$ apart from $A$, with writer mgu $\sigma$ and reader counterpart $\sigma?$. The reader counterpart exists only if for all $X \in V_\sigma$, $X? \notin X\sigma$ (occurs check). This ensures no writer is bound to a term containing its paired reader. Since $G_{i+1} = (G_i \setminus \{A\} \cup B)\sigma?$, and the occurs check prevents circular assignments, $G_{i+1}$ contains no circular terms.
+By induction on run length. For the base case, $G_0$ contains no circular terms by assumption. For the inductive step, assume $G_i$ contains no circular terms and consider the transition $G_i \rightarrow G_{i+1}$ via reduction of atom $A$ with clause $C$. Let $(H \verb|:-| B)$ be the renaming of $C$ apart from $A$, with writer mgu $\sigma$ and induced reader assignment $\sigma?$. The induced reader assignment exists only if for all $X \in V_\sigma$, $X? \notin X\sigma$ (occurs check). This ensures no writer is bound to a term containing its paired reader. Since $G_{i+1} = (G_i \setminus \{A\} \cup B)\sigma?$, and the occurs check prevents circular assignments, $G_{i+1}$ contains no circular terms.
 \qed\end{proof}
 
 \Monotonicity*
 \begin{proof}
 By induction on $j - i$. For the base case ($j = i$), the atom $A \in G_i$ can reduce with $C$ by assumption. For the inductive step, assume the property holds for $j = k$ and consider $j = k + 1$. 
 
-If $A$ was reduced at some step between $i$ and $k$, then case (1) holds. Otherwise, by the inductive hypothesis, there exists $A' \in G_k$ where $A' = A\tau$ for some reader substitution $\tau$, and $A'$ can reduce with $C$.
+If $A$ was reduced at some step between $i$ and $k$, then case (1) holds. Otherwise, by the inductive hypothesis, there exists $A' \in G_k$ where $A' = A\tau$ for some reader assignment $\tau$, and $A'$ can reduce with $C$.
 
-Consider the transition $G_k \rightarrow G_{k+1}$. If the reduction involves $A'$, then case (1) holds for $j = k + 1$. If the reduction involves a different atom $B \in G_k$, then $A'$ persists in $G_{k+1}$, possibly further instantiated. Specifically, the reduction applies substitution $\sigma?$ where $\sigma?$ instantiates only readers (by definition of reader counterpart). Thus there exists $A'' \in G_{k+1}$ where $A'' = A'\sigma? = A(\tau \circ \sigma?)$, and $\tau \circ \sigma?$ is a reader substitution.
+Consider the transition $G_k \rightarrow G_{k+1}$. If the reduction involves $A'$, then case (1) holds for $j = k + 1$. If the reduction involves a different atom $B \in G_k$, then $A'$ persists in $G_{k+1}$, possibly further instantiated. Specifically, the reduction applies substitution $\sigma?$ where $\sigma?$ instantiates only readers (by definition of induced reader assignment). Thus there exists $A'' \in G_{k+1}$ where $A'' = A'\sigma? = A(\tau \circ \sigma?)$, and $\tau \circ \sigma?$ is a reader assignment.
 
 Since $A'$ could reduce with $C$ (renamed apart) via some writer mgu at step $k$, and $\sigma?$ only instantiates readers, the unification of $A''$ with the head of $C$ (appropriately renamed) still succeeds: reader instantiation preserves unifiability and cannot introduce new writer instantiation requirements. Therefore $A''$ can reduce with $C$ at step $k + 1$.
 \qed\end{proof}
