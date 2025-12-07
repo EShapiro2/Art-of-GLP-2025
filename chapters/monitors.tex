@@ -156,139 +156,88 @@ bob_finish([a,a], done).
 
 Running \verb|bob(Stream, Done)| produces \verb|Stream = [a,a,b,b,b,a,a]| and \verb|Done = done|.
 
-\subsection{Four-Actor Play}
+\section{Observing Monitors}
+\label{sec:observing-monitors}
 
-A more complex play demonstrates multiple actors and coordination patterns:
+Observing a monitor's request stream requires handling \emph{incomplete messages}. Input operations like \verb|add(N)| have ground arguments, but output operations like \verb|value(V)| contain variables that the monitor will bind. A type-aware observer must handle both modes.
 
-\begin{verbatim}
-%% A play with four actors: Director, Writer, Editor, Publisher
-%% Director initiates and coordinates, passing control around
+\subsection{The Duplicate Predicate}
 
-director([begin|Tail?], Result?) :-
-    writer(Tail, Result).
-
-writer([draft(chapter1), draft(chapter2)|Tail?], Result?) :-
-    editor(Tail, Result).
-
-editor([edit(chapter1), edit(chapter2)|Tail?], Result?) :-
-    publisher(Tail, Result).
-
-publisher([publish|Tail?], Result?) :-
-    director_finish(Tail, Result).
-
-director_finish([complete], finished).
-\end{verbatim}
-
-The four actors create a document production workflow:
+The key insight is a \verb|duplicate| predicate that waits for a value to become ground, then binds two outputs:
 
 \begin{verbatim}
-GLP> director(Stream, Status).
-director(X1, X2) :- writer(X3, X4)
-writer(X3, X4) :- editor(X5, X6)
-editor(X5, X6) :- publisher(X7, X8)
-publisher(X7, X8) :- director_finish(X9, X10)
-director_finish(X9, X10) :- true
-Stream = [begin, draft(chapter1), draft(chapter2),
-          edit(chapter1), edit(chapter2), publish, complete]
-Status = finished
-→ succeeds
+duplicate(X, X?, X?) :- ground(X?) | true.
 \end{verbatim}
 
-\subsection{Plays with Bidirectional Communication}
+This suspends until \verb|X| is bound (by the monitor), then propagates the value to both the forwarded stream and the log.
 
-Actors can communicate bidirectionally using incomplete messages:
+\subsection{Type-Aware Monitor Observer}
 
 \begin{verbatim}
-%% Actor A requests a value from Actor B
-actor_a([request(V?)|Tail?], Final?) :-
-    actor_b(V, Tail, Final).
-
-%% Actor B provides the value and continues
-actor_b(42, [response|Tail?], Final?) :-
-    actor_a_finish(Tail, Final).
-
-actor_a_finish([done], complete).
+observe_accum([add(N)|In], [add(N?)|Out?], [add(N?)|Log?]) :-
+    ground(N?) | observe_accum(In?, Out, Log).
+observe_accum([subtract(N)|In], [subtract(N?)|Out?], [subtract(N?)|Log?]) :-
+    ground(N?) | observe_accum(In?, Out, Log).
+observe_accum([value(V1?)|In], [value(V)|Out?], [value(V2?)|Log?]) :-
+    duplicate(V?, V1, V2),
+    observe_accum(In?, Out, Log).
+observe_accum([], [], []).
 \end{verbatim}
 
-The \verb|request(V?)| message carries an unbound variable that Actor B fills in with \verb|42|.
+The first two clauses handle input-mode messages: \verb|N| is already ground, so the observer copies it to both output streams immediately.
 
-\section{Type-Aware Observers}
-\label{sec:type-aware-observer}
+The third clause handles output-mode messages: \verb|V| starts unbound. The observer:
+\begin{enumerate}
+\item Forwards \verb|value(V)| to the monitor (which will bind \verb|V|)
+\item Calls \verb|duplicate(V?, V1, V2)| which suspends until \verb|V| is ground
+\item Once bound, propagates to both \verb|V1| (client's copy) and \verb|V2| (log)
+\end{enumerate}
 
-A \emph{type-aware observer} classifies and routes messages based on their structure, enabling selective monitoring.
+\subsection{Four-Actor Play with Observation}
 
-\subsection{Message Classification}
+Four actors interact with a shared monitor through an observer:
 
 \begin{verbatim}
-%% Type-aware observer that classifies messages
-observe_typed([M|Ms], Forward?, Cmds?, Data?, Log?) :-
-    ground(M?) |
-    classify(M?, Forward, Cmds, Data, Log, F1, C1, D1, L1),
-    observe_typed(Ms?, F1?, C1?, D1?, L1?).
-observe_typed([], [], [], [], []).
+% Alice: immediate, adds and queries
+alice(V, [add(10), add(5), value(V?)|Xs?]) :- alice_done(Xs).
+alice_done([]).
 
-%% Classify by message structure
-classify(cmd(C), Fwd, Cmds, Data, Log, Fwd?, Cmds1, Data?, Log?) :-
-    Cmds = [cmd(C?)|Cmds1?].
-classify(data(D), Fwd, Cmds, Data, Log, Fwd?, Cmds?, Data1, Log?) :-
-    Data = [data(D?)|Data1?].
-classify(log(L), Fwd, Cmds, Data, Log, Fwd?, Cmds?, Data?, Log1) :-
-    Log = [log(L?)|Log1?].
-classify(M, Fwd, Cmds, Data, Log, Fwd1, Cmds?, Data?, Log?) :-
-    M =\= cmd(_), M =\= data(_), M =\= log(_) |
-    Fwd = [M?|Fwd1?].
+% Bob: delayed 50ms, subtracts and queries
+bob(V, Ys?) :-
+    wait(50) |
+    Ys = [subtract(3), value(V?)|Ys1?],
+    bob_done(Ys1).
+bob_done([]).
+
+% Carol: delayed 100ms, adds and queries
+carol(V, Zs?) :-
+    wait(100) |
+    Zs = [add(20), value(V?)|Zs1?],
+    carol_done(Zs1).
+carol_done([]).
+
+% Diana: delayed 150ms, just queries
+diana(V, Ws?) :-
+    wait(150) |
+    Ws = [value(V?)|Ws1?],
+    diana_done(Ws1).
+diana_done([]).
+
+% Test harness with observer
+play_accum(VA?, VB?, VC?, VD?, Log?) :-
+    alice(VA, As), bob(VB, Bs), carol(VC, Cs), diana(VD, Ds),
+    merge(As?, Bs?, AB), merge(Cs?, Ds?, CD), merge(AB?, CD?, All),
+    observe_accum(All?, Reqs, Log),
+    monitor(Reqs?).
 \end{verbatim}
 
-The observer routes messages to four output streams based on their type:
+Running \verb|play_accum(VA, VB, VC, VD, Log)| yields:
 \begin{itemize}
-\item \verb|cmd(...)| messages go to the commands stream
-\item \verb|data(...)| messages go to the data stream
-\item \verb|log(...)| messages go to the log stream
-\item Other messages go to the forward stream
+\item VA = 15, VB = 12, VC = 32, VD = 32
+\item Log = [add(10), add(5), value(15), subtract(3), value(12), add(20), value(32), value(32)]
 \end{itemize}
 
-\subsection{Example: Monitoring a Protocol}
-
-\begin{verbatim}
-test_observer(Cmds?, Data?, Log?, Fwd?) :-
-    producer(Stream),
-    observe_typed(Stream?, Fwd, Cmds, Data, Log).
-
-producer([cmd(start), data(1), data(2), log(info),
-          hello, cmd(stop), data(3), log(done)]).
-\end{verbatim}
-
-Running produces:
-\begin{verbatim}
-GLP> test_observer(Cmds, Data, Log, Fwd).
-Cmds = [cmd(start), cmd(stop)]
-Data = [data(1), data(2), data(3)]
-Log = [log(info), log(done)]
-Fwd = [hello]
-→ succeeds
-\end{verbatim}
-
-\subsection{Aggregating Observer}
-
-A type-aware observer can also aggregate statistics:
-
-\begin{verbatim}
-%% Count messages by type
-count_typed([M|Ms], Cs, Ds, Ls, Os) :-
-    ground(M?) |
-    count_msg(M?, Cs?, Ds?, Ls?, Os?, Cs1, Ds1, Ls1, Os1),
-    count_typed(Ms?, Cs1?, Ds1?, Ls1?, Os1?).
-count_typed([], C, D, L, O) :- ground(C?), ground(D?), ground(L?), ground(O?) | true.
-
-count_msg(cmd(_), C, D, L, O, C1, D?, L?, O?) :- C1 := C? + 1.
-count_msg(data(_), C, D, L, O, C?, D1, L?, O?) :- D1 := D? + 1.
-count_msg(log(_), C, D, L, O, C?, D?, L1, O?) :- L1 := L? + 1.
-count_msg(M, C, D, L, O, C?, D?, L?, O1) :-
-    M =\= cmd(_), M =\= data(_), M =\= log(_) |
-    O1 := O? + 1.
-\end{verbatim}
-
-This counts each message type rather than collecting them, useful for monitoring throughput or detecting anomalies
+The staggered \verb|wait| guards ensure deterministic ordering. The log captures both input operations with their ground arguments, and output operations with the values the monitor bound to them
 
 \section{Exercises}
 
