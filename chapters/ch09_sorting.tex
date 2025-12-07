@@ -3,16 +3,156 @@
 \chapter{Sorting}
 \label{ch:sorting}
 
-This chapter presents sorting algorithms in \GLP.
+This chapter presents sorting algorithms in \GLP, demonstrating how concurrent processes naturally arise from recursive structure. Each recursive call spawns a new process, enabling parallel execution where data dependencies permit.
 
 \section{Insertion Sort}
 
+Insertion sort builds a sorted list by inserting each element into its correct position. In \GLP, the recursive call to sort the tail runs concurrently with the current insertion.
+
+\begin{verbatim}
+insertion_sort([], []).
+insertion_sort([X|Xs], Sorted?) :-
+    insertion_sort(Xs?, SortedTail),
+    insert(X?, SortedTail?, Sorted).
+
+insert(X, [], [X?]).
+insert(X, [Y|Ys], [X?|[Y?|Ys?]]) :- X? < Y? | true.
+insert(X, [Y|Ys], [Y?|Zs?]) :- X? >= Y? | insert(X?, Ys?, Zs).
+\end{verbatim}
+
+The \verb|insertion_sort/2| predicate:
+\begin{itemize}
+\item Base case: an empty list is already sorted
+\item Recursive case: sort the tail \verb|Xs| into \verb|SortedTail|, then insert \verb|X| into the correct position
+\end{itemize}
+
+The \verb|insert/3| predicate places element \verb|X| into a sorted list:
+\begin{itemize}
+\item If the list is empty, \verb|X| becomes the only element
+\item If \verb|X < Y| (the head), \verb|X| goes first
+\item Otherwise, \verb|Y| stays first and we recurse on the tail
+\end{itemize}
+
+The guards \verb|X? < Y?| and \verb|X? >= Y?| ensure deterministic clause selection---exactly one clause applies for any pair of numbers.
+
+\paragraph{Complexity.} Insertion sort is $O(n^2)$ in the worst case. The recursive structure spawns processes, but each insertion must wait for the tail to be sorted, limiting parallelism.
+
 \section{Merge Sort}
+\label{sec:mergesort}
+
+Merge sort achieves $O(n \log n)$ complexity by dividing the list in half, sorting each half recursively, and merging the results. The two recursive calls can execute in parallel.
+
+\begin{verbatim}
+mergesort([], []).
+mergesort([X], [X?]).
+mergesort(Xs, Sorted?) :-
+    split(Xs?, Left, Right),
+    mergesort(Left?, SortedL),
+    mergesort(Right?, SortedR),
+    merge_sorted(SortedL?, SortedR?, Sorted).
+\end{verbatim}
+
+The splitting predicate distributes elements alternately:
+
+\begin{verbatim}
+split([], [], []).
+split([X], [X?], []).
+split([X,Y|Xs], [X?|Left?], [Y?|Right?]) :- split(Xs?, Left, Right).
+\end{verbatim}
+
+The \verb|split/3| predicate uses list pattern matching: \verb|[X,Y|Xs]| matches a list with at least two elements. The first element goes left, the second goes right, and we recurse on the remainder. This achieves balanced splitting in $O(n)$ time.
+
+The merging predicate combines two sorted lists:
+
+\begin{verbatim}
+merge_sorted([], Ys, Ys?).
+merge_sorted(Xs, [], Xs?).
+merge_sorted([X|Xs], [Y|Ys], [X?|Zs?]) :-
+    X? =< Y? |
+    merge_sorted(Xs?, [Y?|Ys?], Zs).
+merge_sorted([X|Xs], [Y|Ys], [Y?|Zs?]) :-
+    Y? < X? |
+    merge_sorted([X?|Xs?], Ys?, Zs).
+\end{verbatim}
+
+The guards \verb|X? =< Y?| and \verb|Y? < X?| compare the heads of the two lists. The smaller element is placed first in the output, and we recurse with the remaining elements.
+
+\paragraph{Parallel Execution.} The key insight is that after \verb|split|, the two recursive \verb|mergesort| calls are independent---they operate on disjoint data. In \GLP, both calls spawn as concurrent processes. The \verb|merge_sorted| call suspends until both sorted sublists become available, then merges them incrementally.
+
+\paragraph{Complexity.} Merge sort is $O(n \log n)$ with $O(\log n)$ depth of parallelism. On a parallel machine, this can achieve $O(n)$ work with sufficient processors.
 
 \section{Quicksort}
+\label{sec:quicksort}
+
+Quicksort partitions elements around a pivot, recursively sorts each partition, and concatenates the results. Our implementation uses difference lists to avoid the cost of appending.
+
+\begin{verbatim}
+quicksort(Unsorted, Sorted?) :- qsort(Unsorted?, Sorted, []).
+
+qsort([X|Unsorted], Sorted?, Rest) :-
+    number(X?) |
+    partition(Unsorted?, X?, Smaller, Larger),
+    qsort(Smaller?, Sorted, [X?|Sorted1?]),
+    qsort(Larger?, Sorted1, Rest?).
+qsort([], Rest?, Rest).
+\end{verbatim}
+
+The difference list technique threads an accumulator: \verb|qsort(List, Front, Back)| means ``sorting \verb|List| produces elements that fill the hole between \verb|Front| and \verb|Back|.'' The pivot \verb|X| is placed between the sorted smaller and larger elements: \verb|[X?|Sorted1?]|.
+
+The partitioning predicate separates elements by comparison with the pivot:
+
+\begin{verbatim}
+partition([X|Xs], A, Smaller?, [X?|Larger?]) :-
+    A? < X? | partition(Xs?, A?, Smaller, Larger).
+partition([X|Xs], A, [X?|Smaller?], Larger?) :-
+    A? >= X? | partition(Xs?, A?, Smaller, Larger).
+partition([], A, [], []) :- number(A?) | true.
+\end{verbatim}
+
+The guards \verb|A? < X?| and \verb|A? >= X?| determine whether each element goes to the \verb|Larger| or \verb|Smaller| partition. The final clause handles the empty list, with a guard \verb|number(A?)| ensuring the pivot is numeric.
+
+\paragraph{Difference List Threading.} The difference list pattern avoids $O(n)$ append operations. In standard quicksort, concatenating \verb|Smaller ++ [Pivot] ++ Larger| costs $O(n)$ per level, degrading performance to $O(n^2)$ total. With difference lists, the ``concatenation'' is achieved through unification in constant time.
+
+\paragraph{Parallel Execution.} Like merge sort, the two recursive \verb|qsort| calls operate on disjoint partitions and can execute concurrently. However, partitioning is sequential---it must examine each element once.
+
+\paragraph{Complexity.} Quicksort is $O(n \log n)$ expected, $O(n^2)$ worst case (when the pivot is always extreme). The difference list optimization ensures each level costs $O(n)$ for partitioning, not $O(n)$ additionally for appending.
 
 \section{Parallel Sorting}
+\label{sec:parallel-sorting}
+
+Both merge sort and quicksort exhibit natural parallelism in \GLP:
+
+\begin{center}
+\begin{tabular}{lll}
+\textbf{Algorithm} & \textbf{Parallelism} & \textbf{Synchronization Point} \\
+\hline
+Merge sort & Two-way split & Merge waits for both halves \\
+Quicksort & Two-way partition & Parent waits for both partitions \\
+\end{tabular}
+\end{center}
+
+The concurrent spawning follows the recursive structure:
+\begin{itemize}
+\item Each recursive call creates a new process
+\item Processes synchronize through reader variables
+\item The parent suspends on \verb|SortedL?| and \verb|SortedR?| until children complete
+\end{itemize}
+
+\paragraph{Process Tree.} For a list of $n$ elements, merge sort creates $O(n)$ processes organized in a balanced binary tree of depth $O(\log n)$. Quicksort creates $O(n)$ processes but the tree depth depends on pivot selection---balanced pivots give $O(\log n)$ depth, while extreme pivots give $O(n)$ depth.
+
+\paragraph{Communication Pattern.} In merge sort, each merge process receives two sorted streams and produces one merged stream. The streams flow upward through the tree, with each level performing $O(n)$ total comparisons. In quicksort, the difference list threading means results flow through variable bindings rather than explicit message passing.
 
 \section{Exercises}
+\label{sec:sorting-exercises}
 
-[To be developed]
+\begin{enumerate}
+\item \textbf{Bubble Sort.} Implement bubble sort in \GLP. How does its parallelism compare to insertion sort?
+
+\item \textbf{Three-Way Partition.} Modify quicksort to use three-way partitioning (less than, equal to, greater than pivot). This improves performance when there are many duplicate elements.
+
+\item \textbf{Hybrid Sort.} Implement a hybrid sorting algorithm that uses insertion sort for small sublists (below some threshold) and merge sort for larger lists. This is a common optimization in practical sorting implementations.
+
+\item \textbf{Stable Merge Sort.} Verify that the merge sort implementation is stable---equal elements maintain their relative order from the input.
+
+\item \textbf{Natural Merge Sort.} Implement natural merge sort, which identifies already-sorted runs in the input and merges them, rather than always splitting in half.
+\end{enumerate}

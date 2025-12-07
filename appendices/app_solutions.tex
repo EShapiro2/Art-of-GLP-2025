@@ -55,3 +55,47 @@ The key ideas:
 \end{itemize}
 
 This achieves linear bounded-waiting: in a tree with $n$ leaves, a message waits at most $O(n)$ messages before exiting the root.
+
+\subsection{Exercise~\ref{ex:length}: Stream Length}
+
+Compute the length of a stream using an accumulator for tail recursion.
+
+\begin{verbatim}
+length(Xs, N?) :- length_acc(Xs?, 0, N).
+
+length_acc([], Acc, Acc?).
+length_acc([_|Xs], Acc, N?) :-
+    Acc1 := Acc? + 1,
+    length_acc(Xs?, Acc1?, N).
+\end{verbatim}
+
+The accumulator \verb|Acc| tracks the count seen so far. When the stream ends, the accumulated value is assigned to the output. This is $O(n)$ in both time and space (for the recursive calls, though GLP can optimize tail recursion).
+
+\subsection{Exercise~\ref{ex:map-inc}: Increment Stream}
+
+Apply increment to each element of a stream.
+
+\begin{verbatim}
+map_inc([], []).
+map_inc([X|Xs], [Y?|Ys?]) :-
+    Y := X? + 1,
+    map_inc(Xs?, Ys).
+\end{verbatim}
+
+Each element \verb|X| from the input stream is incremented and placed in the output stream as \verb|Y|. The recursive call processes the tail concurrently as elements arrive.
+
+\subsection{Exercise~\ref{ex:filter-even}: Filter Even Numbers}
+
+Select only even numbers from a stream.
+
+\begin{verbatim}
+filter_even([], []).
+filter_even([X|Xs], [X?|Ys?]) :-
+    X? mod 2 =:= 0 |
+    filter_even(Xs?, Ys).
+filter_even([X|Xs], Ys?) :-
+    X? mod 2 =\= 0 |
+    filter_even(Xs?, Ys).
+\end{verbatim}
+
+The guard \verb|X? mod 2 =:= 0| tests whether \verb|X| is even. If so, \verb|X| is included in the output; otherwise, it is skipped. Both clauses have mutually exclusive guards, ensuring deterministic clause selection.

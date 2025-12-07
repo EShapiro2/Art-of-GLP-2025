@@ -3,14 +3,204 @@
 \chapter{Enhanced Metaprogramming}
 \label{ch:enhanced-meta}
 
-This chapter presents advanced metaprogramming techniques in \GLP.
+This chapter presents advanced metaprogramming techniques in \GLP, including tracing for debugging, runtime control for suspend/resume/abort, and snapshot collection for inspecting running computations.
 
-\section{Tracing and Debugging}
+\section{Tracing Meta-Interpreter}
+\label{sec:tracing-meta}
 
-\section{Partial Evaluation}
+A \emph{tracing} meta-interpreter records the execution history, enabling replay and debugging.
+
+\begin{verbatim}
+run(true, true).                               % halt
+run((A,B), (TA?,TB?)) :- run(A?,TA), run(B?,TB).   % fork
+run(A, ((I?:Time?):-TB?)) :- known(A) |
+    time(Time), reduce(A?,B,I), run(B?, TB).
+\end{verbatim}
+
+\paragraph{Trace Structure.} The second argument builds a trace tree:
+\begin{itemize}
+\item \verb|true| --- computation terminated
+\item \verb|(TA, TB)| --- fork into two branches
+\item \verb|((I:Time):-TB)| --- reduction using clause \verb|I| at time \verb|Time|, continuing with trace \verb|TB|
+\end{itemize}
+
+\paragraph{Program Encoding.} Each clause is numbered:
+\begin{verbatim}
+reduce(merge([X|Xs],Ys,[X?|Zs?]), merge(Xs?,Ys?,Zs), 1).
+reduce(merge(Xs,[Y|Ys],[Y?|Zs?]), merge(Xs?,Ys?,Zs), 2).
+reduce(merge([],[],[]), true, 3).
+\end{verbatim}
+
+The clause index \verb|I| identifies which clause was used at each step.
+
+\paragraph{Timestamped Trace.} The \verb|time(Time)| call captures the current time, recording when each reduction occurred. This enables:
+\begin{itemize}
+\item Performance profiling (which reductions took longest)
+\item Debugging race conditions (what order did events occur)
+\item Replay (execute the same trace deterministically)
+\end{itemize}
+
+\paragraph{Example Trace.}
+\begin{verbatim}
+?- run(merge([1,2],[3],Z), Trace).
+Trace = ((1:0.001):-((1:0.002):-((3:0.003):-true, (2:0.003):-...)))
+\end{verbatim}
+
+The trace records that clause 1 was used twice, then clause 3 and clause 2, with timestamps.
+
+\section{Control Meta-Interpreter}
+\label{sec:control-meta}
+
+The \emph{control} meta-interpreter supports runtime control: suspend, resume, and abort.
+
+\begin{verbatim}
+run(true, _).                                       % halt
+run((A,B), Cs) :-                                   % fork
+    distribute(Cs?,Cs1,Cs2),
+    run(A?,Cs1?), run(B?,Cs2?).
+run(A, [suspend|Cs]) :- suspended_run(A,Cs?).       % suspend
+run(A, Cs) :- known(A) |                            % reduce
+    distribute(Cs?,Cs1,Cs2),
+    reduce(A?,B,Cs1?), run(B?,Cs2?).
+
+suspended_run(A, [resume|Cs]) :- run(A,Cs?).        % resume
+suspended_run(A, [abort|_]).                        % abort
+\end{verbatim}
+
+\paragraph{The Control Stream.} The second argument \verb|Cs| is a stream of control commands:
+\begin{itemize}
+\item \verb|suspend| --- pause all running processes
+\item \verb|resume| --- continue from suspension
+\item \verb|abort| --- terminate the computation
+\end{itemize}
+
+\paragraph{Distribution.} The \verb|distribute/3| predicate shares control commands across forked branches. When \verb|suspend| appears on the control stream, all meta-interpreter instances see it and pause.
+
+\paragraph{Suspension Mechanism.} When \verb|run| pattern-matches \verb|[suspend|Cs]|, it transitions to \verb|suspended_run|. This process waits for either:
+\begin{itemize}
+\item \verb|[resume|Cs']| --- continue running with new control stream \verb|Cs'|
+\item \verb|[abort|_]| --- terminate without resuming
+\end{itemize}
+
+\paragraph{Usage Example.}
+\begin{verbatim}
+%% Start computation with control stream
+run(MyGoal, Control?),
+
+%% Later, send suspend command
+Control = [suspend|Control2],
+
+%% Even later, resume or abort
+Control2 = [resume|Control3]  %% or [abort|_]
+\end{verbatim}
+
+This enables interactive debugging: run until a certain point, suspend, inspect state, then resume or abort.
+
+\section{Snapshot Collection}
+\label{sec:snapshot-meta}
+
+The \emph{snapshot} meta-interpreter collects the current resolvent (set of running goals) when aborted.
+
+\begin{verbatim}
+suspended_run(A, [resume|Cs], L, R?) :- run(A,Cs?,L?,R).
+suspended_run(A, [abort|_], L, [A?|L?]).
+\end{verbatim}
+
+\paragraph{Resolvent Collection.} When aborted, each \verb|suspended_run| adds its goal \verb|A| to the resolvent list. The parameters \verb|L| (left) and \verb|R| (right) thread the resolvent:
+\begin{itemize}
+\item On abort: add \verb|A| to \verb|L|, pass result to \verb|R|
+\item On resume: continue running, threading \verb|L| and \verb|R| through
+\end{itemize}
+
+\paragraph{Short-Circuit Technique.} The resolvent passes from left to right through all suspended processes. When all have added their goals, \verb|R| contains the complete resolvent.
+
+\paragraph{Usage.}
+\begin{verbatim}
+run(MyGoal, [suspend,abort|_], [], Resolvent),
+%% Resolvent? now contains all goals that were running
+\end{verbatim}
+
+This enables checkpointing: save the state of a computation for later inspection or serialization.
+
+\paragraph{Challenges.} Taking a snapshot and then resuming requires two copies of each goal:
+\begin{enumerate}
+\item A ``frozen'' copy for the snapshot
+\item A ``live'' copy that continues execution
+\end{enumerate}
+
+Deep copying goals with shared variables requires care to maintain proper sharing.
+
+\section{Debugger Meta-Interpreter}
+\label{sec:debugger-meta}
+
+Combining tracing and control yields an interactive debugger:
+
+\begin{verbatim}
+debug(true, _, _, true).
+debug((A,B), Cs, Budget, (TA?,TB?)) :-
+    distribute(Cs?, Cs1, Cs2),
+    split_budget(Budget?, B1, B2),
+    debug(A?, Cs1?, B1?, TA),
+    debug(B?, Cs2?, B2?, TB).
+debug(A, [step|Cs], Budget, ((I?:A?):-TB?)) :-
+    Budget? > 0, known(A) |
+    B1 := Budget? - 1,
+    reduce(A?,B,I),
+    debug(B?, Cs?, B1?, TB).
+debug(A, [suspend|Cs], Budget, Trace?) :-
+    suspended_debug(A, Cs?, Budget?, Trace).
+\end{verbatim}
+
+\paragraph{Step-by-Step Execution.} The \verb|[step|Cs]| command advances one reduction. The budget limits total reductions, preventing runaway execution.
+
+\paragraph{Interactive Commands.}
+\begin{itemize}
+\item \verb|step| --- execute one reduction
+\item \verb|suspend| --- pause execution
+\item \verb|run(N)| --- execute N steps
+\item \verb|abort| --- terminate and collect trace
+\end{itemize}
 
 \section{Abstract Interpretation}
+\label{sec:abstract-interpretation}
+
+Meta-interpreters can perform abstract interpretation---executing programs over abstract domains instead of concrete values.
+
+\paragraph{Sign Analysis.} Instead of numbers, track signs:
+\begin{verbatim}
+%% Abstract domain: pos, neg, zero, unknown
+abstract_add(pos, pos, pos).
+abstract_add(pos, neg, unknown).
+abstract_add(zero, X, X?).
+%% ... etc
+\end{verbatim}
+
+\paragraph{Abstract Meta-Interpreter.}
+\begin{verbatim}
+abstract_run(true, _).
+abstract_run((A,B), Env) :-
+    abstract_run(A?, Env?),
+    abstract_run(B?, Env?).
+abstract_run(X := Y + Z, Env?) :-
+    lookup(Y, Env?, AY), lookup(Z, Env?, AZ),
+    abstract_add(AY?, AZ?, AX),
+    update(X, AX?, Env?, NewEnv),
+    abstract_run(Rest?, NewEnv?).
+\end{verbatim}
+
+This enables static analysis: determine properties of programs without running them on concrete inputs.
 
 \section{Exercises}
+\label{sec:enhanced-meta-exercises}
 
-[To be developed]
+\begin{enumerate}
+\item \textbf{Replay.} Given a trace from the tracing meta-interpreter, write a replaying meta-interpreter that executes the same computation deterministically, following the recorded clause choices.
+
+\item \textbf{Breakpoints.} Add breakpoint support to the debugger: suspend when a specific predicate is called.
+
+\item \textbf{Watch Variables.} Extend the debugger to notify when a specific variable is bound.
+
+\item \textbf{Undo.} Design a mechanism to ``undo'' reductions, reverting to a previous state. What challenges arise with concurrent execution?
+
+\item \textbf{Coverage Analysis.} Write a meta-interpreter that tracks which \verb|reduce| clauses are used, reporting untested clauses.
+\end{enumerate}
