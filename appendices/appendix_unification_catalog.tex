@@ -1,0 +1,359 @@
+\chapter{Writer Unification Catalog}\label{appendix:unification-catalog}
+
+This appendix provides a comprehensive catalog of writer unification outcomes, derived systematically from Definition~\ref{definition:GLP-unification}. Each entry shows the outcome when unifying a goal term with a clause head term, following the three-case priority: succeed, suspend, fail.
+
+The ``First Use'' column indicates where each case first appears with explanation in the main text. Subsequent occurrences reference back to that section.
+
+\section{Notation}
+
+Throughout this catalog:
+\begin{itemize}
+\item $c, d$ denote distinct constants
+\item $X, Y$ denote goal writers (from the goal being reduced)
+\item $X?, Y?$ denote goal readers
+\item $V, W$ denote head writers (fresh, from the renamed clause)
+\item $V?, W?$ denote head readers (fresh)
+\item $\leftarrow$ denotes assignment direction in the resulting writer assignment
+\end{itemize}
+
+Head variables are always fresh (renamed apart), so they never conflict with goal variables.
+
+%=============================================================================
+\section{Atomic Term Unification}\label{appendix:atomic-unification}
+
+These cases cover unification at a single argument position with atomic terms (constants and variables).
+
+\subsection{Constant vs.\ Constant}
+
+\begin{center}
+\begin{tabular}{llll}
+\textbf{Goal} & \textbf{Head} & \textbf{Outcome} & \textbf{First Use} \\
+\hline
+$c$ & $c$ & succeeds with $\emptyset$ & §\ref{??} \\
+$c$ & $d$ & fails & §\ref{??} \\
+\end{tabular}
+\end{center}
+
+Identical constants unify with the empty assignment. Distinct constants have no unifier.
+
+\subsection{Constant vs.\ Variable}
+
+\begin{center}
+\begin{tabular}{lllll}
+\textbf{Goal} & \textbf{Head} & \textbf{Outcome} & \textbf{Assignment} & \textbf{First Use} \\
+\hline
+$c$ & $V$ & succeeds & $\{V \leftarrow c\}$ & §\ref{??} \\
+$c$ & $V?$ & succeeds & $\{V \leftarrow c\}$ & §\ref{??} \\
+\end{tabular}
+\end{center}
+
+A constant against a head variable (writer or reader) succeeds. Head readers $V?$ behave like head writers for unification because $V$ is fresh and can be assigned. The induced reader assignment then propagates the value to $V?$.
+
+\subsection{Goal Writer vs.\ Term}
+
+\begin{center}
+\begin{tabular}{lllll}
+\textbf{Goal} & \textbf{Head} & \textbf{Outcome} & \textbf{Assignment} & \textbf{First Use} \\
+\hline
+$X$ & $c$ & succeeds & $\{X \leftarrow c\}$ & §\ref{??} \\
+$X$ & $V$ & fails (WxW) & --- & §\ref{??} \\
+$X$ & $V?$ & succeeds & $\{X \leftarrow V?\}$ & §\ref{??} \\
+\end{tabular}
+\end{center}
+
+Goal writers can receive values (constants or reader references). Writer-to-writer ($X$ vs $V$) fails because it would abandon both paired readers $X?$ and $V?$.
+
+The case $X$ vs $V?$ succeeds: the goal writer $X$ is assigned the head reader $V?$. This connects two communication channels---when $V$ is later bound, the value flows to both $V?$ and (via $X$) to $X?$.
+
+\subsection{Goal Reader vs.\ Term}
+
+\begin{center}
+\begin{tabular}{lllll}
+\textbf{Goal} & \textbf{Head} & \textbf{Outcome} & \textbf{Suspension Set} & \textbf{First Use} \\
+\hline
+$X?$ & $c$ & suspends & $\{X?\}$ & §\ref{??} \\
+$X?$ & $V$ & succeeds & $\{V \leftarrow X?\}$ & §\ref{??} \\
+$X?$ & $V?$ & succeeds & $\{V \leftarrow X?\}$ & §\ref{??} \\
+\end{tabular}
+\end{center}
+
+Goal readers cannot be assigned. When a goal reader meets a constant, the goal must wait for its paired writer $X$ to provide a value---hence suspension on $\{X?\}$.
+
+When a goal reader meets a head variable (writer or reader), the head writer $V$ is assigned the goal reader $X?$. This succeeds because only head writers are being assigned.
+
+%=============================================================================
+\section{Compound Term Unification}\label{appendix:compound-unification}
+
+Compound terms unify by matching functors and recursively unifying arguments.
+
+\subsection{Functor Matching}
+
+\begin{center}
+\begin{tabular}{llll}
+\textbf{Goal} & \textbf{Head} & \textbf{Outcome} & \textbf{First Use} \\
+\hline
+$f(...)$ & $f(...)$ & recursive on arguments & §\ref{??} \\
+$f(...)$ & $g(...)$ & fails & §\ref{??} \\
+$f/n$ & $f/m$ & fails (if $n \neq m$) & §\ref{??} \\
+\end{tabular}
+\end{center}
+
+Terms with different functors or arities cannot unify.
+
+\subsection{Variable vs.\ Compound}
+
+\begin{center}
+\begin{tabular}{lllll}
+\textbf{Goal} & \textbf{Head} & \textbf{Outcome} & \textbf{Assignment} & \textbf{First Use} \\
+\hline
+$X$ & $f(...)$ & succeeds & $\{X \leftarrow f(...)\}$ & §\ref{??} \\
+$X?$ & $f(...)$ & suspends & $\{X?\}$ & §\ref{??} \\
+$f(...)$ & $V$ & succeeds & $\{V \leftarrow f(...)\}$ & §\ref{??} \\
+$f(...)$ & $V?$ & succeeds & $\{V \leftarrow f(...)\}$ & §\ref{??} \\
+\end{tabular}
+\end{center}
+
+Goal writers can be assigned compound terms. Goal readers suspend waiting for their paired writer.
+
+%=============================================================================
+\section{List Structure Cases}\label{appendix:list-unification}
+
+Lists are the primary data structure for stream communication. These cases are essential for understanding merge, split, and pipeline programs.
+
+\subsection{Cons Cell Matching}
+
+\begin{center}
+\begin{tabular}{lllll}
+\textbf{Goal} & \textbf{Head} & \textbf{Outcome} & \textbf{Notes} & \textbf{First Use} \\
+\hline
+$[X|Xs]$ & $[H|Hs]$ & succeeds & Both writers, recursive & §\ref{??} \\
+$[X|Xs]$ & $[H|Hs?]$ & succeeds & Goal tail writer, head tail reader & §\ref{??} \\
+$[X?|Xs?]$ & $[H|Hs]$ & suspends on $\{X?\}$ & Consumer waiting for element & §\ref{??} \\
+$[X|Xs?]$ & $[H|Hs]$ & succeeds & Element ready, tail waiting & §\ref{??} \\
+$[X?|Xs]$ & $[H|Hs]$ & suspends on $\{X?\}$ & Element not ready & §\ref{??} \\
+\end{tabular}
+\end{center}
+
+\subsection{Writer/Reader Tail Discrimination}
+
+This is the key mechanism for clause selection in concurrent observers:
+
+\begin{center}
+\begin{tabular}{lllll}
+\textbf{Goal} & \textbf{Head} & \textbf{Outcome} & \textbf{Why} & \textbf{First Use} \\
+\hline
+$[X|Xs]$ & $[H|Hs]$ & fails (WxW on tail) & $Xs$ vs $Hs$ both writers & §\ref{??} \\
+$[X|Xs]$ & $[H|Hs?]$ & succeeds & $Xs$ assigned $Hs?$ & §\ref{??} \\
+$[X|Xs?]$ & $[H|Hs]$ & succeeds & $Hs$ assigned $Xs?$ & §\ref{??} \\
+$[X|Xs?]$ & $[H|Hs?]$ & succeeds & $Hs$ assigned $Xs?$ & §\ref{??} \\
+\end{tabular}
+\end{center}
+
+Programs use WxW failure on tails to discriminate which stream is producing. A clause with writer tail matches goals with reader tail, and vice versa.
+
+\subsection{Empty List Cases}
+
+\begin{center}
+\begin{tabular}{llll}
+\textbf{Goal} & \textbf{Head} & \textbf{Outcome} & \textbf{First Use} \\
+\hline
+$[]$ & $[]$ & succeeds & §\ref{??} \\
+$[]$ & $[H|Hs]$ & fails & §\ref{??} \\
+$[X|Xs]$ & $[]$ & fails & §\ref{??} \\
+$Xs$ (writer) & $[]$ & succeeds, $\{Xs \leftarrow []\}$ & §\ref{??} \\
+$Xs?$ (reader) & $[]$ & suspends on $\{Xs?\}$ & §\ref{??} \\
+\end{tabular}
+\end{center}
+
+\subsection{Variable vs.\ List}
+
+\begin{center}
+\begin{tabular}{lllll}
+\textbf{Goal} & \textbf{Head} & \textbf{Outcome} & \textbf{Assignment} & \textbf{First Use} \\
+\hline
+$Xs$ & $[H|Hs]$ & succeeds & $\{Xs \leftarrow [H|Hs]\}$ & §\ref{??} \\
+$Xs?$ & $[H|Hs]$ & suspends & $\{Xs?\}$ & §\ref{??} \\
+$[X|Xs]$ & $Ys$ & succeeds & $\{Ys \leftarrow [X|Xs]\}$ & §\ref{??} \\
+$[X|Xs]$ & $Ys?$ & succeeds & $\{Ys \leftarrow [X|Xs]\}$ & §\ref{??} \\
+\end{tabular}
+\end{center}
+
+%=============================================================================
+\section{Difference List Cases}\label{appendix:dl-unification}
+
+Difference lists use paired hole/tail variables for efficient append. The threading mechanism depends on specific unification outcomes.
+
+\subsection{Difference List Argument Pairs}
+
+A difference list is represented as two arguments $(List, Hole)$ where $Hole$ is the uninstantiated tail of $List$.
+
+\begin{center}
+\begin{tabular}{lllll}
+\textbf{Goal DL} & \textbf{Head DL} & \textbf{Outcome} & \textbf{Threading} & \textbf{First Use} \\
+\hline
+$(L, H)$ & $(L', H')$ & succeeds & $L$ unified with $L'$, $H$ with $H'$ & §\ref{??} \\
+$(L?, H)$ & $(L', H')$ & suspends & Waiting for input list & §\ref{??} \\
+$(L, H?)$ & $(L', H')$ & succeeds & Hole provided by caller & §\ref{??} \\
+\end{tabular}
+\end{center}
+
+\subsection{Accumulator Threading}
+
+The standard difference list accumulator uses:
+\begin{verbatim}
+flatten(Tree, Xs, Xs0?) :- ... body uses Xs?, Xs0 ...
+\end{verbatim}
+
+\begin{center}
+\begin{tabular}{llll}
+\textbf{Position} & \textbf{Mode} & \textbf{Role} & \textbf{First Use} \\
+\hline
+$Xs$ (head writer) & output & Receives constructed list & §\ref{??} \\
+$Xs?$ (body reader) & input to body & Body reads accumulator & §\ref{??} \\
+$Xs0?$ (head reader) & input & Hole from caller & §\ref{??} \\
+$Xs0$ (body writer) & output from body & Body extends list & §\ref{??} \\
+\end{tabular}
+\end{center}
+
+%=============================================================================
+\section{Guard Evaluation Cases}\label{appendix:guard-unification}
+
+Guards use the same writer unification but with different operational intent: testing rather than binding.
+
+\subsection{Equality Guards}
+
+\begin{center}
+\begin{tabular}{llll}
+\textbf{Guard} & \textbf{Outcome} & \textbf{Notes} & \textbf{First Use} \\
+\hline
+$X = c$ & succeeds, binds $X$ & Writer in guard & §\ref{??} \\
+$X? = c$ & suspends & Reader needs value first & §\ref{??} \\
+$X =?= Y$ & succeeds if equal & Equality test, no binding & §\ref{??} \\
+$X \neq Y$ & succeeds if different & Disequality test & §\ref{??} \\
+\end{tabular}
+\end{center}
+
+\subsection{Type-Testing Guards}
+
+\begin{center}
+\begin{tabular}{llll}
+\textbf{Guard} & \textbf{Behavior} & \textbf{On Reader} & \textbf{First Use} \\
+\hline
+\texttt{ground(X)} & succeeds if $X$ ground & suspends if $X?$ unbound & §\ref{??} \\
+\texttt{integer(X)} & succeeds if integer & suspends if $X?$ unbound & §\ref{??} \\
+\texttt{atomic(X)} & succeeds if atomic & suspends if $X?$ unbound & §\ref{??} \\
+\texttt{compound(X)} & succeeds if compound & suspends if $X?$ unbound & §\ref{??} \\
+\end{tabular}
+\end{center}
+
+\subsection{Otherwise Guard}
+
+\begin{center}
+\begin{tabular}{lll}
+\textbf{Guard} & \textbf{Behavior} & \textbf{First Use} \\
+\hline
+\texttt{otherwise} & succeeds if all prior clauses fail or suspend & §\ref{??} \\
+\end{tabular}
+\end{center}
+
+The \texttt{otherwise} guard commits only when no prior clause can possibly succeed---either they failed or they suspended and this clause would not conflict.
+
+%=============================================================================
+\section{Clause Selection Mechanisms}\label{appendix:clause-selection}
+
+These cases show how writer unification enables clause selection based on argument structure and mode.
+
+\subsection{Selection by Structure}
+
+\begin{center}
+\begin{tabular}{lllll}
+\textbf{Goal} & \textbf{Clause 1 Head} & \textbf{Clause 2 Head} & \textbf{Selected} & \textbf{First Use} \\
+\hline
+\texttt{p([a|Xs],...)} & \texttt{p([H|T],...)} & \texttt{p([],...)} & Clause 1 & §\ref{??} \\
+\texttt{p([],...)} & \texttt{p([H|T],...)} & \texttt{p([],...)} & Clause 2 & §\ref{??} \\
+\texttt{p(X,...)} & \texttt{p([H|T],...)} & \texttt{p([],...)} & Suspends & §\ref{??} \\
+\texttt{p(X?,...)} & \texttt{p([H|T],...)} & \texttt{p([],...)} & Suspends & §\ref{??} \\
+\end{tabular}
+\end{center}
+
+\subsection{Selection by Tail Mode (Cooperative Streams)}
+
+For observing two streams that cooperatively produce to a shared output:
+
+\begin{center}
+\begin{tabular}{lllll}
+\textbf{Goal Tails} & \textbf{C1: writer/reader} & \textbf{C2: reader/writer} & \textbf{Selected} & \textbf{First Use} \\
+\hline
+writer, reader & fails C1, succeeds C2 & C2 & §\ref{??} \\
+reader, writer & succeeds C1 & C1 & §\ref{??} \\
+writer, writer & fails C1, fails C2 & deadlock & §\ref{??} \\
+reader, reader & suspends both & suspends & §\ref{??} \\
+\end{tabular}
+\end{center}
+
+This mechanism enables fair merge without explicit scheduling.
+
+\subsection{Selection by Ground Guard}
+
+\begin{center}
+\begin{tabular}{llll}
+\textbf{Goal} & \textbf{Guard} & \textbf{Outcome} & \textbf{First Use} \\
+\hline
+\texttt{p(a,...)} & \texttt{ground(X)} & succeeds & §\ref{??} \\
+\texttt{p(X,...)} & \texttt{ground(X)} & fails (X unbound) & §\ref{??} \\
+\texttt{p(X?,...)} & \texttt{ground(X?)} & suspends & §\ref{??} \\
+\texttt{p(f(a,b),...)} & \texttt{ground(X)} & succeeds & §\ref{??} \\
+\texttt{p(f(a,Y),...)} & \texttt{ground(X)} & fails (Y unbound) & §\ref{??} \\
+\end{tabular}
+\end{center}
+
+%=============================================================================
+\section{Suspension and Reactivation}\label{appendix:suspension}
+
+\subsection{Suspension Set Computation}
+
+Given a regular mgu $\sigma$, the suspension set is:
+$$W_\sigma = \{X? \in V? : X?\sigma \notin \mathcal{V}\}$$
+
+That is, goal readers that would be mapped to non-variables.
+
+\begin{center}
+\begin{tabular}{llll}
+\textbf{Goal} & \textbf{Head} & \textbf{Suspension Set} & \textbf{First Use} \\
+\hline
+$f(X?, a)$ & $f(b, Y)$ & $\{X?\}$ & §\ref{??} \\
+$f(X?, Y?)$ & $f(a, b)$ & $\{X?, Y?\}$ & §\ref{??} \\
+$f(X?, Y)$ & $f(a, b)$ & $\{X?\}$ & §\ref{??} \\
+$f(X, Y?)$ & $f(a, b)$ & $\{Y?\}$ & §\ref{??} \\
+\end{tabular}
+\end{center}
+
+\subsection{Reactivation Conditions}
+
+A suspended goal reactivates when \emph{any} reader in its suspension set receives a value from its paired writer:
+
+\begin{center}
+\begin{tabular}{lll}
+\textbf{Suspended On} & \textbf{Reactivates When} & \textbf{First Use} \\
+\hline
+$\{X?\}$ & $X$ is assigned & §\ref{??} \\
+$\{X?, Y?\}$ & $X$ or $Y$ is assigned & §\ref{??} \\
+\end{tabular}
+\end{center}
+
+Upon reactivation, clause matching restarts from the first clause.
+
+%=============================================================================
+\section{Cross-Reference Index}
+
+\emph{To be completed: alphabetical index of cases by program construct.}
+
+\begin{description}
+\item[append] §\ref{??}: list threading, accumulator
+\item[bounded buffer] §\ref{??}: suspension for flow control
+\item[flatten] §\ref{??}: difference list threading
+\item[merge] §\ref{??}: stream interleaving, tail mode selection
+\item[producer-consumer] §\ref{??}: reader suspension, writer assignment
+\item[quicksort] §\ref{??}: partition by comparison
+\item[split] §\ref{??}: alternating element distribution
+\end{description}
