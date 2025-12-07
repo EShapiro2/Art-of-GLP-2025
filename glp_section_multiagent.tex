@@ -85,7 +85,7 @@ The safety properties established for GLP in Section~\ref{section:GLP} extend di
 \begin{enumerate}
 \item \textbf{SRSW Invariant} (cf. Proposition~\ref{proposition:srsw-preservation}): If the initial goals of all agents in a maGLP run satisfy the SRSW requirement, then every goal in every agent's resolvent throughout the run satisfies the SRSW requirement.
 \item \textbf{Acyclicity} (cf. Proposition~\ref{proposition:acyclicity}): If the initial goals of all agents contain no circular terms, then no goal in any agent's resolvent contains a circular term.
-\item \textbf{Monotonicity} (cf. Proposition~\ref{proposition:GLP-monotonicity}): If atom $A$ in agent $p$'s resolvent can reduce with clause $C$ at step $i$, then at any step $j > i$, either $A$ has been reduced or there exists $A'$ in $p$'s resolvent where $A' = A\tau$ for some reader substitution $\tau$, and $A'$ can reduce with $C$.
+\item \textbf{Monotonicity} (cf. Proposition~\ref{proposition:GLP-monotonicity}): If atom $A$ in agent $p$'s resolvent can reduce with clause $C$ at step $i$, then at any step $j > i$, either $A$ has been reduced or there exists $A'$ in $p$'s resolvent where $A' = A\tau$ for some reader assignment $\tau$, and $A'$ can reduce with $C$.
 \end{enumerate}
 \end{proposition}
 The proofs are identical to those for single-agent GLP, substituting "agent $p$'s resolvent" for "resolvent" and noting that Reduce transitions operate locally within each agent whilst Communicate transitions preserve the properties through binary assignment transfer.

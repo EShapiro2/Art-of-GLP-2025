@@ -590,12 +590,12 @@ Clause: append_dl(Ha, Ta?, Ta, Tb?, Ha?, Tb).
 \end{tabular}
 \end{center}
 
-The critical binding is at argument 3: \verb|Ta := [3,4|T2?]|. Its reader counterpart delivers:
+The critical binding is at argument 3: \verb|Ta := [3,4|T2?]|. Its induced reader assignment delivers:
 \[
 \mathtt{Ta?} := \mathtt{[3,4|T2?]}
 \]
 
-Since argument 2 bound \verb|T1 := Ta?|, the reader counterpart flows through:
+Since argument 2 bound \verb|T1 := Ta?|, the induced reader assignment flows through:
 \[
 \mathtt{T1?} := \mathtt{[3,4|T2?]}
 \]
