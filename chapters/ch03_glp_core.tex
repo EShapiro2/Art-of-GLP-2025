@@ -16,7 +16,7 @@ The operational semantics of GLP extends that of LP as follows:
 \begin{enumerate}
 \item \textbf{Synchronisation}: Unification may only instantiate writers, so in addition to succeed/fail, unification may suspend if it requires instantiating readers.
 
-\item \textbf{Communication}: When a unifying writer substitution binds a writer $X$ to a term $T$, the message  $X? := T$ encoding its paired reader assignment is created and added to the configuration. Its application happens asynchronously, realizing a message $T$ from the single occurrence of $X$ to the single occurrence of $X?$.
+\item \textbf{Communication}: When a unifying writer assignment binds a writer $X$ to a term $T$, the message  $X? := T$ encoding its induced reader assignment is created and added to the configuration. Its application happens asynchronously, realizing a message $T$ from the single occurrence of $X$ to the single occurrence of $X?$.
 
 \item \textbf{Deterministic clause selection}: The first applicable clause is chosen, not nondeterministically as in LP. This provides for the fairness of \verb|merge| presented above:  As long as the two input streams are available the output dovetails the two inputs, due to switching their order in the recursive call of the first clause; as long as only one stream is available, its elements are copied to the output; and when both streams are unavailable the goal suspends.
 \end{enumerate}
@@ -46,90 +46,137 @@ It two writers $X$ and $Y$ are unified during execution, the SRSW requirement im
 
 \subsection{GLP Operational semantics}
 
-\begin{definition}[Writer and Reader Substitution, Reader Counterpart, Suspension Set, Writer MGU]\label{definition:GLP-unification}
+\subsection{Writer and Reader Assignments}
 
-A substitution $\sigma$ is a \temph{writer substitution} if  $\sigma$:
+When a goal unifies with a clause head, values flow in one direction: writers can
+receive values, readers cannot. A \emph{writer assignment} captures exactly which
+writers get bound and to what. The \emph{induced reader assignment} then propagates
+those values to the paired readers. This asymmetry---writers are assigned, readers
+receive---is fundamental to GLP's communication model.
+
+\begin{definition}[Writer Assignment, Reader Assignment, Suspension Set]
+\label{definition:GLP-unification}
+
+A \temph{writer assignment} is a substitution $\sigma$ whose domain is writers
+($V_\sigma \subset V$) that:
 \begin{enumerate}
-    \item only binds writers: $V_\sigma \subset V$
-    \item does not bind writers to writers: if $X\ne X\sigma$ for $X\in V$ then $X\sigma\notin V$
-    \item does not form cycles through readers:  $X?$ does not occur in $X\sigma$ for any $X \in V_\sigma$
+    \item does not bind writers to writers: if $X \ne X\sigma$ for $X \in V$
+          then $X\sigma \notin V$
+    \item does not form cycles through readers: $X?$ does not occur in $X\sigma$
+          for any $X \in V_\sigma$
 \end{enumerate}
-A substitution $\sigma$ is a \temph{reader substitution} if $V_\sigma \subset V?$.
-If $\sigma$ is a writer substitution then its \temph{reader counterpart} is the reader substitution  $\sigma?$  defined by $X?\sigma? = X\sigma$ for every $X\in V_\sigma$.
 
-The \temph{suspension set} of a (regular) substitution $\sigma$ is $W_\sigma:= \{X?\in V? : X?\sigma \notin \calV\}$.
+A \temph{reader assignment} is a substitution $\sigma$ whose domain is readers
+($V_\sigma \subset V?$).
 
-The \temph{writer unification} of two terms:
+If $\sigma$ is a writer assignment then its \temph{induced reader assignment} is
+the reader assignment $\sigma?$ defined by $X?\sigma? = X\sigma$ for every
+$X \in V_\sigma$.
+
+The \temph{suspension set} of a (regular) substitution $\sigma$ is
+$W_\sigma := \{X? \in V? : X?\sigma \notin \calV\}$.
+
+\temph{Writer unification} of two terms:
 \begin{enumerate}
-    \item \temph{succeeds with $\sigma$} if they have a writer mgu $\sigma$.
+    \item \temph{succeeds with $\sigma$} if they have an mgu $\sigma$ that is a
+          writer assignment.
     \item else \temph{suspends on $W_\sigma$} if they have a (regular) mgu $\sigma$
     \item else \temph{fails}
 \end{enumerate}
 \end{definition}
-\begin{remark}
-If a writer mgu exists it is unique, rather than unique up to renaming,  since it does not include writer-to-writer assignments.
-If writer-to-writer assignments were allowed then, by the single-writer restriction, the assignment would leave their two paired readers \emph{abandoned}, namely without a writer that can provide them with a value.
-The occurs check condition for the reader counterpart ensures that no writer is bound to a term containing its paired reader, preventing the formation of circular terms, as proven in Proposition~\ref{proposition:acyclicity}.
+
+\begin{remark}[How Values Flow]
+The induced reader assignment is the mechanism by which readers receive values.
+When writer $X$ is assigned value $T$, its paired reader $X?$ automatically
+receives that same value $T$. This is point-to-point communication: one writer
+to one reader, with no possibility of conflict.
+
+The suspension set identifies which readers are ``blocking''---they appear where
+a non-variable value is needed, but their paired writers have not been assigned yet.
+Unification suspends until those writers receive values, at which point the induced
+reader assignments make the values available and unification can proceed.
 \end{remark}
 
-\begin{remark}[Writer-to-Writer Failure]
-The formal definition as stated would have writer-to-writer unification suspend on an empty set: the regular mgu $\{X := Y\}$ exists but violates condition 2, and $W_\sigma = \emptyset$ since no readers are involved.
-
-However, suspending on an empty set is operationally meaningless---there is nothing to wait for. By the SRSW requirement, after binding writer $X$ to writer $Y$, no other occurrence of either writer remains to instantiate them. Their paired readers $X?$ and $Y?$ would be \emph{abandoned}---forever waiting for values that will never arrive.
-
-More importantly, writer-to-writer failure is \emph{semantically significant} for clause selection. Programs can use WxW failure to discriminate between clauses based on whether an argument position contains a writer or reader tail. For example, an observer of a cooperatively-constructed stream uses two clauses:
-\begin{verbatim}
-observe([X|Xs], Ys?, ...) :- ...   % first stream producing
-observe([X|Xs?], Ys, ...) :- ...   % second stream producing
-\end{verbatim}
-Clause selection depends on WxW failure: if the goal has a writer tail, it fails against a clause head with a writer tail, succeeding against one with a reader tail.
-
-Therefore, writer-to-writer unification \emph{fails} rather than suspending. This should be understood as part of the formal semantics: the definition of writer mgu (Definition~\ref{definition:GLP-unification}) excludes writer-to-writer bindings, and when the only regular mgu is excluded, the terms have no writer mgu, hence no regular mgu satisfying the requirements, hence unification fails.
+\begin{remark}[Why Writer-to-Writer Assignment is Forbidden]
+Condition 1 prohibits assigning a writer to another writer. If writers $X$ and $Y$
+were unified, the SRSW requirement implies no occurrences of either remain to
+assign them values. Their paired readers $X?$ and $Y?$ would be
+\emph{abandoned}---waiting forever for values that will never arrive. The
+implementation treats writer-to-writer unification as failure, not suspension.
 \end{remark}
 
-\subsection{Understanding Writer Unification}
+\subsubsection{Writer Unification Cases}
 
-The definition of writer unification has three cases in priority order: succeed, suspend, fail. To determine the outcome for two terms, work through the cases systematically.
-
-\mypara{Deriving outcomes from the definition}
-Given two terms to unify:
-\begin{enumerate}
-    \item First, check if a \emph{writer mgu} exists---a most general unifier that satisfies all three conditions of a writer substitution (only binds writers, no writer-to-writer bindings, no cycles through readers).
-    \item If yes, unification \emph{succeeds} with that substitution.
-    \item If no writer mgu exists, check if a \emph{regular mgu} exists (standard unification ignoring reader/writer distinctions).
-    \item If a regular mgu exists, compute the suspension set $W_\sigma$: the goal readers that would be mapped to non-variables. Unification \emph{suspends} on $W_\sigma$.
-    \item If no regular mgu exists, unification \emph{fails}.
-\end{enumerate}
-
-\mypara{Example derivations}
-Consider unifying goal $g$ with clause head $h$ in the following cases:
-
-\begin{itemize}
-\item $g = f(X, a)$, $h = f(b, Y)$: Regular mgu is $\{X := b, Y := a\}$. This binds only writers to non-writers. All three conditions of writer substitution are satisfied. \emph{Succeeds} with $\{X := b, Y := a\}$.
-
-\item $g = f(X?, a)$, $h = f(b, Y)$: Regular mgu would be $\{X? := b, Y := a\}$. But this binds reader $X?$, violating condition 1 of writer substitution. No writer mgu exists. Regular mgu exists, so compute $W_\sigma = \{X?\}$ (goal reader mapped to non-variable $b$). \emph{Suspends} on $\{X?\}$.
-
-\item $g = f(a, b)$, $h = f(a, c)$: No mgu exists ($b \neq c$). \emph{Fails}.
-
-\item $g = f(X)$, $h = f(Y)$: Regular mgu is $\{X := Y\}$ (or $\{Y := X\}$). Both $X$ and $Y$ are writers, so this violates condition 2 of writer substitution. No writer mgu. But regular mgu exists with $W_\sigma = \emptyset$ (no readers involved). By the formal definition, this would \emph{suspend on $\emptyset$}---but as noted above, the implementation treats this as failure.
-\end{itemize}
-
-\mypara{Summary of unification outcomes}
-The following table summarizes writer unification outcomes, derived from the formal definition:
+The following table enumerates all cases of writer unification between a goal
+argument and a clause head argument. In the table, $c$ and $d$ denote distinct
+constants, $X$ denotes a goal writer, $X?$ denotes a goal reader, $V$ denotes a
+head writer (fresh after renaming), and $V?$ denotes a head reader.
 
 \begin{center}
-\begin{tabular}{lll}
-\textbf{Goal} & \textbf{Head} & \textbf{Result} \\
+\begin{tabular}{|c|c|l|}
 \hline
-$f(\ldots)$ & $g(\ldots)$ & fails (different functors) \\
-ground & ground & succeeds if equal, fails if different \\
-writer & writer & fails (pragmatic---abandoned readers) \\
-writer & non-writer & succeeds, writer bound \\
-reader & writer & succeeds, writer bound to reader \\
-reader & non-writer & suspends \\
-compound & compound & recursive unification \\
+\textbf{Head} & \textbf{Goal} & \textbf{Writer Unification Result} \\
+\hline
+$c$ & $c$ & succeeds (identical constants) \\
+$c$ & $d$ & fails (distinct constants) \\
+$c$ & $X$ & succeeds: $\{X \mapsto c\}$ \\
+$c$ & $X?$ & suspends on $\{X?\}$ \\
+$V$ & $c$ & succeeds: $\{V \mapsto c\}$ \\
+$V$ & $X$ & succeeds: $\{V \mapsto X\}$ \\
+$V$ & $X?$ & succeeds: $\{V \mapsto X?\}$ \\
+$V?$ & $c$ & succeeds: $\{V \mapsto c\}$ \\
+$V?$ & $X$ & succeeds: $\{V \mapsto X\}$ \\
+$V?$ & $X?$ & succeeds: $\{V \mapsto X?\}$ \\
+\hline
 \end{tabular}
 \end{center}
+
+For compound terms, unification proceeds recursively on corresponding arguments.
+The overall result is: succeed if all arguments succeed, suspend if any argument
+suspends (and none fail), fail if any argument fails.
+
+\begin{remark}[Reading the Table]
+Each row shows what happens when a single argument position is unified. The head
+column shows what appears in the clause head after renaming apart (fresh variables
+$V$, $V?$). The goal column shows what appears in the goal being reduced.
+
+Key observations:
+\begin{itemize}
+\item A goal writer $X$ can always be assigned---it succeeds against any head form.
+\item A goal reader $X?$ suspends when matched against a non-variable (rows 4),
+      because readers cannot be assigned directly; the paired writer must be
+      assigned first.
+\item Head readers $V?$ behave like head writers $V$ for unification purposes,
+      because the fresh variable $V$ can be assigned. The distinction matters
+      for the clause body, where $V?$ will be read.
+\end{itemize}
+\end{remark}
+
+\subsubsection{Worked Examples}
+
+\mypara{Example 1: Success}
+Goal $g = p(X, a)$, Head $h = p(b, Y)$ (after renaming).
+
+Unification: $X$ matches $b$, $a$ matches $Y$. Both are writer-to-constant.
+Writer assignment: $\{X \mapsto b, Y \mapsto a\}$. Succeeds.
+
+\mypara{Example 2: Suspension}
+Goal $g = p(X?, a)$, Head $h = p(b, Y)$.
+
+First argument: $X?$ (goal reader) against $b$ (constant). A regular mgu would
+require $X? \mapsto b$, but readers cannot be assigned. Suspension set: $\{X?\}$.
+Suspends on $\{X?\}$, waiting for the paired writer $X$ to be assigned.
+
+\mypara{Example 3: Failure}
+Goal $g = p(a, b)$, Head $h = p(a, c)$.
+
+First argument: $a = a$, succeeds. Second argument: $b \ne c$, no mgu exists. Fails.
+
+\mypara{Example 4: Writer-to-Writer Failure}
+Goal $g = p(X)$, Head $h = p(Y)$.
+
+A regular mgu exists: $\{X \mapsto Y\}$. But this assigns writer to writer,
+violating condition 1. No writer assignment exists. Fails (not suspends).
 
 \begin{remark}[Programming Style: Fold Unifications into the Head]
 When a clause needs to test the structure of an argument, fold the pattern directly into the clause head rather than using explicit unification in the guard.
@@ -166,7 +213,7 @@ Renaming  (Definition~\ref{definition:renaming}) is extended to respect variable
 
 The GLP operational semantics is defined via the following transition system, which employs the notions defined above to extend LP (Definition~\ref{definition:lp-ts}). It abstracts-away goal suspension and failure; these are used in the implementation-ready specifications (Appendixes~\ref{appendix:irGLP} and~\ref{appendix:irmaGLP}) for explicit goal scheduling, suspension and activation.
 \begin{definition}[GLP Transition System]\label{definition:GLP-ts}
-Given a GLP program $M$, an \temph{asynchronous resolvent} over $M$ is a pair $(G,\sigma)$ where $G\in \calG_?(M)$ and $\sigma$ is a reader substitution.
+Given a GLP program $M$, an \temph{asynchronous resolvent} over $M$ is a pair $(G,\sigma)$ where $G\in \calG_?(M)$ and $\sigma$ is a reader assignment.
 %
 A transition system $GLP = (\calC,c0,\calT)$ is a \temph{GLP transition system} over $M$ and initial goal $G_0 \in \mathcal{G}_?(M)$ satisfying SRSW if:
 \begin{enumerate}
@@ -227,7 +274,7 @@ In any $GLP$ run $G_0 \rightarrow G_1 \rightarrow \cdots$, if $G_i \rightarrow G
 \end{restatable}
 
 \begin{restatable}[Monotonicity]{proposition}{Monotonicity}\label{proposition:GLP-monotonicity}
-In any $GLP$ run $G_0 \rightarrow G_1 \rightarrow \cdots$, if atom $A \in G_i$ can reduce with clause $C$, then for any $j > i$, either $A$ has been reduced by step $j$, or there exists $A' \in G_j$ where $A' = A\tau$ for some reader substitution $\tau$, and $A'$ can reduce with $C$.
+In any $GLP$ run $G_0 \rightarrow G_1 \rightarrow \cdots$, if atom $A \in G_i$ can reduce with clause $C$, then for any $j > i$, either $A$ has been reduced by step $j$, or there exists $A' \in G_j$ where $A' = A\tau$ for some reader assignment $\tau$, and $A'$ can reduce with $C$.
 \end{restatable}
 
 \subsection{Deterministic Transition System for Concurrent GLP}\label{subsection:irGLP}
@@ -306,11 +353,11 @@ The transition system $\text{irGLP} = (\mathcal{C}, c_0, \mathcal{T})$ over $M$ 
 \begin{remark}[Immediate vs.\ Asynchronous Communication]
 The GLP transition system (Definition~\ref{definition:GLP-ts}) models communication asynchronously in two steps:
 \begin{enumerate}
-\item \textbf{Reduce}: The writer substitution $\hat\sigma$ is applied to the goal. Its reader counterpart $\hat\sigma?$ is added to the pending substitution $\sigma$.
+\item \textbf{Reduce}: The writer assignment $\hat\sigma$ is applied to the goal. Its induced reader assignment $\hat\sigma?$ is added to the pending substitution $\sigma$.
 \item \textbf{Communicate}: Later, an assignment $\{X? := T\}$ is selected from $\sigma$ and applied to the goal.
 \end{enumerate}
 
-The irGLP transition system combines these into a single step. The Schedule operation applies both the writer substitution and its reader counterpart immediately:
+The irGLP transition system combines these into a single step. The Schedule operation applies both the writer assignment and its induced reader assignment immediately:
 \[
 Q' = (Q_r \cdot B \cdot R)\hat\sigma\hat\sigma?
 \]
