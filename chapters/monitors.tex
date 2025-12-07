@@ -156,43 +156,52 @@ bob_finish([a,a], done).
 
 Running \verb|bob(Stream, Done)| produces \verb|Stream = [a,a,b,b,b,a,a]| and \verb|Done = done|.
 
-\subsection{Four-Actor Play}
+\subsection{Four-Actor Play with Timing}
 
-A more complex play demonstrates multiple actors and coordination patterns:
-
-\begin{verbatim}
-%% A play with four actors: Director, Writer, Editor, Publisher
-%% Director initiates and coordinates, passing control around
-
-director([begin|Tail?], Result?) :-
-    writer(Tail, Result).
-
-writer([draft(chapter1), draft(chapter2)|Tail?], Result?) :-
-    editor(Tail, Result).
-
-editor([edit(chapter1), edit(chapter2)|Tail?], Result?) :-
-    publisher(Tail, Result).
-
-publisher([publish|Tail?], Result?) :-
-    director_finish(Tail, Result).
-
-director_finish([complete], finished).
-\end{verbatim}
-
-The four actors create a document production workflow:
+Four actors interact with a shared monitor, each with different timing:
 
 \begin{verbatim}
-GLP> director(Stream, Status).
-director(X1, X2) :- writer(X3, X4)
-writer(X3, X4) :- editor(X5, X6)
-editor(X5, X6) :- publisher(X7, X8)
-publisher(X7, X8) :- director_finish(X9, X10)
-director_finish(X9, X10) :- true
-Stream = [begin, draft(chapter1), draft(chapter2),
-          edit(chapter1), edit(chapter2), publish, complete]
-Status = finished
-→ succeeds
+% Alice: immediate, adds and queries
+alice(V, [add(10), add(5), value(V?)|Xs?]) :- alice_done(Xs).
+alice_done([]).
+
+% Bob: delayed 50ms, subtracts and queries
+bob(V, Ys?) :-
+    wait(50) |
+    Ys = [subtract(3), value(V?)|Ys1?],
+    bob_done(Ys1).
+bob_done([]).
+
+% Carol: delayed 100ms, adds and queries
+carol(V, Zs?) :-
+    wait(100) |
+    Zs = [add(20), value(V?)|Zs1?],
+    carol_done(Zs1).
+carol_done([]).
+
+% Diana: delayed 150ms, just queries
+diana(V, Ws?) :-
+    wait(150) |
+    Ws = [value(V?)|Ws1?],
+    diana_done(Ws1).
+diana_done([]).
+
+% Test harness
+play_accum(VA?, VB?, VC?, VD?) :-
+    alice(VA, As), bob(VB, Bs), carol(VC, Cs), diana(VD, Ds),
+    merge(As?, Bs?, AB), merge(Cs?, Ds?, CD), merge(AB?, CD?, All),
+    monitor(All?).
 \end{verbatim}
+
+Running \verb|play_accum(VA, VB, VC, VD)| yields:
+\begin{itemize}
+\item VA = 15 (Alice queries after 10+5)
+\item VB = 12 (Bob queries after 15-3)
+\item VC = 32 (Carol queries after 12+20)
+\item VD = 32 (Diana queries, no change)
+\end{itemize}
+
+The staggered \verb|wait| guards ensure deterministic ordering despite concurrent execution.
 
 \subsection{Plays with Bidirectional Communication}
 
