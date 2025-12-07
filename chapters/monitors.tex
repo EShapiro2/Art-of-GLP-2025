@@ -156,71 +156,6 @@ bob_finish([a,a], done).
 
 Running \verb|bob(Stream, Done)| produces \verb|Stream = [a,a,b,b,b,a,a]| and \verb|Done = done|.
 
-\subsection{Four-Actor Play with Timing}
-
-Four actors interact with a shared monitor, each with different timing:
-
-\begin{verbatim}
-% Alice: immediate, adds and queries
-alice(V, [add(10), add(5), value(V?)|Xs?]) :- alice_done(Xs).
-alice_done([]).
-
-% Bob: delayed 50ms, subtracts and queries
-bob(V, Ys?) :-
-    wait(50) |
-    Ys = [subtract(3), value(V?)|Ys1?],
-    bob_done(Ys1).
-bob_done([]).
-
-% Carol: delayed 100ms, adds and queries
-carol(V, Zs?) :-
-    wait(100) |
-    Zs = [add(20), value(V?)|Zs1?],
-    carol_done(Zs1).
-carol_done([]).
-
-% Diana: delayed 150ms, just queries
-diana(V, Ws?) :-
-    wait(150) |
-    Ws = [value(V?)|Ws1?],
-    diana_done(Ws1).
-diana_done([]).
-
-% Test harness
-play_accum(VA?, VB?, VC?, VD?) :-
-    alice(VA, As), bob(VB, Bs), carol(VC, Cs), diana(VD, Ds),
-    merge(As?, Bs?, AB), merge(Cs?, Ds?, CD), merge(AB?, CD?, All),
-    monitor(All?).
-\end{verbatim}
-
-Running \verb|play_accum(VA, VB, VC, VD)| yields:
-\begin{itemize}
-\item VA = 15 (Alice queries after 10+5)
-\item VB = 12 (Bob queries after 15-3)
-\item VC = 32 (Carol queries after 12+20)
-\item VD = 32 (Diana queries, no change)
-\end{itemize}
-
-The staggered \verb|wait| guards ensure deterministic ordering despite concurrent execution.
-
-\subsection{Plays with Bidirectional Communication}
-
-Actors can communicate bidirectionally using incomplete messages:
-
-\begin{verbatim}
-%% Actor A requests a value from Actor B
-actor_a([request(V?)|Tail?], Final?) :-
-    actor_b(V, Tail, Final).
-
-%% Actor B provides the value and continues
-actor_b(42, [response|Tail?], Final?) :-
-    actor_a_finish(Tail, Final).
-
-actor_a_finish([done], complete).
-\end{verbatim}
-
-The \verb|request(V?)| message carries an unbound variable that Actor B fills in with \verb|42|.
-
 \section{Observing Monitors}
 \label{sec:observing-monitors}
 
@@ -258,11 +193,37 @@ The third clause handles output-mode messages: \verb|V| starts unbound. The obse
 \item Once bound, propagates to both \verb|V1| (client's copy) and \verb|V2| (log)
 \end{enumerate}
 
-\subsection{Observed Four-Actor Play}
+\subsection{Four-Actor Play with Observation}
 
-Combining the observer with the four-actor play:
+Four actors interact with a shared monitor through an observer:
 
 \begin{verbatim}
+% Alice: immediate, adds and queries
+alice(V, [add(10), add(5), value(V?)|Xs?]) :- alice_done(Xs).
+alice_done([]).
+
+% Bob: delayed 50ms, subtracts and queries
+bob(V, Ys?) :-
+    wait(50) |
+    Ys = [subtract(3), value(V?)|Ys1?],
+    bob_done(Ys1).
+bob_done([]).
+
+% Carol: delayed 100ms, adds and queries
+carol(V, Zs?) :-
+    wait(100) |
+    Zs = [add(20), value(V?)|Zs1?],
+    carol_done(Zs1).
+carol_done([]).
+
+% Diana: delayed 150ms, just queries
+diana(V, Ws?) :-
+    wait(150) |
+    Ws = [value(V?)|Ws1?],
+    diana_done(Ws1).
+diana_done([]).
+
+% Test harness with observer
 play_accum(VA?, VB?, VC?, VD?, Log?) :-
     alice(VA, As), bob(VB, Bs), carol(VC, Cs), diana(VD, Ds),
     merge(As?, Bs?, AB), merge(Cs?, Ds?, CD), merge(AB?, CD?, All),
@@ -276,7 +237,7 @@ Running \verb|play_accum(VA, VB, VC, VD, Log)| yields:
 \item Log = [add(10), add(5), value(15), subtract(3), value(12), add(20), value(32), value(32)]
 \end{itemize}
 
-The log captures both input operations and their ground arguments, and output operations with the values the monitor bound to them
+The staggered \verb|wait| guards ensure deterministic ordering. The log captures both input operations with their ground arguments, and output operations with the values the monitor bound to them
 
 \section{Exercises}
 
