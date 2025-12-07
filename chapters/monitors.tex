@@ -1,0 +1,299 @@
+% chapters/monitors.tex - Monitors and Stateful Servers
+
+\chapter{Monitors and Stateful Servers}
+\label{ch:monitors}
+
+This chapter shows how reader/writer pairs naturally give rise to bidirectional channels and stateful servers.
+
+\section{Bidirectional Channels}
+
+A single reader/writer pair provides one-way communication. Two pairs provide bidirectional communication:
+
+\begin{verbatim}
+channel(In?, Out) :- ...
+\end{verbatim}
+
+\section{Request-Response Patterns}
+
+[To be developed: client-server communication]
+
+\section{Stateful Servers (Monitors)}
+
+A \emph{monitor} is a process that maintains local state and serves requests to inspect or modify that state. The term comes from Hoare's original concept~\cite{hoare1974monitors}. In \GLP, monitors receive requests via a merged input stream and respond using incomplete messages.
+
+\subsection{A Simple Accumulator}
+
+The simplest monitor maintains a numeric accumulator:
+
+\begin{verbatim}
+monitor(Reqs) :- monitor(Reqs?, 0).
+
+monitor([add(N)|Reqs], Sum) :-
+    Sum1 := Sum? + N?, monitor(Reqs?, Sum1?).
+monitor([subtract(N)|Reqs], Sum) :-
+    Sum1 := Sum? - N?, monitor(Reqs?, Sum1?).
+monitor([value(V)|Reqs], Sum) :-
+    ground(Sum?) | V = Sum?, monitor(Reqs?, Sum?).
+monitor([], _).
+\end{verbatim}
+
+The monitor handles three request types:
+\begin{itemize}
+\item \verb|add(N)| --- add \verb|N| to the accumulator
+\item \verb|subtract(N)| --- subtract \verb|N| from the accumulator
+\item \verb|value(V)| --- bind \verb|V| to the current sum (incomplete message)
+\end{itemize}
+
+The \verb|ground(Sum?)| guard in the \verb|value| clause permits replication of \verb|Sum?| to both the response variable and the recursive call.
+
+\subsection{Incomplete Messages}
+
+The \verb|value(V)| request demonstrates \emph{incomplete messages}---messages containing unbound variables that the receiver fills in. The client sends \verb|value(V?)| retaining reader \verb|V?|, and the monitor binds writer \verb|V| to the current sum. This provides bidirectional communication without explicit reply channels.
+
+\subsection{Multiple Clients}
+
+Multiple clients connect to a monitor through a merge network:
+
+\begin{verbatim}
+test_monitor(V1?, V2?) :-
+    client1(V1, Xs),
+    client2(V2, Ys),
+    merge(Xs?, Ys?, Zs),
+    monitor(Zs?).
+\end{verbatim}
+
+Each client produces a stream of requests. The merge combines them into a single stream consumed by the monitor. Client responses arrive via their respective incomplete message variables.
+
+\subsection{Timing and Interleaving}
+
+Consider two clients with different timing:
+
+\begin{verbatim}
+% Client 1: immediate requests
+client1(V, [add(5), add(3), value(V?)|Xs?]) :- client1_done(Xs).
+client1_done([]).
+
+% Client 2: delayed requests (waits 100ms)
+client2(V, Ys?) :-
+    wait(100) |
+    Ys = [add(10), subtract(2), value(V?)|Ys1?],
+    client2_done(Ys1).
+client2_done([]).
+\end{verbatim}
+
+The \verb|wait(100)| guard suspends client2 for 100 milliseconds, allowing client1 to complete first:
+
+\begin{verbatim}
+GLP> test_monitor(V1, V2).
+client1(X1, X2) :- client1_done(X6)
+client2(X3, X4) → suspended
+monitor_loop([add(5)|...], 0) :- ...
+monitor_loop([add(3)|...], 5) :- ...
+monitor_loop([value(X1?)|...], 8) :- =/2(X1, 8), ...
+client2(X3, X4) :- ...        % resumes after 100ms
+monitor_loop([add(10)|...], 8) :- ...
+monitor_loop([subtract(2)|...], 18) :- ...
+monitor_loop([value(X3?)|...], 16) :- =/2(X3, 16), ...
+V1 = 8
+V2 = 16
+→ succeeds
+\end{verbatim}
+
+Client1 queries at sum=8 (after 5+3). Client2 queries at sum=16 (after 5+3+10-2). The timing determines what state each client observes.
+
+\subsection{Dynamic Client Addition}
+
+A fixed merge tree limits the number of clients. For dynamically-changing client sets, existing clients can onboard new clients using the dynamic merge pattern from Chapter~\ref{ch:streams}:
+
+\begin{verbatim}
+merge([merge(Ws)|Xs], Ys, Zs?) :-
+    merger(Ws?, Xs?, Xs1), merge(Xs1?, Ys?, Zs).
+\end{verbatim}
+
+A client sends \verb|merge(NewClientStream)| to splice in a new participant.
+
+\section{State Machines}
+\label{sec:state-machines}
+
+State machines are naturally expressed as recursive predicates where state is encoded in the message pattern.
+
+\subsection{A Simple Protocol}
+
+Consider a request-response protocol with states \verb|idle|, \verb|waiting|, and \verb|done|:
+
+\begin{verbatim}
+protocol(idle, [request(X)|Msgs], Out?) :-
+    Out = [processing(X?)|Out1?],
+    protocol(waiting, Msgs?, Out1).
+protocol(waiting, [response(R)|Msgs], Out?) :-
+    Out = [result(R?)|Out1?],
+    protocol(idle, Msgs?, Out1).
+protocol(idle, [quit|_], [done]).
+protocol(_, [], []).
+\end{verbatim}
+
+Each clause handles a specific (state, message) pair, producing output and transitioning to a new state.
+
+\section{Plays: Simulating Multi-Agent Systems}
+\label{sec:plays}
+
+A \emph{play} is a technique for simulating multi-agent interaction in single-agent \GLP. Each ``actor'' is a predicate that produces or consumes stream elements, and actors coordinate by passing stream tails.
+
+\subsection{Two-Actor Play: Bob and Alice}
+
+The simplest play involves two actors cooperatively constructing a stream:
+
+\begin{verbatim}
+%% Bob writes two a's, hands tail to Alice
+bob([a,a|Tail?], Result?) :- alice(Tail, Result).
+
+%% Alice writes three b's, hands back to Bob
+alice([b,b,b|Tail?], Result?) :- bob_finish(Tail, Result).
+
+%% Bob writes two more a's and closes
+bob_finish([a,a], done).
+\end{verbatim}
+
+Running \verb|bob(Stream, Done)| produces \verb|Stream = [a,a,b,b,b,a,a]| and \verb|Done = done|.
+
+\subsection{Four-Actor Play}
+
+A more complex play demonstrates multiple actors and coordination patterns:
+
+\begin{verbatim}
+%% A play with four actors: Director, Writer, Editor, Publisher
+%% Director initiates and coordinates, passing control around
+
+director([begin|Tail?], Result?) :-
+    writer(Tail, Result).
+
+writer([draft(chapter1), draft(chapter2)|Tail?], Result?) :-
+    editor(Tail, Result).
+
+editor([edit(chapter1), edit(chapter2)|Tail?], Result?) :-
+    publisher(Tail, Result).
+
+publisher([publish|Tail?], Result?) :-
+    director_finish(Tail, Result).
+
+director_finish([complete], finished).
+\end{verbatim}
+
+The four actors create a document production workflow:
+
+\begin{verbatim}
+GLP> director(Stream, Status).
+director(X1, X2) :- writer(X3, X4)
+writer(X3, X4) :- editor(X5, X6)
+editor(X5, X6) :- publisher(X7, X8)
+publisher(X7, X8) :- director_finish(X9, X10)
+director_finish(X9, X10) :- true
+Stream = [begin, draft(chapter1), draft(chapter2),
+          edit(chapter1), edit(chapter2), publish, complete]
+Status = finished
+→ succeeds
+\end{verbatim}
+
+\subsection{Plays with Bidirectional Communication}
+
+Actors can communicate bidirectionally using incomplete messages:
+
+\begin{verbatim}
+%% Actor A requests a value from Actor B
+actor_a([request(V?)|Tail?], Final?) :-
+    actor_b(V, Tail, Final).
+
+%% Actor B provides the value and continues
+actor_b(42, [response|Tail?], Final?) :-
+    actor_a_finish(Tail, Final).
+
+actor_a_finish([done], complete).
+\end{verbatim}
+
+The \verb|request(V?)| message carries an unbound variable that Actor B fills in with \verb|42|.
+
+\section{Type-Aware Observers}
+\label{sec:type-aware-observer}
+
+A \emph{type-aware observer} classifies and routes messages based on their structure, enabling selective monitoring.
+
+\subsection{Message Classification}
+
+\begin{verbatim}
+%% Type-aware observer that classifies messages
+observe_typed([M|Ms], Forward?, Cmds?, Data?, Log?) :-
+    ground(M?) |
+    classify(M?, Forward, Cmds, Data, Log, F1, C1, D1, L1),
+    observe_typed(Ms?, F1?, C1?, D1?, L1?).
+observe_typed([], [], [], [], []).
+
+%% Classify by message structure
+classify(cmd(C), Fwd, Cmds, Data, Log, Fwd?, Cmds1, Data?, Log?) :-
+    Cmds = [cmd(C?)|Cmds1?].
+classify(data(D), Fwd, Cmds, Data, Log, Fwd?, Cmds?, Data1, Log?) :-
+    Data = [data(D?)|Data1?].
+classify(log(L), Fwd, Cmds, Data, Log, Fwd?, Cmds?, Data?, Log1) :-
+    Log = [log(L?)|Log1?].
+classify(M, Fwd, Cmds, Data, Log, Fwd1, Cmds?, Data?, Log?) :-
+    M =\= cmd(_), M =\= data(_), M =\= log(_) |
+    Fwd = [M?|Fwd1?].
+\end{verbatim}
+
+The observer routes messages to four output streams based on their type:
+\begin{itemize}
+\item \verb|cmd(...)| messages go to the commands stream
+\item \verb|data(...)| messages go to the data stream
+\item \verb|log(...)| messages go to the log stream
+\item Other messages go to the forward stream
+\end{itemize}
+
+\subsection{Example: Monitoring a Protocol}
+
+\begin{verbatim}
+test_observer(Cmds?, Data?, Log?, Fwd?) :-
+    producer(Stream),
+    observe_typed(Stream?, Fwd, Cmds, Data, Log).
+
+producer([cmd(start), data(1), data(2), log(info),
+          hello, cmd(stop), data(3), log(done)]).
+\end{verbatim}
+
+Running produces:
+\begin{verbatim}
+GLP> test_observer(Cmds, Data, Log, Fwd).
+Cmds = [cmd(start), cmd(stop)]
+Data = [data(1), data(2), data(3)]
+Log = [log(info), log(done)]
+Fwd = [hello]
+→ succeeds
+\end{verbatim}
+
+\subsection{Aggregating Observer}
+
+A type-aware observer can also aggregate statistics:
+
+\begin{verbatim}
+%% Count messages by type
+count_typed([M|Ms], Cs, Ds, Ls, Os) :-
+    ground(M?) |
+    count_msg(M?, Cs?, Ds?, Ls?, Os?, Cs1, Ds1, Ls1, Os1),
+    count_typed(Ms?, Cs1?, Ds1?, Ls1?, Os1?).
+count_typed([], C, D, L, O) :- ground(C?), ground(D?), ground(L?), ground(O?) | true.
+
+count_msg(cmd(_), C, D, L, O, C1, D?, L?, O?) :- C1 := C? + 1.
+count_msg(data(_), C, D, L, O, C?, D1, L?, O?) :- D1 := D? + 1.
+count_msg(log(_), C, D, L, O, C?, D?, L1, O?) :- L1 := L? + 1.
+count_msg(M, C, D, L, O, C?, D?, L?, O1) :-
+    M =\= cmd(_), M =\= data(_), M =\= log(_) |
+    O1 := O? + 1.
+\end{verbatim}
+
+This counts each message type rather than collecting them, useful for monitoring throughput or detecting anomalies
+
+\section{Exercises}
+
+\begin{enumerate}
+\item[$\star$] Implement a simple counter server.
+\item[$\star\star$] Implement a key-value store server.
+\item[$\star\star\star$] Implement a replicated state machine.
+\end{enumerate}

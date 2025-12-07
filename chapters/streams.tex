@@ -417,7 +417,7 @@ Distribute & one-to-many & single input, multiple outputs \\
 \end{tabular}
 \end{center}
 
-Together they enable complex stream topologies: a process can receive from multiple sources via merge, transform the data, and distribute results to multiple consumers. The metainterpreter with run control in Chapter~\ref{ch:metainterpreters} uses distribution to broadcast control messages to all concurrent subgoals.
+Together they enable complex stream topologies: a process can receive from multiple sources via merge, transform the data, and distribute results to multiple consumers. The metainterpreter with run control in Chapter~\ref{ch:plain-meta} uses distribution to broadcast control messages to all concurrent subgoals.
 
 \section{Cooperative Stream Production}
 
@@ -970,7 +970,7 @@ The trace shows the observer detecting each handover. When bob hands off to alic
 
 \item[$\star\star$] The predicates in this chapter process lists element-by-element using tail recursion with an accumulator. Explain why these are \emph{iterative} rather than \emph{recursive}. What would you see in a trace---concurrent processes or a single process stepping through the list?
 
-\item[$\star\star\star$] Generalize \verb|map_inc| to \verb|map(Xs?, F, Ys)| that applies an arbitrary transformation \verb|F| to each element. What language features would you need? (This is explored in Chapter~\ref{ch:metainterpreters}.)
+\item[$\star\star\star$] Generalize \verb|map_inc| to \verb|map(Xs?, F, Ys)| that applies an arbitrary transformation \verb|F| to each element. What language features would you need? (This is explored in Chapter~\ref{ch:plain-meta}.)
 
 \item Write a transducer \verb|filter(Pred, In, Out)| that outputs only elements satisfying predicate \verb|Pred|.
 

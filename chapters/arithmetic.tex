@@ -192,6 +192,147 @@ F = [1,2,3,4,5,6]
 
 The nested structure \verb|[[1,2],[3,[4,5]],6]| is recursively flattened. The sublists \verb|[1,2]|, \verb|[3,[4,5]]|, and the atom \verb|6| are processed in order, with \verb|[3,[4,5]]| further flattened to extract \verb|3|, \verb|4|, and \verb|5|.
 
+\section{Recursive Structures: Binary Trees}
+\label{sec:recursive-structures}
+
+Binary trees are a fundamental recursive data structure. In \GLP, we represent them as:
+\begin{itemize}
+\item \verb|empty| --- the empty tree
+\item \verb|node(Value, Left, Right)| --- a node with value and two subtrees
+\end{itemize}
+
+\subsection{Tree Traversal}
+
+\paragraph{In-Order Traversal.} Visiting left subtree, node, then right subtree:
+
+\begin{verbatim}
+in_order(empty, []).
+in_order(node(V, L, R), Vs?) :-
+    in_order(L?, Ls),
+    in_order(R?, Rs),
+    append(Ls?, [V?|Rs?], Vs).
+\end{verbatim}
+
+This produces a sorted list for binary search trees.
+
+\paragraph{Difference List Traversal.} More efficient using difference lists:
+
+\begin{verbatim}
+in_order_dl(Tree, Vs?) :- in_order_dl(Tree?, Vs, []).
+
+in_order_dl(empty, Vs?, Vs).
+in_order_dl(node(V, L, R), Front?, Back) :-
+    in_order_dl(L?, Front, [V?|Mid?]),
+    in_order_dl(R?, Mid, Back?).
+\end{verbatim}
+
+The accumulator pattern threads through both subtrees, achieving $O(n)$ time without append.
+
+\paragraph{Pre-Order and Post-Order.} Varying the visit order:
+
+\begin{verbatim}
+%% Pre-order: node, left, right
+pre_order(empty, []).
+pre_order(node(V, L, R), [V?|Vs?]) :-
+    pre_order(L?, Ls),
+    pre_order(R?, Rs),
+    append(Ls?, Rs?, Vs).
+
+%% Post-order: left, right, node
+post_order(empty, []).
+post_order(node(V, L, R), Vs?) :-
+    post_order(L?, Ls),
+    post_order(R?, Rs),
+    append(Ls?, Rs?, LRs?),
+    append(LRs?, [V?], Vs).
+\end{verbatim}
+
+\subsection{Tree Computations}
+
+\paragraph{Tree Sum.} Summing all values in a numeric tree:
+
+\begin{verbatim}
+tree_sum(empty, 0).
+tree_sum(node(V, L, R), S?) :-
+    tree_sum(L?, SL),
+    tree_sum(R?, SR),
+    S := V? + SL? + SR?.
+\end{verbatim}
+
+The two recursive calls spawn concurrently. For a balanced tree of $n$ nodes, this creates $O(n)$ processes with $O(\log n)$ sequential depth.
+
+\paragraph{Tree Height.} Computing the depth:
+
+\begin{verbatim}
+tree_height(empty, 0).
+tree_height(node(_, L, R), H?) :-
+    tree_height(L?, HL),
+    tree_height(R?, HR),
+    H := 1 + max(HL?, HR?).
+\end{verbatim}
+
+\paragraph{Tree Size.} Counting nodes:
+
+\begin{verbatim}
+tree_size(empty, 0).
+tree_size(node(_, L, R), N?) :-
+    tree_size(L?, NL),
+    tree_size(R?, NR),
+    N := 1 + NL? + NR?.
+\end{verbatim}
+
+\subsection{Building Trees}
+
+\paragraph{List to Balanced Tree.} Converting a sorted list to a balanced binary search tree:
+
+\begin{verbatim}
+list_to_bst([], empty).
+list_to_bst(Xs, node(Mid?, L?, R?)) :-
+    Xs =\= [] |
+    length(Xs?, Len),
+    Half := Len? // 2,
+    split_at(Xs?, Half?, Left, Mid, Right),
+    list_to_bst(Left?, L),
+    list_to_bst(Right?, R).
+
+split_at([X|Xs], 0, [], X?, Xs?).
+split_at([X|Xs], N, [X?|Left?], Mid?, Right) :-
+    N? > 0 |
+    N1 := N? - 1,
+    split_at(Xs?, N1?, Left, Mid, Right).
+\end{verbatim}
+
+The split extracts the middle element as the root, then recursively builds subtrees from the left and right halves.
+
+\paragraph{Concurrent Tree Construction.} The two \verb|list_to_bst| calls in the recursive case spawn concurrently, building left and right subtrees in parallel.
+
+\subsection{Tree Search and Modification}
+
+\paragraph{Binary Search.} Finding a value in a BST:
+
+\begin{verbatim}
+bst_member(V, node(V, _, _)).
+bst_member(V, node(N, L, _)) :- V? < N? | bst_member(V?, L?).
+bst_member(V, node(N, _, R)) :- V? > N? | bst_member(V?, R?).
+\end{verbatim}
+
+The guards direct the search left or right based on comparison.
+
+\paragraph{BST Insert.} Adding a value:
+
+\begin{verbatim}
+bst_insert(V, empty, node(V?, empty, empty)).
+bst_insert(V, node(N, L, R), node(N?, L1?, R?)) :-
+    V? < N? |
+    bst_insert(V?, L?, L1).
+bst_insert(V, node(N, L, R), node(N?, L?, R1?)) :-
+    V? > N? |
+    bst_insert(V?, R?, R1).
+bst_insert(V, node(V, L, R), node(V?, L?, R?)).
+\end{verbatim}
+
+Duplicate values are handled by the last clause, which preserves the existing node.
+
 \section{Exercises}
 \label{sec:arithmetic-exercises}
 
