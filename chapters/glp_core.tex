@@ -136,9 +136,15 @@ $V?$ & $X?$ & succeeds: $\{V \mapsto X?\}$ \\
 \end{tabular}
 \end{center}
 
-For compound terms, unification proceeds recursively on corresponding arguments.
-The overall result is: succeed if all arguments succeed, suspend if any argument
-suspends (and none fail), fail if any argument fails.
+For compound terms, writer unification proceeds in two phases:
+
+\begin{enumerate}
+\item \textbf{Collection phase:} Process arguments left-to-right, accumulating tentative writer bindings $\hat{\sigma}_w$ and a preliminary suspension set $S$ (readers matched against non-variable terms whose paired writers are not yet in $\hat{\sigma}_w$). If a structural mismatch occurs (e.g., distinct constants, incompatible functors), fail immediately.
+
+\item \textbf{Resolution phase:} Apply $\hat{\sigma}_w$ to the preliminary suspension set: $S' = \{X? \in S : X \notin \text{dom}(\hat{\sigma}_w)\}$. If $S' = \emptyset$, succeed with $\hat{\sigma}_w$. If $S' \neq \emptyset$, suspend on $S'$.
+\end{enumerate}
+
+The resolution phase is essential: a reader $X?$ encountered before its paired writer $X$ is bound should not cause suspension if a later argument position binds $X$. The suspension decision is deferred until all argument positions have been processed.
 
 \begin{remark}[Reading the Table]
 Each row shows what happens when a single argument position is unified. The head
@@ -155,6 +161,8 @@ Key observations:
       because the fresh variable $V$ can be assigned. The distinction matters
       for the clause body, where $V?$ will be read.
 \end{itemize}
+
+Note that the table shows outcomes for individual argument positions. For goals with multiple arguments, the two-phase algorithm (collection then resolution) determines the overall outcome. A reader that initially appears to require suspension may be resolved by a writer binding from a later argument position.
 \end{remark}
 
 \subsubsection{Worked Examples}
@@ -171,6 +179,17 @@ Goal $g = p(X?, a)$, Head $h = p(b, Y)$.
 First argument: $X?$ (goal reader) against $b$ (constant). A regular mgu would
 require $X? \mapsto b$, but readers cannot be assigned. Suspension set: $\{X?\}$.
 Suspends on $\{X?\}$, waiting for the paired writer $X$ to be assigned.
+
+\mypara{Example 2b: Resolution of Preliminary Suspension}
+Goal $g = p(X?, X)$, Head $h = p(a, a)$ (constant $a$ in both positions).
+
+Collection phase: First argument $X?$ against $a$---reader against constant, add $X?$ to preliminary suspension set $S = \{X?\}$. Second argument $X$ against $a$---writer against constant, add $X \mapsto a$ to $\hat{\sigma}_w$.
+
+Resolution phase: Apply $\hat{\sigma}_w = \{X \mapsto a\}$ to $S = \{X?\}$. Since $X \in \text{dom}(\hat{\sigma}_w)$, remove $X?$ from set. Result: $S' = \emptyset$.
+
+Succeeds with $\{X \mapsto a\}$. The induced reader assignment gives $X? = a$.
+
+This example demonstrates why the two-phase approach is necessary. A naive left-to-right algorithm that suspends on the first reader would incorrectly suspend, missing the binding information from the second argument.
 
 \mypara{Example 3: Failure}
 Goal $g = p(a, b)$, Head $h = p(a, c)$.
