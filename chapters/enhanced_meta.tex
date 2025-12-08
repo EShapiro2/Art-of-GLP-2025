@@ -79,7 +79,7 @@ suspended_run(A, [abort|_]).                        % abort
 \paragraph{Suspension Mechanism.} When \verb|run| pattern-matches \verb|[suspend|Cs]|, it transitions to \verb|suspended_run|. This process waits for either:
 \begin{itemize}
 \item \verb|[resume|Cs']| --- continue running with new control stream \verb|Cs'|
-\item \verb|[abort|_]| --- terminate without resuming
+\item \texttt{[abort|\_]} --- terminate without resuming
 \end{itemize}
 
 \paragraph{Usage Example.}
