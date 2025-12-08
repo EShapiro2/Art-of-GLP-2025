@@ -126,11 +126,11 @@ Lists are the primary data structure for stream communication. These cases are e
 \begin{tabular}{lllll}
 \textbf{Goal} & \textbf{Head} & \textbf{Outcome} & \textbf{Notes} & \textbf{First Use} \\
 \hline
-$[X|Xs]$ & $[H|Hs]$ & succeeds & Both writers, recursive & §\ref{??} \\
-$[X|Xs]$ & $[H|Hs?]$ & succeeds & Goal tail writer, head tail reader & §\ref{??} \\
-$[X?|Xs?]$ & $[H|Hs]$ & suspends on $\{X?\}$ & Consumer waiting for element & §\ref{??} \\
-$[X|Xs?]$ & $[H|Hs]$ & succeeds & Element ready, tail waiting & §\ref{??} \\
-$[X?|Xs]$ & $[H|Hs]$ & suspends on $\{X?\}$ & Element not ready & §\ref{??} \\
+$[X|Xs]$ & $[H|Hs]$ & succeeds & Both writers, recursive & §\ref{sec:streams-reverse} \\
+$[X|Xs]$ & $[H|Hs?]$ & succeeds & Goal tail writer, head tail reader & §\ref{sec:streams-merge} \\
+$[X?|Xs?]$ & $[H|Hs]$ & suspends on $\{X?\}$ & Consumer waiting for element & §\ref{sec:streams-producer-consumer} \\
+$[X|Xs?]$ & $[H|Hs]$ & succeeds & Element ready, tail waiting & §\ref{sec:streams-producer-consumer} \\
+$[X?|Xs]$ & $[H|Hs]$ & suspends on $\{X?\}$ & Element not ready & §\ref{sec:streams-producer-consumer} \\
 \end{tabular}
 \end{center}
 
@@ -142,10 +142,10 @@ This is the key mechanism for clause selection in concurrent observers:
 \begin{tabular}{lllll}
 \textbf{Goal} & \textbf{Head} & \textbf{Outcome} & \textbf{Why} & \textbf{First Use} \\
 \hline
-$[X|Xs]$ & $[H|Hs]$ & fails (WxW on tail) & $Xs$ vs $Hs$ both writers & §\ref{??} \\
-$[X|Xs]$ & $[H|Hs?]$ & succeeds & $Xs$ assigned $Hs?$ & §\ref{??} \\
-$[X|Xs?]$ & $[H|Hs]$ & succeeds & $Hs$ assigned $Xs?$ & §\ref{??} \\
-$[X|Xs?]$ & $[H|Hs?]$ & succeeds & $Hs$ assigned $Xs?$ & §\ref{??} \\
+$[X|Xs]$ & $[H|Hs]$ & fails (WxW on tail) & $Xs$ vs $Hs$ both writers & §\ref{sec:streams-wxw-selection} \\
+$[X|Xs]$ & $[H|Hs?]$ & succeeds & $Xs$ assigned $Hs?$ & §\ref{sec:streams-wxw-selection} \\
+$[X|Xs?]$ & $[H|Hs]$ & succeeds & $Hs$ assigned $Xs?$ & §\ref{sec:streams-wxw-selection} \\
+$[X|Xs?]$ & $[H|Hs?]$ & succeeds & $Hs$ assigned $Xs?$ & §\ref{sec:streams-wxw-selection} \\
 \end{tabular}
 \end{center}
 
@@ -157,11 +157,11 @@ Programs use WxW failure on tails to discriminate which stream is producing. A c
 \begin{tabular}{llll}
 \textbf{Goal} & \textbf{Head} & \textbf{Outcome} & \textbf{First Use} \\
 \hline
-$[]$ & $[]$ & succeeds & §\ref{??} \\
-$[]$ & $[H|Hs]$ & fails & §\ref{??} \\
-$[X|Xs]$ & $[]$ & fails & §\ref{??} \\
-$Xs$ (writer) & $[]$ & succeeds, $\{Xs \leftarrow []\}$ & §\ref{??} \\
-$Xs?$ (reader) & $[]$ & suspends on $\{Xs?\}$ & §\ref{??} \\
+$[]$ & $[]$ & succeeds & §\ref{sec:streams-reverse} \\
+$[]$ & $[H|Hs]$ & fails & §\ref{sec:streams-reverse} \\
+$[X|Xs]$ & $[]$ & fails & §\ref{sec:streams-reverse} \\
+$Xs$ (writer) & $[]$ & succeeds, $\{Xs \leftarrow []\}$ & §\ref{sec:streams-producer-consumer} \\
+$Xs?$ (reader) & $[]$ & suspends on $\{Xs?\}$ & §\ref{sec:streams-producer-consumer} \\
 \end{tabular}
 \end{center}
 
@@ -171,10 +171,10 @@ $Xs?$ (reader) & $[]$ & suspends on $\{Xs?\}$ & §\ref{??} \\
 \begin{tabular}{lllll}
 \textbf{Goal} & \textbf{Head} & \textbf{Outcome} & \textbf{Assignment} & \textbf{First Use} \\
 \hline
-$Xs$ & $[H|Hs]$ & succeeds & $\{Xs \leftarrow [H|Hs]\}$ & §\ref{??} \\
-$Xs?$ & $[H|Hs]$ & suspends & $\{Xs?\}$ & §\ref{??} \\
-$[X|Xs]$ & $Ys$ & succeeds & $\{Ys \leftarrow [X|Xs]\}$ & §\ref{??} \\
-$[X|Xs]$ & $Ys?$ & succeeds & $\{Ys \leftarrow [X|Xs]\}$ & §\ref{??} \\
+$Xs$ & $[H|Hs]$ & succeeds & $\{Xs \leftarrow [H|Hs]\}$ & §\ref{sec:streams-producer-consumer} \\
+$Xs?$ & $[H|Hs]$ & suspends & $\{Xs?\}$ & §\ref{sec:streams-producer-consumer} \\
+$[X|Xs]$ & $Ys$ & succeeds & $\{Ys \leftarrow [X|Xs]\}$ & §\ref{sec:streams-merge} \\
+$[X|Xs]$ & $Ys?$ & succeeds & $\{Ys \leftarrow [X|Xs]\}$ & §\ref{sec:streams-merge} \\
 \end{tabular}
 \end{center}
 
@@ -357,11 +357,13 @@ Upon reactivation, clause matching restarts from the first clause.
 \emph{To be completed: alphabetical index of cases by program construct.}
 
 \begin{description}
-\item[append] §\ref{??}: list threading, accumulator
+\item[append] §\ref{sec:streams-reverse}: list threading, accumulator
 \item[bounded buffer] §\ref{??}: suspension for flow control
 \item[flatten] §\ref{??}: difference list threading
-\item[merge] §\ref{??}: stream interleaving, tail mode selection
-\item[producer-consumer] §\ref{??}: reader suspension, writer assignment
+\item[merge] §\ref{sec:streams-merge}: stream interleaving, tail mode selection
+\item[observer] §\ref{sec:streams-wxw-selection}: writer/reader tail discrimination
+\item[producer-consumer] §\ref{sec:streams-producer-consumer}: reader suspension, writer assignment
 \item[quicksort] §\ref{??}: partition by comparison
+\item[reverse] §\ref{sec:streams-reverse}: accumulator, empty list matching
 \item[split] §\ref{??}: alternating element distribution
 \end{description}
