@@ -229,7 +229,7 @@ Guards use the same writer unification but with different operational intent: te
 $X = c$ & succeeds, binds $X$ & Writer in guard & §\ref{??} \\
 $X? = c$ & suspends & Reader needs value first & §\ref{??} \\
 $X =?= Y$ & succeeds if equal & Equality test, no binding & §\ref{??} \\
-$X \neq Y$ & succeeds if different & Disequality test & §\ref{??} \\
+$X =\backslash= Y$ & succeeds if different & Disequality test & §\ref{sec:recursive-structures} \\
 \end{tabular}
 \end{center}
 
@@ -241,10 +241,26 @@ $X \neq Y$ & succeeds if different & Disequality test & §\ref{??} \\
 \hline
 \texttt{ground(X)} & succeeds if $X$ ground & suspends if $X?$ unbound & §\ref{sec:constants-gates} \\
 \texttt{integer(X)} / \texttt{number(X)} & succeeds if numeric & suspends if $X?$ unbound & §\ref{sec:quicksort} \\
+\texttt{is\_list(X)} & succeeds if proper list & suspends if $X?$ unbound & §\ref{sec:flatten} \\
 \texttt{atomic(X)} & succeeds if atomic & suspends if $X?$ unbound & §\ref{??} \\
 \texttt{compound(X)} & succeeds if compound & suspends if $X?$ unbound & §\ref{??} \\
 \end{tabular}
 \end{center}
+
+\subsection{Arithmetic Comparison Guards}
+
+\begin{center}
+\begin{tabular}{llll}
+\textbf{Guard} & \textbf{Behavior} & \textbf{On Reader} & \textbf{First Use} \\
+\hline
+\texttt{X >= Y} & succeeds if $X \geq Y$ & suspends if either unbound & §\ref{sec:integer-arithmetic} \\
+\texttt{X > Y} & succeeds if $X > Y$ & suspends if either unbound & §\ref{sec:integer-arithmetic} \\
+\texttt{X < Y} & succeeds if $X < Y$ & suspends if either unbound & §\ref{sec:integer-arithmetic} \\
+\texttt{X =< Y} & succeeds if $X \leq Y$ & suspends if either unbound & §\ref{sec:integer-arithmetic} \\
+\end{tabular}
+\end{center}
+
+Arithmetic comparison guards compare numeric values. When applied to readers, they suspend until the readers are bound to ground numeric values.
 
 \subsection{Otherwise Guard}
 
@@ -359,7 +375,7 @@ Upon reactivation, clause matching restarts from the first clause.
 \begin{description}
 \item[append] §\ref{sec:streams-reverse}: list threading, accumulator
 \item[bounded buffer] §\ref{sec:buffer-difference-list}: difference lists, suspension for flow control
-\item[flatten] §\ref{??}: difference list threading
+\item[flatten] §\ref{sec:flatten}: difference list threading, type-testing guards
 \item[merge] §\ref{sec:streams-merge}: stream interleaving, tail mode selection
 \item[observer] §\ref{sec:streams-wxw-selection}: writer/reader tail discrimination
 \item[producer-consumer] §\ref{sec:streams-producer-consumer}: reader suspension, writer assignment
