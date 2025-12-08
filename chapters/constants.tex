@@ -31,6 +31,8 @@ positive(1) :- true
 -> succeeds
 \end{verbatim}
 
+These traces illustrate the two constant-vs-constant cases from writer unification (Appendix~\ref{appendix:atomic-unification}). When the goal constant matches the head constant, unification succeeds with the empty assignment. When they differ, no unifier exists and the clause fails. The runtime tries clauses in order; if none succeed, the goal fails.
+
 A unary predicate with one writer parameter generates a value:
 
 \begin{verbatim}
@@ -44,6 +46,8 @@ default_value(X) :- true
 X = 42
 -> succeeds
 \end{verbatim}
+
+Here the goal argument \verb|X| is a writer and the head argument is the constant \verb|42|. Writer unification succeeds with assignment $\{X \leftarrow 42\}$ (Appendix~\ref{appendix:atomic-unification}, Goal Writer vs.\ Term). The writer receives the constant value directly.
 
 \section{Parameter Passing Patterns}
 
@@ -224,7 +228,11 @@ and(1,1,X1) :- true
 not(1,X2) :- true
 X = 0
 -> succeeds
+\end{verbatim}
 
+The trace shows how values flow through the clause. In the head, \verb|A| and \verb|B| are writers that receive the goal constants \verb|1| and \verb|1|. The reader \verb|Z?| pairs with the goal's writer \verb|X|, establishing a channel. In the body, \verb|A?| and \verb|B?| read the bound values, passing them to \verb|and|. The intermediate variable \verb|W| connects \verb|and|'s output to \verb|not|'s input. Finally, \verb|Z| writes the result, which flows through the channel to bind \verb|X|.
+
+\begin{verbatim}
 GLP> nand(0,1,X).
 nand(0,1,X) :- and(0,1,X1), not(X1?,X2)
 and(0,1,X1) :- true
@@ -240,6 +248,8 @@ half_adder(A,B,Sum?,Carry?) :-
     ground(A?), ground(B?) |
     xor(A?,B?,Sum), and(A?,B?,Carry).
 \end{verbatim}
+
+The \verb|ground| guard ensures both inputs are bound before committing. Without it, the SRSW discipline would be violated: \verb|A?| appears in both \verb|xor| and \verb|and|, meaning two readers would share the same writer. The guard suspends until the values arrive, then commits, at which point the bound values can safely be read multiple times.
 
 \begin{verbatim}
 GLP> half_adder(1,1,S,C).
@@ -288,6 +298,8 @@ S = 1
 C = 1
 -> succeeds
 \end{verbatim}
+
+The trace reveals the suspension mechanism. When \verb|half_adder(X1?,1,X3,X4)| is spawned, \verb|X1?| is a reader whose paired writer is not yet bound. The goal suspends, waiting for data. Meanwhile, the first half-adder computes and binds \verb|X1| to \verb|0|. This binding reactivates the suspended goal, which now proceeds with concrete values. Similarly, \verb|or| suspends twice---first waiting for both carries, then waiting for the second carry---resuming each time a value arrives.
 
 An n-bit ripple-carry adder chains full-adders, with each stage's carry-out feeding the next stage's carry-in:
 
