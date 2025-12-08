@@ -172,6 +172,7 @@ Out = [a, 1, b, 2, c, 3]
 \end{verbatim}
 
 \subsection{Dynamic Merge}
+\label{sec:streams-dynamic-merge}
 
 In many applications, the set of producers changes dynamically. A process may fork, creating a new stream that should join the merge. The \emph{dynamic merge} allows adding new streams via special \verb|merge(NewStream)| messages:
 
@@ -188,6 +189,8 @@ dmerge([], [], []).
 
 dmerger(Ws, Xs, Out?) :- dmerge(Ws?, Xs?, Out).
 \end{verbatim}
+
+The \verb|otherwise| guard (Appendix~\ref{appendix:guard-unification}) succeeds only when all prior clauses have either failed or suspended. Here it ensures that regular messages are forwarded only when the head element is not a \verb|merge| request. Without \verb|otherwise|, a regular message \verb|[X|Xs]| would match the third clause even when the first clause (checking for \verb|merge(Ws)|) should apply. The \verb|otherwise| guard defers commitment until the runtime confirms no higher-priority clause can succeed.
 
 When a \verb|merge(Ws)| message arrives, \verb|dmerger| creates a new merge process that combines the new stream \verb|Ws| with the continuation of the original stream. The \verb|otherwise| guard ensures that regular messages are only forwarded when the head is not a \verb|merge| request.
 
