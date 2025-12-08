@@ -56,7 +56,7 @@ A constant against a head variable (writer or reader) succeeds. Head readers $V?
 \textbf{Goal} & \textbf{Head} & \textbf{Outcome} & \textbf{Assignment} & \textbf{First Use} \\
 \hline
 $X$ & $c$ & succeeds & $\{X \leftarrow c\}$ & §\ref{sec:constants-unary} \\
-$X$ & $V$ & fails (WxW) & --- & §\ref{sec:streams-merge} \\
+$X$ & $V$ & fails (WxW) & --- & §\ref{sec:streams-wxw-selection} \\
 $X$ & $V?$ & succeeds & $\{X \leftarrow V?\}$ & §\ref{sec:constants-gates} \\
 \end{tabular}
 \end{center}
@@ -252,7 +252,7 @@ $X \neq Y$ & succeeds if different & Disequality test & §\ref{??} \\
 \begin{tabular}{lll}
 \textbf{Guard} & \textbf{Behavior} & \textbf{First Use} \\
 \hline
-\texttt{otherwise} & succeeds if all prior clauses fail or suspend & §\ref{??} \\
+\texttt{otherwise} & succeeds if all prior clauses fail or suspend & §\ref{sec:streams-dynamic-merge} \\
 \end{tabular}
 \end{center}
 
@@ -269,10 +269,10 @@ These cases show how writer unification enables clause selection based on argume
 \begin{tabular}{lllll}
 \textbf{Goal} & \textbf{Clause 1 Head} & \textbf{Clause 2 Head} & \textbf{Selected} & \textbf{First Use} \\
 \hline
-\texttt{p([a|Xs],...)} & \texttt{p([H|T],...)} & \texttt{p([],...)} & Clause 1 & §\ref{??} \\
-\texttt{p([],...)} & \texttt{p([H|T],...)} & \texttt{p([],...)} & Clause 2 & §\ref{??} \\
-\texttt{p(X,...)} & \texttt{p([H|T],...)} & \texttt{p([],...)} & Suspends & §\ref{??} \\
-\texttt{p(X?,...)} & \texttt{p([H|T],...)} & \texttt{p([],...)} & Suspends & §\ref{??} \\
+\texttt{p([a|Xs],...)} & \texttt{p([H|T],...)} & \texttt{p([],...)} & Clause 1 & §\ref{sec:streams-reverse} \\
+\texttt{p([],...)} & \texttt{p([H|T],...)} & \texttt{p([],...)} & Clause 2 & §\ref{sec:streams-reverse} \\
+\texttt{p(X,...)} & \texttt{p([H|T],...)} & \texttt{p([],...)} & Suspends & §\ref{sec:streams-producer-consumer} \\
+\texttt{p(X?,...)} & \texttt{p([H|T],...)} & \texttt{p([],...)} & Suspends & §\ref{sec:streams-producer-consumer} \\
 \end{tabular}
 \end{center}
 
@@ -284,10 +284,10 @@ For observing two streams that cooperatively produce to a shared output:
 \begin{tabular}{lllll}
 \textbf{Goal Tails} & \textbf{C1: writer/reader} & \textbf{C2: reader/writer} & \textbf{Selected} & \textbf{First Use} \\
 \hline
-writer, reader & fails C1, succeeds C2 & C2 & §\ref{??} \\
-reader, writer & succeeds C1 & C1 & §\ref{??} \\
-writer, writer & fails C1, fails C2 & deadlock & §\ref{??} \\
-reader, reader & suspends both & suspends & §\ref{??} \\
+writer, reader & fails C1, succeeds C2 & C2 & §\ref{sec:streams-wxw-selection} \\
+reader, writer & succeeds C1 & C1 & §\ref{sec:streams-wxw-selection} \\
+writer, writer & fails C1, fails C2 & deadlock & §\ref{sec:streams-wxw-selection} \\
+reader, reader & suspends both & suspends & §\ref{sec:streams-wxw-selection} \\
 \end{tabular}
 \end{center}
 
@@ -299,11 +299,11 @@ This mechanism enables fair merge without explicit scheduling.
 \begin{tabular}{llll}
 \textbf{Goal} & \textbf{Guard} & \textbf{Outcome} & \textbf{First Use} \\
 \hline
-\texttt{p(a,...)} & \texttt{ground(X)} & succeeds & §\ref{??} \\
-\texttt{p(X,...)} & \texttt{ground(X)} & fails (X unbound) & §\ref{??} \\
-\texttt{p(X?,...)} & \texttt{ground(X?)} & suspends & §\ref{??} \\
-\texttt{p(f(a,b),...)} & \texttt{ground(X)} & succeeds & §\ref{??} \\
-\texttt{p(f(a,Y),...)} & \texttt{ground(X)} & fails (Y unbound) & §\ref{??} \\
+\texttt{p(a,...)} & \texttt{ground(X)} & succeeds & §\ref{sec:constants-gates} \\
+\texttt{p(X,...)} & \texttt{ground(X)} & fails (X unbound) & §\ref{sec:constants-gates} \\
+\texttt{p(X?,...)} & \texttt{ground(X?)} & suspends & §\ref{sec:constants-gates} \\
+\texttt{p(f(a,b),...)} & \texttt{ground(X)} & succeeds & §\ref{sec:constants-gates} \\
+\texttt{p(f(a,Y),...)} & \texttt{ground(X)} & fails (Y unbound) & §\ref{sec:constants-gates} \\
 \end{tabular}
 \end{center}
 
@@ -329,10 +329,10 @@ This two-phase approach ensures that a reader encountered before its paired writ
 \begin{tabular}{llll}
 \textbf{Goal} & \textbf{Head} & \textbf{Suspension Set} & \textbf{First Use} \\
 \hline
-$f(X?, a)$ & $f(b, Y)$ & $\{X?\}$ & §\ref{??} \\
-$f(X?, Y?)$ & $f(a, b)$ & $\{X?, Y?\}$ & §\ref{??} \\
-$f(X?, Y)$ & $f(a, b)$ & $\{X?\}$ & §\ref{??} \\
-$f(X, Y?)$ & $f(a, b)$ & $\{Y?\}$ & §\ref{??} \\
+$f(X?, a)$ & $f(b, Y)$ & $\{X?\}$ & §\ref{sec:constants-gates} \\
+$f(X?, Y?)$ & $f(a, b)$ & $\{X?, Y?\}$ & §\ref{sec:constants-gates} \\
+$f(X?, Y)$ & $f(a, b)$ & $\{X?\}$ & §\ref{sec:constants-gates} \\
+$f(X, Y?)$ & $f(a, b)$ & $\{Y?\}$ & §\ref{sec:constants-gates} \\
 \end{tabular}
 \end{center}
 
