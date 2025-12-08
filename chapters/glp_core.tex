@@ -312,34 +312,49 @@ The nondeterministic GLP transition system (Definition~\ref{definition:GLP-ts}) 
     \item \textbf{Unification order}: Compound term arguments are unified left-to-right, depth-first. Unification stops at the first suspension or failure encountered.
 \end{enumerate}
 
-The left-to-right unification order means: if argument $i$ causes suspension but argument $j > i$ would cause failure, the implementation suspends rather than fails. When the suspended reader is later instantiated and the goal retried, the failure at argument $j$ will then be detected. This is \emph{sound}---suspension is conservative, never incorrectly succeeding---but may delay failure detection.
+The left-to-right unification order processes arguments sequentially, but the suspension decision is deferred until all arguments have been examined. This ensures that a reader encountered early can be resolved by a writer binding discovered later. Structural failures (functor mismatch, arity mismatch, distinct constants) are detected immediately.
 
 \begin{definition}[Depth-First Writer Unification]\label{definition:df-unification}
-The \temph{depth-first writer unification} of terms $T_1$ and $T_2$, denoted $\mathit{dfunify}(T_1, T_2)$, is defined recursively:
+The \temph{depth-first writer unification} of terms $T_1$ and $T_2$, denoted $\mathit{dfunify}(T_1, T_2)$, proceeds in two phases:
+
+\textbf{Phase 1 (Collection):} Traverse the terms, accumulating a tentative writer assignment $\hat\sigma$ and a preliminary suspension set $S$:
 \begin{enumerate}
-    \item If $T_1$ and $T_2$ are identical: \emph{succeeds} with $\emptyset$.
+    \item If $T_1$ and $T_2$ are identical: return $(\hat\sigma, S)$ unchanged.
     \item If $T_1$ is a writer:
     \begin{itemize}
-        \item If $T_2$ is a writer: \emph{fails}.
-        \item Otherwise: \emph{succeeds} with $\{T_1 := T_2\}$.
+        \item If $T_2$ is a writer: \emph{fails} immediately.
+        \item Otherwise: add $T_1 := T_2$ to $\hat\sigma$.
     \end{itemize}
-    \item If $T_2$ is a writer: \emph{succeeds} with $\{T_2 := T_1\}$.
-    \item If $T_1$ is a reader: \emph{suspends} on $\{T_1\}$.
-    \item If $T_2$ is a reader: \emph{suspends} on $\{T_2\}$.
+    \item If $T_2$ is a writer: add $T_2 := T_1$ to $\hat\sigma$.
+    \item If $T_1$ is a reader: add $T_1$ to $S$.
+    \item If $T_2$ is a reader: add $T_2$ to $S$.
     \item If $T_1 = f(S_1, \ldots, S_n)$ and $T_2 = g(R_1, \ldots, R_m)$:
     \begin{itemize}
-        \item If $f \neq g$ or $n \neq m$: \emph{fails}.
-        \item Otherwise, for $i = 1, \ldots, n$ in order:
-        \begin{itemize}
-            \item Compute $\mathit{dfunify}(S_i\sigma_{i-1}, R_i\sigma_{i-1})$ where $\sigma_0 = \emptyset$.
-            \item If it fails: \emph{fails}.
-            \item If it suspends on $W$: \emph{suspends} on $W$.
-            \item If it succeeds with $\sigma'$: let $\sigma_i = \sigma_{i-1} \cup \sigma'$ and continue.
-        \end{itemize}
-        \item \emph{Succeeds} with $\sigma_n$.
+        \item If $f \neq g$ or $n \neq m$: \emph{fails} immediately.
+        \item Otherwise, for $i = 1, \ldots, n$ in order, recursively process $(S_i\hat\sigma, R_i\hat\sigma)$, updating $\hat\sigma$ and $S$. If any recursive call fails, \emph{fail}.
     \end{itemize}
 \end{enumerate}
+
+\textbf{Phase 2 (Resolution):} Compute the resolved suspension set:
+\[
+S' = \{X? \in S : X \notin \mathrm{dom}(\hat\sigma)\}
+\]
+\begin{itemize}
+    \item If $S' = \emptyset$: \emph{succeeds} with $\hat\sigma$.
+    \item If $S' \neq \emptyset$: \emph{suspends} on $S'$.
+\end{itemize}
 \end{definition}
+
+\mypara{Example: Resolution of Preliminary Suspension}
+Consider goal $p(X?, X)$ against head $p(a, a)$.
+
+Phase 1: First argument $X?$ against $a$—reader against constant, add $X?$ to $S$. Second argument $X$ against $a$—writer against constant, add $X := a$ to $\hat\sigma$. Result: $\hat\sigma = \{X := a\}$, $S = \{X?\}$.
+
+Phase 2: Compute $S' = \{X? \in S : X \notin \mathrm{dom}(\hat\sigma)\}$. Since $X \in \mathrm{dom}(\hat\sigma)$, we have $S' = \emptyset$.
+
+Result: \emph{succeeds} with $\{X := a\}$. The induced reader assignment gives $X? = a$.
+
+Without the two-phase approach, the algorithm would incorrectly suspend at the first argument, missing the binding from the second argument.
 
 \begin{definition}[irGLP Configuration]
 An \emph{irGLP configuration} over program $M$ is a triple $R = (Q, S, F)$ where:
