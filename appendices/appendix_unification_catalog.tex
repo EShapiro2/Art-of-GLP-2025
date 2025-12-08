@@ -92,9 +92,9 @@ Compound terms unify by matching functors and recursively unifying arguments.
 \begin{tabular}{llll}
 \textbf{Goal} & \textbf{Head} & \textbf{Outcome} & \textbf{First Use} \\
 \hline
-$f(...)$ & $f(...)$ & recursive on arguments & §\ref{??} \\
-$f(...)$ & $g(...)$ & fails & §\ref{??} \\
-$f/n$ & $f/m$ & fails (if $n \neq m$) & §\ref{??} \\
+$f(...)$ & $f(...)$ & recursive on arguments & §\ref{sec:buffer-difference-list} \\
+$f(...)$ & $g(...)$ & fails & §\ref{sec:buffer-difference-list} \\
+$f/n$ & $f/m$ & fails (if $n \neq m$) & §\ref{sec:buffer-difference-list} \\
 \end{tabular}
 \end{center}
 
@@ -106,10 +106,10 @@ Terms with different functors or arities cannot unify.
 \begin{tabular}{lllll}
 \textbf{Goal} & \textbf{Head} & \textbf{Outcome} & \textbf{Assignment} & \textbf{First Use} \\
 \hline
-$X$ & $f(...)$ & succeeds & $\{X \leftarrow f(...)\}$ & §\ref{??} \\
-$X?$ & $f(...)$ & suspends & $\{X?\}$ & §\ref{??} \\
-$f(...)$ & $V$ & succeeds & $\{V \leftarrow f(...)\}$ & §\ref{??} \\
-$f(...)$ & $V?$ & succeeds & $\{V \leftarrow f(...)\}$ & §\ref{??} \\
+$X$ & $f(...)$ & succeeds & $\{X \leftarrow f(...)\}$ & §\ref{sec:buffer-difference-list} \\
+$X?$ & $f(...)$ & suspends & $\{X?\}$ & §\ref{sec:buffer-difference-list} \\
+$f(...)$ & $V$ & succeeds & $\{V \leftarrow f(...)\}$ & §\ref{sec:buffer-difference-list} \\
+$f(...)$ & $V?$ & succeeds & $\{V \leftarrow f(...)\}$ & §\ref{sec:buffer-difference-list} \\
 \end{tabular}
 \end{center}
 
@@ -191,9 +191,9 @@ A difference list is represented as two arguments $(List, Hole)$ where $Hole$ is
 \begin{tabular}{lllll}
 \textbf{Goal DL} & \textbf{Head DL} & \textbf{Outcome} & \textbf{Threading} & \textbf{First Use} \\
 \hline
-$(L, H)$ & $(L', H')$ & succeeds & $L$ unified with $L'$, $H$ with $H'$ & §\ref{??} \\
-$(L?, H)$ & $(L', H')$ & suspends & Waiting for input list & §\ref{??} \\
-$(L, H?)$ & $(L', H')$ & succeeds & Hole provided by caller & §\ref{??} \\
+$(L, H)$ & $(L', H')$ & succeeds & $L$ unified with $L'$, $H$ with $H'$ & §\ref{sec:buffer-difference-list} \\
+$(L?, H)$ & $(L', H')$ & suspends & Waiting for input list & §\ref{sec:buffer-difference-list} \\
+$(L, H?)$ & $(L', H')$ & succeeds & Hole provided by caller & §\ref{sec:buffer-difference-list} \\
 \end{tabular}
 \end{center}
 
@@ -208,10 +208,10 @@ flatten(Tree, Xs, Xs0?) :- ... body uses Xs?, Xs0 ...
 \begin{tabular}{llll}
 \textbf{Position} & \textbf{Mode} & \textbf{Role} & \textbf{First Use} \\
 \hline
-$Xs$ (head writer) & output & Receives constructed list & §\ref{??} \\
-$Xs?$ (body reader) & input to body & Body reads accumulator & §\ref{??} \\
-$Xs0?$ (head reader) & input & Hole from caller & §\ref{??} \\
-$Xs0$ (body writer) & output from body & Body extends list & §\ref{??} \\
+$Xs$ (head writer) & output & Receives constructed list & §\ref{sec:buffer-difference-list} \\
+$Xs?$ (body reader) & input to body & Body reads accumulator & §\ref{sec:buffer-difference-list} \\
+$Xs0?$ (head reader) & input & Hole from caller & §\ref{sec:buffer-difference-list} \\
+$Xs0$ (body writer) & output from body & Body extends list & §\ref{sec:buffer-difference-list} \\
 \end{tabular}
 \end{center}
 
@@ -358,7 +358,7 @@ Upon reactivation, clause matching restarts from the first clause.
 
 \begin{description}
 \item[append] §\ref{sec:streams-reverse}: list threading, accumulator
-\item[bounded buffer] §\ref{??}: suspension for flow control
+\item[bounded buffer] §\ref{sec:buffer-difference-list}: difference lists, suspension for flow control
 \item[flatten] §\ref{??}: difference list threading
 \item[merge] §\ref{sec:streams-merge}: stream interleaving, tail mode selection
 \item[observer] §\ref{sec:streams-wxw-selection}: writer/reader tail discrimination
