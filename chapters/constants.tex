@@ -152,14 +152,26 @@ X = 0
 -> succeeds
 \end{verbatim}
 
-However, with both unbound:
+However, with both as unbound readers:
+
+\begin{verbatim}
+GLP> not(X?, Y?).
+-> suspended (waiting for X)
+\end{verbatim}
+
+The goal suspends because a reader against a constant requires the paired writer to provide a value first (Appendix~\ref{appendix:atomic-unification}, Goal Reader vs.\ Term). This demonstrates \GLP's data-driven execution: computation proceeds when sufficient input is available.
+
+Contrast with unbound writers:
 
 \begin{verbatim}
 GLP> not(X, Y).
--> suspended (waiting for binding)
+not(1, 0) :- true
+X = 1
+Y = 0
+-> succeeds
 \end{verbatim}
 
-The goal suspends because no clause head uniquely matches. This demonstrates \GLP's data-driven execution: computation proceeds when sufficient input is available.
+Writers can receive values directly, so the first clause matches immediately.
 
 \section{Logic Gates}
 
