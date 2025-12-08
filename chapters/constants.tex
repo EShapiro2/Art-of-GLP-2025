@@ -7,6 +7,7 @@
 The simplest \GLP programs transform constant values. These programs illustrate fundamental patterns of reader/writer variable usage and clause selection.
 
 \section{Unary Predicates}
+\label{sec:constants-unary}
 
 A unary predicate with one reader parameter defines a property:
 
@@ -134,6 +135,7 @@ X = green
 \end{verbatim}
 
 \section{Binary Predicates}
+\label{sec:constants-binary}
 
 Some predicates work in multiple modes. Consider the \verb|not| gate:
 
@@ -178,6 +180,7 @@ Y = 0
 Writers can receive values directly, so the first clause matches immediately.
 
 \section{Logic Gates}
+\label{sec:constants-gates}
 
 Digital circuits provide a natural example of dataflow computation. We define basic gates as facts:
 

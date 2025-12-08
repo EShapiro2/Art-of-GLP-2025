@@ -29,8 +29,8 @@ These cases cover unification at a single argument position with atomic terms (c
 \begin{tabular}{llll}
 \textbf{Goal} & \textbf{Head} & \textbf{Outcome} & \textbf{First Use} \\
 \hline
-$c$ & $c$ & succeeds with $\emptyset$ & §\ref{??} \\
-$c$ & $d$ & fails & §\ref{??} \\
+$c$ & $c$ & succeeds with $\emptyset$ & §\ref{sec:constants-unary} \\
+$c$ & $d$ & fails & §\ref{sec:constants-unary} \\
 \end{tabular}
 \end{center}
 
@@ -42,8 +42,8 @@ Identical constants unify with the empty assignment. Distinct constants have no 
 \begin{tabular}{lllll}
 \textbf{Goal} & \textbf{Head} & \textbf{Outcome} & \textbf{Assignment} & \textbf{First Use} \\
 \hline
-$c$ & $V$ & succeeds & $\{V \leftarrow c\}$ & §\ref{??} \\
-$c$ & $V?$ & succeeds & $\{V \leftarrow c\}$ & §\ref{??} \\
+$c$ & $V$ & succeeds & $\{V \leftarrow c\}$ & §\ref{sec:constants-gates} \\
+$c$ & $V?$ & succeeds & $\{V \leftarrow c\}$ & §\ref{sec:constants-gates} \\
 \end{tabular}
 \end{center}
 
@@ -55,9 +55,9 @@ A constant against a head variable (writer or reader) succeeds. Head readers $V?
 \begin{tabular}{lllll}
 \textbf{Goal} & \textbf{Head} & \textbf{Outcome} & \textbf{Assignment} & \textbf{First Use} \\
 \hline
-$X$ & $c$ & succeeds & $\{X \leftarrow c\}$ & §\ref{??} \\
-$X$ & $V$ & fails (WxW) & --- & §\ref{??} \\
-$X$ & $V?$ & succeeds & $\{X \leftarrow V?\}$ & §\ref{??} \\
+$X$ & $c$ & succeeds & $\{X \leftarrow c\}$ & §\ref{sec:constants-unary} \\
+$X$ & $V$ & fails (WxW) & --- & §\ref{sec:streams-merge} \\
+$X$ & $V?$ & succeeds & $\{X \leftarrow V?\}$ & §\ref{sec:constants-gates} \\
 \end{tabular}
 \end{center}
 
@@ -71,9 +71,9 @@ The case $X$ vs $V?$ succeeds: the goal writer $X$ is assigned the head reader $
 \begin{tabular}{lllll}
 \textbf{Goal} & \textbf{Head} & \textbf{Outcome} & \textbf{Suspension Set} & \textbf{First Use} \\
 \hline
-$X?$ & $c$ & suspends & $\{X?\}$ & §\ref{??} \\
-$X?$ & $V$ & succeeds & $\{V \leftarrow X?\}$ & §\ref{??} \\
-$X?$ & $V?$ & succeeds & $\{V \leftarrow X?\}$ & §\ref{??} \\
+$X?$ & $c$ & suspends & $\{X?\}$ & §\ref{sec:constants-binary} \\
+$X?$ & $V$ & succeeds & $\{V \leftarrow X?\}$ & §\ref{sec:constants-gates} \\
+$X?$ & $V?$ & succeeds & $\{V \leftarrow X?\}$ & §\ref{sec:constants-gates} \\
 \end{tabular}
 \end{center}
 
@@ -239,7 +239,7 @@ $X \neq Y$ & succeeds if different & Disequality test & §\ref{??} \\
 \begin{tabular}{llll}
 \textbf{Guard} & \textbf{Behavior} & \textbf{On Reader} & \textbf{First Use} \\
 \hline
-\texttt{ground(X)} & succeeds if $X$ ground & suspends if $X?$ unbound & §\ref{??} \\
+\texttt{ground(X)} & succeeds if $X$ ground & suspends if $X?$ unbound & §\ref{sec:constants-gates} \\
 \texttt{integer(X)} & succeeds if integer & suspends if $X?$ unbound & §\ref{??} \\
 \texttt{atomic(X)} & succeeds if atomic & suspends if $X?$ unbound & §\ref{??} \\
 \texttt{compound(X)} & succeeds if compound & suspends if $X?$ unbound & §\ref{??} \\
@@ -344,8 +344,8 @@ A suspended goal reactivates when \emph{any} reader in its suspension set receiv
 \begin{tabular}{lll}
 \textbf{Suspended On} & \textbf{Reactivates When} & \textbf{First Use} \\
 \hline
-$\{X?\}$ & $X$ is assigned & §\ref{??} \\
-$\{X?, Y?\}$ & $X$ or $Y$ is assigned & §\ref{??} \\
+$\{X?\}$ & $X$ is assigned & §\ref{sec:constants-gates} \\
+$\{X?, Y?\}$ & $X$ or $Y$ is assigned & §\ref{sec:constants-gates} \\
 \end{tabular}
 \end{center}
 
