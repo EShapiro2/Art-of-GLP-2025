@@ -78,6 +78,7 @@ git pull origin main
 - **BE TERSE** - Brief, direct responses
 - **NO LONG EXPLANATIONS** - Get to the point
 - **NEVER BS, GUESS, OR SPECULATE** - If unsure, say so
+- **REVIEW CLAUDE WEB INSTRUCTIONS** - When receiving instructions from Claude Web, review them first and let Udi know if you have any comments, questions, or issues before executing
 
 ### Content Rules
 - **NEVER REMOVE CONTENT** without explicit user approval
