@@ -103,3 +103,17 @@ git pull origin main
 
 - **GLP-2025 Paper**: https://github.com/EShapiro2/GLP-2025
 - **FCP Reference**: https://github.com/EShapiro2/FCP (Flat Concurrent Prolog)
+- **GLP Runtime & Examples**: https://github.com/EShapiro2/GLP (includes AofGLP/)
+
+## GLP Repo Workflow
+
+Claude works on `claude/...` branches. To merge into main:
+
+```bash
+cd ~/GLP
+git checkout main
+git pull origin main
+git fetch origin claude/<branch-name>
+git merge -m "Merge claude/<branch-name> into main" origin/claude/<branch-name>
+git push origin main
+```
