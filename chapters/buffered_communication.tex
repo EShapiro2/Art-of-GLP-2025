@@ -24,6 +24,7 @@ offers no back-pressure---the producer can emit messages as fast as it runs, reg
 A bounded buffer limits how far ahead a producer can get. When the buffer is full, the producer suspends until the consumer makes room.
 
 \subsection{Difference-List Bounded Buffer}
+\label{sec:buffer-difference-list}
 
 We represent the buffer as a difference list \verb|Head--Tail|, where \verb|Head| is the read end and \verb|Tail| is the write end:
 
@@ -39,6 +40,8 @@ close([end_of_stream|_]).
 closed(end_of_stream).
 \end{verbatim}
 
+The \verb|--| operator is simply a binary functor with no special meaning---we use it to pair the read and write ends of the buffer. When the goal \verb|receive(I, Buf?, NBuf)| unifies with the head \verb|receive(Msg, [Msg|NBuf]--[_|NTail?], NBuf--NTail)|, the second argument demonstrates compound term unification (Appendix~\ref{appendix:compound-unification}): the goal's \verb|Buf?| must match the structure \verb|[...]--[...]|. If \verb|Buf?| is unbound (its paired writer not yet assigned), unification suspends. When \verb|Buf| receives a difference-list value, the goal reactivates and unification proceeds by matching the \verb|--| functor and recursively unifying its arguments.
+
 The key insight: \verb|receive| not only extracts a message but also extends the tail with a new slot \verb|[_|NTail?]|. This ``credits'' the producer to send one more message.
 
 \subsection{Opening a Buffer}
@@ -51,6 +54,8 @@ open(N, [_|Y]--Z) :- N > 0 | N1 := N? - 1, open(N1?, Y--Z).
 \end{verbatim}
 
 For \verb|open(3, Buf)|, we get a buffer with 3 empty slots: \verb|[_,_,_|T]--T|. The producer can \verb|send| up to 3 messages before suspending.
+
+The base case \verb|open(0, X--X)| creates an empty buffer where both ends share the same variable. This illustrates difference list threading (Appendix~\ref{appendix:dl-unification}): the ``list'' is \verb|X| and the ``hole'' is also \verb|X|, representing an empty sequence. The recursive clause builds the buffer by prepending slots; each slot is an anonymous variable \verb|_| that will later hold a message. The threading ensures that when the read end advances past a message, the write end can fill the newly-created slot.
 
 \subsection{Producer-Consumer Example}
 
@@ -85,6 +90,7 @@ square2(I, Buf, [I2|Ss?]) :-
 The buffer limits memory usage: at most \verb|Size| integers are buffered between producer and consumer.
 
 \subsection{Flow Control Semantics}
+\label{sec:buffer-flow-control}
 
 The bounded buffer achieves flow control through suspension:
 
