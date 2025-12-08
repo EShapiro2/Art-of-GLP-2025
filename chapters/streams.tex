@@ -14,6 +14,7 @@ This distinction has important consequences for consumer design:
 This design principle ensures that protocol violations are detected rather than silently ignored.
 
 \section{Producers and Consumers}
+\label{sec:streams-producer-consumer}
 
 The simplest stream pattern pairs a producer that generates elements with a consumer that processes them. Consider a producer that counts down from $N$:
 
@@ -29,6 +30,8 @@ The producer has two clauses:
 \end{itemize}
 
 Note the output parameter pattern: the stream head \verb|[N?|Xs?]| uses readers in the structure, paired with writers \verb|N| and \verb|Xs| that produce values.
+
+This clause illustrates list structure unification (Appendix~\ref{appendix:list-unification}). When the goal \verb|producer(H, 5)| matches the head \verb|producer([N?|Xs?], N)|, the goal writer \verb|H| unifies with the compound term \verb|[N?|Xs?]|. This succeeds with $\{H \leftarrow [N?|Xs?]\}$---the goal writer receives the entire list structure. The head variables \verb|N| and \verb|Xs| are fresh writers; their paired readers \verb|N?| and \verb|Xs?| appear in the structure assigned to \verb|H|, establishing the communication channel through which values will flow.
 
 A consumer that sums stream elements:
 
@@ -63,6 +66,7 @@ R = 15
 The trace shows interleaving: the producer emits an element, the consumer processes it, the producer emits another, and so on. Neither runs to completion before the other starts---they cooperate through the shared stream.
 
 \section{List Reversal}
+\label{sec:streams-reverse}
 
 Reversing a list illustrates the difference between naive recursion and efficient iteration with an accumulator.
 
@@ -79,6 +83,8 @@ reverse([X|Xs], Ys?) :-
 append([], Ys, Ys?).
 append([X|Xs], Ys, [X?|Zs?]) :- append(Xs?, Ys?, Zs).
 \end{verbatim}
+
+The base case \verb|reverse([], [])| illustrates empty list unification: \verb|[]| against \verb|[]| succeeds with the empty assignment (Appendix~\ref{appendix:list-unification}). The recursive clause shows cons cell matching: goal \verb|[a,b,c]| (which is \verb|[a|[b,c]]|) against head \verb|[X|Xs]| succeeds by unifying the head element and tail separately.
 
 This is correct but inefficient. Each recursive call to \verb|reverse| triggers an \verb|append| that walks the entire accumulated result. For a list of length $n$, the total work is $1 + 2 + \cdots + n = O(n^2)$.
 
@@ -135,6 +141,7 @@ The naive version spawns a new process for each recursive call, building a chain
 In general, when processing a list element-by-element with a single output, prefer the accumulator pattern. Reserve true recursion for divide-and-conquer algorithms like sorting, where parallelism provides benefit.
 
 \section{Stream Merging}
+\label{sec:streams-merge}
 
 Merging combines multiple input streams into a single output stream. This is essential for many-to-one communication: multiple producers sharing a single consumer.
 
@@ -845,6 +852,7 @@ Out = [1, 0, 1, 0, 2, 0, 2, 0]
 The trace shows interleaving: \verb|duplicator| produces elements that \verb|separator| immediately processes.
 
 \section{Stream Observers}
+\label{sec:streams-observers}
 
 An \emph{observer} monitors a stream without disrupting the communication between producer and consumer. This is useful for logging, debugging, or creating audit trails.
 
@@ -907,6 +915,7 @@ The two clauses handle opposite directions:
 \end{itemize}
 
 \subsection{Clause Selection via Writer-to-Writer Failure}
+\label{sec:streams-wxw-selection}
 
 How does clause selection work? Consider a goal where the first stream is producing:
 
@@ -930,6 +939,8 @@ Try clause 2: \verb|observe([X|Xs?], Ys, ...)|
 When the second stream is producing, the pattern reverses: clause 1 succeeds, clause 2 would fail.
 
 This technique relies on writer-to-writer unification being \emph{immediate failure}, not suspension. If WxW suspended on an empty set, clause 2 would never be tried. The observer pattern demonstrates that WxW failure is semantically meaningful for clause selection, not merely an optimization.
+
+The Writer/Reader Tail Discrimination table in Appendix~\ref{appendix:list-unification} summarizes these cases. Programs routinely exploit WxW failure to discriminate which stream is producing, enabling bidirectional protocols without explicit coordination.
 
 \subsection{Observing Bob and Alice}
 
