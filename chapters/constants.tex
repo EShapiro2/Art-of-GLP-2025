@@ -34,8 +34,8 @@ positive(1) :- true
 A unary predicate with one writer parameter generates a value:
 
 \begin{verbatim}
-default_value(42?).
-initial_state(ready?).
+default_value(42).
+initial_state(ready).
 \end{verbatim}
 
 \begin{verbatim}
@@ -50,9 +50,9 @@ X = 42
 Binary predicates combine input and output parameters. The most common pattern: reader for input, writer for output.
 
 \begin{verbatim}
-successor(0, 1?).
-successor(1, 2?).
-successor(2, 3?).
+successor(0, 1).
+successor(1, 2).
+successor(2, 3).
 \end{verbatim}
 
 \begin{verbatim}
@@ -73,8 +73,8 @@ GLP> successor(5, X).
 Multiple outputs use multiple writers:
 
 \begin{verbatim}
-decompose(10, 1?, 0?).
-decompose(23, 2?, 3?).
+decompose(10, 1, 0).
+decompose(23, 2, 3).
 \end{verbatim}
 
 \begin{verbatim}
@@ -90,9 +90,9 @@ Units = 3
 Readers in clause heads enable pattern matching---clause selection based on input values.
 
 \begin{verbatim}
-color_code(red, 1?).
-color_code(green, 2?).
-color_code(blue, 3?).
+color_code(red, 1).
+color_code(green, 2).
+color_code(blue, 3).
 \end{verbatim}
 
 The first argument (reader) selects the clause; the second (writer) delivers the result:
@@ -112,9 +112,9 @@ X = 3
 Multiple readers enable multi-way dispatch:
 
 \begin{verbatim}
-combine(red, blue, purple?).
-combine(red, yellow, orange?).
-combine(blue, yellow, green?).
+combine(red, blue, purple).
+combine(red, yellow, orange).
+combine(blue, yellow, green).
 \end{verbatim}
 
 \begin{verbatim}
