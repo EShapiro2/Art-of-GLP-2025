@@ -112,29 +112,7 @@ implementation treats writer-to-writer unification as failure, not suspension.
 
 \subsubsection{Writer Unification Cases}
 
-The following table enumerates all cases of writer unification between a goal
-argument and a clause head argument. In the table, $c$ and $d$ denote distinct
-constants, $X$ denotes a goal writer, $X?$ denotes a goal reader, $V$ denotes a
-head writer (fresh after renaming), and $V?$ denotes a head reader.
-
-\begin{center}
-\begin{tabular}{|c|c|l|}
-\hline
-\textbf{Head} & \textbf{Goal} & \textbf{Writer Unification Result} \\
-\hline
-$c$ & $c$ & succeeds (identical constants) \\
-$c$ & $d$ & fails (distinct constants) \\
-$c$ & $X$ & succeeds: $\{X \mapsto c\}$ \\
-$c$ & $X?$ & suspends on $\{X?\}$ \\
-$V$ & $c$ & succeeds: $\{V \mapsto c\}$ \\
-$V$ & $X$ & succeeds: $\{V \mapsto X\}$ \\
-$V$ & $X?$ & succeeds: $\{V \mapsto X?\}$ \\
-$V?$ & $c$ & succeeds: $\{V \mapsto c\}$ \\
-$V?$ & $X$ & succeeds: $\{V \mapsto X\}$ \\
-$V?$ & $X?$ & succeeds: $\{V \mapsto X?\}$ \\
-\hline
-\end{tabular}
-\end{center}
+The complete enumeration of all writer unification cases between goal and head arguments appears in Appendix~\ref{appendix:unification-catalog}.
 
 For compound terms, writer unification proceeds in two phases:
 
@@ -146,23 +124,8 @@ For compound terms, writer unification proceeds in two phases:
 
 The resolution phase is essential: a reader $X?$ encountered before its paired writer $X$ is bound should not cause suspension if a later argument position binds $X$. The suspension decision is deferred until all argument positions have been processed.
 
-\begin{remark}[Reading the Table]
-Each row shows what happens when a single argument position is unified. The head
-column shows what appears in the clause head after renaming apart (fresh variables
-$V$, $V?$). The goal column shows what appears in the goal being reduced.
-
-Key observations:
-\begin{itemize}
-\item A goal writer $X$ can always be assigned---it succeeds against any head form.
-\item A goal reader $X?$ suspends when matched against a non-variable (rows 4),
-      because readers cannot be assigned directly; the paired writer must be
-      assigned first.
-\item Head readers $V?$ behave like head writers $V$ for unification purposes,
-      because the fresh variable $V$ can be assigned. The distinction matters
-      for the clause body, where $V?$ will be read.
-\end{itemize}
-
-Note that the table shows outcomes for individual argument positions. For goals with multiple arguments, the two-phase algorithm (collection then resolution) determines the overall outcome. A reader that initially appears to require suspension may be resolved by a writer binding from a later argument position.
+\begin{remark}[Key Observations]
+Goal writers always succeed (can be assigned any value). Goal readers suspend against non-variables (must wait for their paired writer). Head readers behave like head writers during unification since the fresh variable can be assigned; the distinction matters only in the clause body.
 \end{remark}
 
 \subsubsection{Worked Examples}
