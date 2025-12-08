@@ -91,6 +91,19 @@ git pull origin main
 - **Test compilation** on Overleaf before considering done
 - **Keep packages minimal** for Overleaf compatibility
 
+### After Context Compaction
+When a conversation is compacted and continued:
+- **READ CLAUDE.md AGAIN** - Always re-read this file at the start of a continued session
+- **DO NOT WORK FROM SUMMARIES** - If you had detailed instructions before compaction, STOP and ask the user to provide them again. Summaries lose critical details. You cannot execute instructions you only have a summary of.
+
+### After Completing Changes
+When you commit and push changes to a `claude/...` branch, provide the user with merge instructions:
+```bash
+git fetch origin claude/<branch-name>
+git merge -m "Merge claude branch" origin/claude/<branch-name>
+git push origin main
+```
+
 ## Key Concepts to Understand
 
 - **SRSW**: Single-Reader/Single-Writer - core GLP discipline

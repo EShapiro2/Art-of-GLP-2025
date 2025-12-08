@@ -7,6 +7,7 @@
 The simplest \GLP programs transform constant values. These programs illustrate fundamental patterns of reader/writer variable usage and clause selection.
 
 \section{Unary Predicates}
+\label{sec:constants-unary}
 
 A unary predicate with one reader parameter defines a property:
 
@@ -31,6 +32,8 @@ positive(1) :- true
 -> succeeds
 \end{verbatim}
 
+These traces illustrate the two constant-vs-constant cases from writer unification (Appendix~\ref{appendix:atomic-unification}). When the goal constant matches the head constant, unification succeeds with the empty assignment. When they differ, no unifier exists and the clause fails. The runtime tries clauses in order; if none succeed, the goal fails.
+
 A unary predicate with one writer parameter generates a value:
 
 \begin{verbatim}
@@ -44,6 +47,8 @@ default_value(X) :- true
 X = 42
 -> succeeds
 \end{verbatim}
+
+Here the goal argument \verb|X| is a writer and the head argument is the constant \verb|42|. Writer unification succeeds with assignment $\{X \leftarrow 42\}$ (Appendix~\ref{appendix:atomic-unification}, Goal Writer vs.\ Term). The writer receives the constant value directly.
 
 \section{Parameter Passing Patterns}
 
@@ -130,6 +135,7 @@ X = green
 \end{verbatim}
 
 \section{Binary Predicates}
+\label{sec:constants-binary}
 
 Some predicates work in multiple modes. Consider the \verb|not| gate:
 
@@ -174,6 +180,7 @@ Y = 0
 Writers can receive values directly, so the first clause matches immediately.
 
 \section{Logic Gates}
+\label{sec:constants-gates}
 
 Digital circuits provide a natural example of dataflow computation. We define basic gates as facts:
 
@@ -224,7 +231,19 @@ and(1,1,X1) :- true
 not(1,X2) :- true
 X = 0
 -> succeeds
+\end{verbatim}
 
+This trace illustrates several unification cases and body activation. The goal \verb|nand(1,1,X)| unifies with head \verb|nand(A,B,Z?)|:
+\begin{itemize}
+\item Arguments 1 and 2: goal constants \verb|1|, \verb|1| against head writers \verb|A|, \verb|B|. This is the constant-vs-variable case (Appendix~\ref{appendix:atomic-unification}): the head writers receive the constants, yielding $\hat\sigma = \{A \leftarrow 1, B \leftarrow 1\}$.
+\item Argument 3: goal writer \verb|X| against head reader \verb|Z?|. This succeeds with $\{X \leftarrow Z?\}$ (Appendix~\ref{appendix:atomic-unification}, Goal Writer vs.\ Term). The goal writer is assigned the head reader, connecting the two communication channels.
+\end{itemize}
+
+After head unification succeeds, the body is activated. The Schedule operation (Definition~\ref{definition:df-unification}) applies both the writer assignment $\hat\sigma$ and its induced reader assignment $\hat\sigma?$ to the renamed clause body. The body goals \verb|and(A?,B?,W)| and \verb|not(W?,Z)| become \verb|and(1,1,W)| and \verb|not(W?,Z)|---the readers \verb|A?| and \verb|B?| receive values \verb|1| and \verb|1| via the induced reader assignment.
+
+The body goals execute concurrently. The \verb|and| goal succeeds immediately, binding \verb|W| to \verb|1|. This induced reader assignment propagates to \verb|W?| in the \verb|not| goal, which then matches \verb|not(1,0)| and binds \verb|Z| to \verb|0|. Since \verb|X| was assigned \verb|Z?|, the value flows through: \verb|X = 0|.
+
+\begin{verbatim}
 GLP> nand(0,1,X).
 nand(0,1,X) :- and(0,1,X1), not(X1?,X2)
 and(0,1,X1) :- true
@@ -240,6 +259,8 @@ half_adder(A,B,Sum?,Carry?) :-
     ground(A?), ground(B?) |
     xor(A?,B?,Sum), and(A?,B?,Carry).
 \end{verbatim}
+
+The \verb|ground| guards are necessary because \verb|A?| and \verb|B?| each appear twice in the body. Without guards, this would violate the single-reader requirement. The \verb|ground(X?)| guard succeeds when \verb|X?| is bound to a term containing no variables; it suspends if \verb|X?| is unbound (Appendix~\ref{appendix:guard-unification}). When the guard succeeds, having multiple occurrences of a ground reader is safe---instantiating the paired writer to a ground term cannot introduce new writers that would violate single-writer.
 
 \begin{verbatim}
 GLP> half_adder(1,1,S,C).
@@ -277,6 +298,11 @@ full_adder(1,1,1,S,C) :- half_adder(1,1,X1,X2),
 half_adder(1,1,X1,X2) :- xor(1,1,X6), and(1,1,X7)
 half_adder(X1?,1,X3,X4) -> suspended
 or(X2?,X4?,X5) -> suspended
+\end{verbatim}
+
+The second \verb|half_adder| suspends because its first argument \verb|X1?| is a reader matched against the head constant \verb|A|. A goal reader against a constant suspends on $\{X1?\}$ (Appendix~\ref{appendix:atomic-unification}, Goal Reader vs.\ Term). Similarly, \verb|or| suspends on $\{X2?, X4?\}$. When the first \verb|half_adder| completes and binds \verb|X1| to \verb|0|, the induced reader assignment delivers this value to \verb|X1?|, reactivating the suspended goal (Appendix~\ref{appendix:suspension}). The reactivated goal restarts clause matching from the first clause.
+
+\begin{verbatim}
 xor(1,1,X6) :- true
 and(1,1,X7) :- true
 half_adder(0,1,X3,X4) :- xor(0,1,X8), and(0,1,X9)
