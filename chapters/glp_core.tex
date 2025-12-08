@@ -136,9 +136,15 @@ $V?$ & $X?$ & succeeds: $\{V \mapsto X?\}$ \\
 \end{tabular}
 \end{center}
 
-For compound terms, unification proceeds recursively on corresponding arguments.
-The overall result is: succeed if all arguments succeed, suspend if any argument
-suspends (and none fail), fail if any argument fails.
+For compound terms, writer unification proceeds in two phases:
+
+\begin{enumerate}
+\item \textbf{Collection phase:} Process arguments left-to-right, accumulating tentative writer bindings $\hat{\sigma}_w$ and a preliminary suspension set $S$ (readers matched against non-variable terms whose paired writers are not yet in $\hat{\sigma}_w$). If a structural mismatch occurs (e.g., distinct constants, incompatible functors), fail immediately.
+
+\item \textbf{Resolution phase:} Apply $\hat{\sigma}_w$ to the preliminary suspension set: $S' = \{X? \in S : X \notin \text{dom}(\hat{\sigma}_w)\}$. If $S' = \emptyset$, succeed with $\hat{\sigma}_w$. If $S' \neq \emptyset$, suspend on $S'$.
+\end{enumerate}
+
+The resolution phase is essential: a reader $X?$ encountered before its paired writer $X$ is bound should not cause suspension if a later argument position binds $X$. The suspension decision is deferred until all argument positions have been processed.
 
 \begin{remark}[Reading the Table]
 Each row shows what happens when a single argument position is unified. The head
@@ -155,6 +161,8 @@ Key observations:
       because the fresh variable $V$ can be assigned. The distinction matters
       for the clause body, where $V?$ will be read.
 \end{itemize}
+
+Note that the table shows outcomes for individual argument positions. For goals with multiple arguments, the two-phase algorithm (collection then resolution) determines the overall outcome. A reader that initially appears to require suspension may be resolved by a writer binding from a later argument position.
 \end{remark}
 
 \subsubsection{Worked Examples}
@@ -171,6 +179,17 @@ Goal $g = p(X?, a)$, Head $h = p(b, Y)$.
 First argument: $X?$ (goal reader) against $b$ (constant). A regular mgu would
 require $X? \mapsto b$, but readers cannot be assigned. Suspension set: $\{X?\}$.
 Suspends on $\{X?\}$, waiting for the paired writer $X$ to be assigned.
+
+\mypara{Example 2b: Resolution of Preliminary Suspension}
+Goal $g = p(X?, X)$, Head $h = p(a, a)$ (constant $a$ in both positions).
+
+Collection phase: First argument $X?$ against $a$---reader against constant, add $X?$ to preliminary suspension set $S = \{X?\}$. Second argument $X$ against $a$---writer against constant, add $X \mapsto a$ to $\hat{\sigma}_w$.
+
+Resolution phase: Apply $\hat{\sigma}_w = \{X \mapsto a\}$ to $S = \{X?\}$. Since $X \in \text{dom}(\hat{\sigma}_w)$, remove $X?$ from set. Result: $S' = \emptyset$.
+
+Succeeds with $\{X \mapsto a\}$. The induced reader assignment gives $X? = a$.
+
+This example demonstrates why the two-phase approach is necessary. A naive left-to-right algorithm that suspends on the first reader would incorrectly suspend, missing the binding information from the second argument.
 
 \mypara{Example 3: Failure}
 Goal $g = p(a, b)$, Head $h = p(a, c)$.
@@ -293,34 +312,49 @@ The nondeterministic GLP transition system (Definition~\ref{definition:GLP-ts}) 
     \item \textbf{Unification order}: Compound term arguments are unified left-to-right, depth-first. Unification stops at the first suspension or failure encountered.
 \end{enumerate}
 
-The left-to-right unification order means: if argument $i$ causes suspension but argument $j > i$ would cause failure, the implementation suspends rather than fails. When the suspended reader is later instantiated and the goal retried, the failure at argument $j$ will then be detected. This is \emph{sound}---suspension is conservative, never incorrectly succeeding---but may delay failure detection.
+The left-to-right unification order processes arguments sequentially, but the suspension decision is deferred until all arguments have been examined. This ensures that a reader encountered early can be resolved by a writer binding discovered later. Structural failures (functor mismatch, arity mismatch, distinct constants) are detected immediately.
 
 \begin{definition}[Depth-First Writer Unification]\label{definition:df-unification}
-The \temph{depth-first writer unification} of terms $T_1$ and $T_2$, denoted $\mathit{dfunify}(T_1, T_2)$, is defined recursively:
+The \temph{depth-first writer unification} of terms $T_1$ and $T_2$, denoted $\mathit{dfunify}(T_1, T_2)$, proceeds in two phases:
+
+\textbf{Phase 1 (Collection):} Traverse the terms, accumulating a tentative writer assignment $\hat\sigma$ and a preliminary suspension set $S$:
 \begin{enumerate}
-    \item If $T_1$ and $T_2$ are identical: \emph{succeeds} with $\emptyset$.
+    \item If $T_1$ and $T_2$ are identical: return $(\hat\sigma, S)$ unchanged.
     \item If $T_1$ is a writer:
     \begin{itemize}
-        \item If $T_2$ is a writer: \emph{fails}.
-        \item Otherwise: \emph{succeeds} with $\{T_1 := T_2\}$.
+        \item If $T_2$ is a writer: \emph{fails} immediately.
+        \item Otherwise: add $T_1 := T_2$ to $\hat\sigma$.
     \end{itemize}
-    \item If $T_2$ is a writer: \emph{succeeds} with $\{T_2 := T_1\}$.
-    \item If $T_1$ is a reader: \emph{suspends} on $\{T_1\}$.
-    \item If $T_2$ is a reader: \emph{suspends} on $\{T_2\}$.
+    \item If $T_2$ is a writer: add $T_2 := T_1$ to $\hat\sigma$.
+    \item If $T_1$ is a reader: add $T_1$ to $S$.
+    \item If $T_2$ is a reader: add $T_2$ to $S$.
     \item If $T_1 = f(S_1, \ldots, S_n)$ and $T_2 = g(R_1, \ldots, R_m)$:
     \begin{itemize}
-        \item If $f \neq g$ or $n \neq m$: \emph{fails}.
-        \item Otherwise, for $i = 1, \ldots, n$ in order:
-        \begin{itemize}
-            \item Compute $\mathit{dfunify}(S_i\sigma_{i-1}, R_i\sigma_{i-1})$ where $\sigma_0 = \emptyset$.
-            \item If it fails: \emph{fails}.
-            \item If it suspends on $W$: \emph{suspends} on $W$.
-            \item If it succeeds with $\sigma'$: let $\sigma_i = \sigma_{i-1} \cup \sigma'$ and continue.
-        \end{itemize}
-        \item \emph{Succeeds} with $\sigma_n$.
+        \item If $f \neq g$ or $n \neq m$: \emph{fails} immediately.
+        \item Otherwise, for $i = 1, \ldots, n$ in order, recursively process $(S_i\hat\sigma, R_i\hat\sigma)$, updating $\hat\sigma$ and $S$. If any recursive call fails, \emph{fail}.
     \end{itemize}
 \end{enumerate}
+
+\textbf{Phase 2 (Resolution):} Compute the resolved suspension set:
+\[
+S' = \{X? \in S : X \notin \mathrm{dom}(\hat\sigma)\}
+\]
+\begin{itemize}
+    \item If $S' = \emptyset$: \emph{succeeds} with $\hat\sigma$.
+    \item If $S' \neq \emptyset$: \emph{suspends} on $S'$.
+\end{itemize}
 \end{definition}
+
+\mypara{Example: Resolution of Preliminary Suspension}
+Consider goal $p(X?, X)$ against head $p(a, a)$.
+
+Phase 1: First argument $X?$ against $a$—reader against constant, add $X?$ to $S$. Second argument $X$ against $a$—writer against constant, add $X := a$ to $\hat\sigma$. Result: $\hat\sigma = \{X := a\}$, $S = \{X?\}$.
+
+Phase 2: Compute $S' = \{X? \in S : X \notin \mathrm{dom}(\hat\sigma)\}$. Since $X \in \mathrm{dom}(\hat\sigma)$, we have $S' = \emptyset$.
+
+Result: \emph{succeeds} with $\{X := a\}$. The induced reader assignment gives $X? = a$.
+
+Without the two-phase approach, the algorithm would incorrectly suspend at the first argument, missing the binding from the second argument.
 
 \begin{definition}[irGLP Configuration]
 An \emph{irGLP configuration} over program $M$ is a triple $R = (Q, S, F)$ where:

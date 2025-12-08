@@ -317,6 +317,14 @@ $$W_\sigma = \{X? \in V? : X?\sigma \notin \mathcal{V}\}$$
 
 That is, goal readers that would be mapped to non-variables.
 
+For compound terms, the operational algorithm uses two phases:
+\begin{enumerate}
+\item \textbf{Collection}: Process arguments left-to-right, accumulating tentative writer bindings $\hat\sigma_w$ and a preliminary suspension set $S$ (readers matched against constants or structures whose paired writers are not yet in $\hat\sigma_w$).
+\item \textbf{Resolution}: Compute $S' = \{X? \in S : X \notin \mathrm{dom}(\hat\sigma_w)\}$. If $S' = \emptyset$, succeed with $\hat\sigma_w$. Otherwise, suspend on $S'$.
+\end{enumerate}
+
+This two-phase approach ensures that a reader encountered before its paired writer is bound does not cause spurious suspension. For example, goal $p(X?, X)$ against head $p(a, a)$ succeeds: phase 1 adds $X?$ to $S$ and $X := a$ to $\hat\sigma_w$; phase 2 finds $X \in \mathrm{dom}(\hat\sigma_w)$, so $S' = \emptyset$.
+
 \begin{center}
 \begin{tabular}{llll}
 \textbf{Goal} & \textbf{Head} & \textbf{Suspension Set} & \textbf{First Use} \\
