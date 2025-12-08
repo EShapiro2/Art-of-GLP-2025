@@ -97,6 +97,8 @@ qsort([X|Unsorted], Sorted?, Rest) :-
 qsort([], Rest?, Rest).
 \end{verbatim}
 
+The \verb|number(X?)| guard is a type-testing guard (Appendix~\ref{appendix:guard-unification}). It succeeds if \verb|X?| is bound to a numeric value; it suspends if \verb|X?| is unbound (waiting for its paired writer to provide a value); and it fails if \verb|X?| is bound to a non-numeric term. This ensures the pivot is numeric before partitioning proceeds, and the suspension behavior integrates naturally with dataflow execution.
+
 The difference list technique threads an accumulator: \verb|qsort(List, Front, Back)| means ``sorting \verb|List| produces elements that fill the hole between \verb|Front| and \verb|Back|.'' The pivot \verb|X| is placed between the sorted smaller and larger elements: \verb|[X?|Sorted1?]|.
 
 The partitioning predicate separates elements by comparison with the pivot:

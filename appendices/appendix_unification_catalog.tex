@@ -240,7 +240,7 @@ $X \neq Y$ & succeeds if different & Disequality test & §\ref{??} \\
 \textbf{Guard} & \textbf{Behavior} & \textbf{On Reader} & \textbf{First Use} \\
 \hline
 \texttt{ground(X)} & succeeds if $X$ ground & suspends if $X?$ unbound & §\ref{sec:constants-gates} \\
-\texttt{integer(X)} & succeeds if integer & suspends if $X?$ unbound & §\ref{??} \\
+\texttt{integer(X)} / \texttt{number(X)} & succeeds if numeric & suspends if $X?$ unbound & §\ref{sec:quicksort} \\
 \texttt{atomic(X)} & succeeds if atomic & suspends if $X?$ unbound & §\ref{??} \\
 \texttt{compound(X)} & succeeds if compound & suspends if $X?$ unbound & §\ref{??} \\
 \end{tabular}
@@ -363,7 +363,7 @@ Upon reactivation, clause matching restarts from the first clause.
 \item[merge] §\ref{sec:streams-merge}: stream interleaving, tail mode selection
 \item[observer] §\ref{sec:streams-wxw-selection}: writer/reader tail discrimination
 \item[producer-consumer] §\ref{sec:streams-producer-consumer}: reader suspension, writer assignment
-\item[quicksort] §\ref{??}: partition by comparison
+\item[quicksort] §\ref{sec:quicksort}: partition by comparison, type-testing guards
 \item[reverse] §\ref{sec:streams-reverse}: accumulator, empty list matching
 \item[split] §\ref{??}: alternating element distribution
 \end{description}

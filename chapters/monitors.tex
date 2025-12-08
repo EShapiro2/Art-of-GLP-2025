@@ -11,6 +11,7 @@ This chapter shows how reader/writer pairs naturally give rise to bidirectional 
 A \emph{monitor} is a process that maintains local state and serves requests to inspect or modify that state. The term comes from Hoare's original concept~\cite{hoare1974monitors}. Clients connect to a monitor via a merge network and communicate using incomplete messages.
 
 \subsection{Counter}
+\label{sec:monitors-counter}
 
 The simplest monitor maintains a counter responding to \verb|clear|, \verb|add|, and \verb|read(X)|:
 
@@ -25,7 +26,10 @@ counter_loop([], _).
 
 The \verb|read(V)| request is an \emph{incomplete message}: the client sends \verb|read(V)| retaining reader \verb|V?|, and the monitor binds writer \verb|V| to the current count. The \verb|ground(C?)| guard permits replication of \verb|C?| to both the response and the recursive call.
 
+From a unification perspective, when the monitor's clause head \verb|counter_loop([read(V)|In], C)| matches a goal, the \verb|V| in the message is a fresh writer (renamed from the clause). The body assignment \verb|V = C?| binds this writer to the current count. The induced reader assignment then propagates this value through the communication channel: the client's reader \verb|V?| receives the count. This is standard writer-to-reader communication (Definition~\ref{definition:GLP-unification}), but applied through a message term rather than directly between goal and clause arguments.
+
 \subsection{Shared Queue}
+\label{sec:monitors-queue}
 
 A more sophisticated monitor implements a shared queue using a difference-list. The queue serves \verb|enqueue(X)| and \verb|dequeue(X)| requests, unifying arguments of corresponding requests:
 
