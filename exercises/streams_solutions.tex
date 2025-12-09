@@ -1,0 +1,112 @@
+%% Exercise Solutions: Streams
+
+\section*{Channels/Distribution Solutions}
+
+\paragraph{Parallel Lookup Table.}
+\begin{verbatim}
+table(Self, LowKey, Value, HighKey) :-
+    read(lookup(LowKey, Value?, true), Self?, NewSelf) |
+    table(NewSelf?, LowKey?, Value?, HighKey?).
+
+table(Self, LowKey, Value, HighKey) :-
+    read(lookup(Key, _, false), Self?, NewSelf),
+    LowKey < Key,
+    Key < HighKey |
+    table(NewSelf?, LowKey?, Value?, HighKey?).
+
+table(Self, LowKey, Value, HighKey) :-
+    read(store(Key, HighValue), Self?, NewSelf),
+    LowKey < Key,
+    Key < HighKey |
+    table(NewSelf?, LowKey?, Value?, Key?),
+    table(NewSelf?, Key?, HighValue?, HighKey?).
+
+table(Self, LowKey, _, HighKey) :-
+    read(store(LowKey, NewValue), Self?, NewSelf) |
+    table(NewSelf?, LowKey?, NewValue?, HighKey?).
+\end{verbatim}
+
+\paragraph{Binary Address Routing.}
+\begin{verbatim}
+distribute_binary([req([0|Addr],C)|In], [req(Addr?,C?)|Out1?], Out2?) :-
+    distribute_binary(In?, Out1, Out2).
+distribute_binary([req([1|Addr],C)|In], Out1?, [req(Addr?,C?)|Out2?]) :-
+    distribute_binary(In?, Out1, Out2).
+distribute_binary([], [], []).
+\end{verbatim}
+
+\section*{Buffered Communication Solutions}
+
+\paragraph{2x2 Communication Switch.}
+\begin{verbatim}
+switch2x2(In1, In2, Out1, Out2) :-
+    receive(M, In1?, Ins1), send(M?, Out1?, Outs1) |
+    switch2x2(Ins1?, In2?, Outs1?, Out2?).
+switch2x2(In1, In2, Out1, Out2) :-
+    receive(M, In2?, Ins2), send(M?, Out1?, Outs1) |
+    switch2x2(In1?, Ins2?, Outs1?, Out2?).
+switch2x2(In1, In2, Out1, Out2) :-
+    receive(M, In1?, Ins1), send(M?, Out2?, Outs2) |
+    switch2x2(Ins1?, In2?, Out1?, Outs2?).
+switch2x2(In1, In2, Out1, Out2) :-
+    receive(M, In2?, Ins2), send(M?, Out2?, Outs2) |
+    switch2x2(In1?, Ins2?, Out1?, Outs2?).
+
+send(Msg, [Msg|NBuf?], NBuf).
+receive(Msg, [Msg|NBuf?], NBuf).
+\end{verbatim}
+
+Routing is determined by committed choice: whichever clause's guard succeeds first handles the message. Fair interleaving arises from clause alternation and the nondeterministic availability of messages on input streams.
+
+\section*{Monitors Solutions}
+
+\paragraph{Dynamic Object Management.}
+\begin{verbatim}
+use_many_counters([create(Name)|Input?], List_of_counters) :-
+    counter(Com?, 0),
+    use_many_counters(Input?, [(Name?, Com)|List_of_counters?]).
+
+use_many_counters([(Name, show(Val))|Input?], List_of_counters) :-
+    send(List_of_counters?, Name?, show(Val), NewList) |
+    use_many_counters(Input?, NewList?),
+    wait_write(Val?).
+
+use_many_counters([X|Input?], List_of_counters) :-
+    X =\= create(_), X =\= (_, show(_)),
+    X = (Name, Cmd),
+    send(List_of_counters?, Name?, Cmd?, NewList) |
+    use_many_counters(Input?, NewList?).
+
+send([(Name, [Message|Y?])|List?], Name, Message, [(Name?, Y)|List]).
+send([C|List?], Name, Message, [C?|L1?]) :-
+    send(List?, Name?, Message?, L1).
+\end{verbatim}
+
+\paragraph{3-Way Network Switch.}
+\begin{verbatim}
+network((P,ChP),(Q,ChQ),(R,ChR)) :-
+    ground(Q), receive(ChP?,msg(Q,X),ChP1), send(ChQ?,X?,ChQ1) |
+    network((P,ChP1?),(Q,ChQ1?),(R,ChR?)).
+
+network((P,ChP),(Q,ChQ),(R,ChR)) :-
+    ground(R), receive(ChP?,msg(R,X),ChP1), send(ChR?,X?,ChR1) |
+    network((P,ChP1?),(Q,ChQ?),(R,ChR1?)).
+
+network((P,ChP),(Q,ChQ),(R,ChR)) :-
+    ground(P), receive(ChQ?,msg(P,X),ChQ1), send(ChP?,X?,ChP1) |
+    network((P,ChP1?),(Q,ChQ1?),(R,ChR?)).
+
+network((P,ChP),(Q,ChQ),(R,ChR)) :-
+    ground(R), receive(ChQ?,msg(R,X),ChQ1), send(ChR?,X?,ChR1) |
+    network((P,ChP?),(Q,ChQ1?),(R,ChR1?)).
+
+network((P,ChP),(Q,ChQ),(R,ChR)) :-
+    ground(P), receive(ChR?,msg(P,X),ChR1), send(ChP?,X?,ChP1) |
+    network((P,ChP1?),(Q,ChQ?),(R,ChR1?)).
+
+network((P,ChP),(Q,ChQ),(R,ChR)) :-
+    ground(Q), receive(ChR?,msg(Q,X),ChR1), send(ChQ?,X?,ChQ1) |
+    network((P,ChP?),(Q,ChQ1?),(R,ChR1?)).
+\end{verbatim}
+
+Six clauses are needed: each of the three agents can send to two destinations. The \verb|ground(Q)| guard ensures the destination name is bound before routing, preventing premature commitment.
