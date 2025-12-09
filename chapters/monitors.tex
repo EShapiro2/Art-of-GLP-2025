@@ -1,9 +1,11 @@
-% chapters/monitors.tex - Monitors and Stateful Servers
+% chapters/monitors.tex - Objects and Monitors
 
-\chapter{Monitors and Stateful Servers}
+\chapter{Objects and Monitors}
 \label{ch:monitors}
 
-This chapter shows how reader/writer pairs naturally give rise to bidirectional channels and stateful servers.
+This chapter shows how reader/writer pairs naturally give rise to bidirectional channels and stateful servers. The concepts presented here---processes maintaining state in recursive parameters, responding to messages via streams, and communicating through incomplete message variables---are the \GLP realization of \emph{objects}. In traditional object-oriented terminology, recursive parameters are private fields, message patterns are public methods, and incomplete message variables provide return values. A \emph{monitor} is simply an object accessed by multiple clients through a merge network.
+
+This unification of objects and monitors reflects a deep correspondence: both are stateful servers responding to sequenced requests. The difference is merely the number of clients and how they connect.
 
 \section{Monitors}
 \label{sec:monitors}
@@ -63,6 +65,24 @@ test_counter(V1?, V2?) :-
 
 Each client produces a stream of requests. The merge combines them into a single stream consumed by the monitor. Client responses arrive via incomplete message variables.
 
+\subsection{Objects and Encapsulation}
+
+The counter demonstrates how object-oriented concepts emerge from process-based programming:
+
+\begin{center}
+\begin{tabular}{ll}
+\textbf{OOP Concept} & \textbf{GLP Realization} \\
+\hline
+Private fields & Recursive parameters \\
+Public methods & Message patterns \\
+Method call & Stream element \\
+Return value & Incomplete message variable \\
+Object instance & Process with its own stream \\
+\end{tabular}
+\end{center}
+
+\emph{Encapsulation} arises naturally: the state parameter is internal to the recursion---no external process can directly read or modify it. Only defined message types are handled; sending an unknown message causes suspension (no matching clause commits). Messages are processed in stream order, so each message sees the state left by previous messages.
+
 \subsection{Timing and Interleaving}
 
 Clients with different timing demonstrate how message ordering affects observed state:
@@ -79,6 +99,47 @@ client2_done([]).
 \end{verbatim}
 
 The \verb|wait(100)| guard suspends client2 for 100 milliseconds. Client1 queries at count 3 (after its three adds). Client2 queries at count 5 (after all five adds). The timing determines what state each client observes.
+
+\section{Multiple Object Instances}
+\label{sec:object-instances}
+
+Each monitor call creates a distinct instance with its own state. Managing multiple named instances requires a registry:
+
+\begin{verbatim}
+registry([create(Name)|In], Objects) :-
+    counter(Cmds?),
+    registry(In?, [(Name?, Cmds)|Objects?]).
+registry([(Name, Msg)|In], Objects) :-
+    route(Objects?, Name?, Msg?, Objects1),
+    registry(In?, Objects1?).
+registry([], _).
+
+route([(Name, [Msg|Rest?])|Objs], Name, Msg, [(Name?, Rest)|Objs?]).
+route([Obj|Objs], Name, Msg, [Obj?|Objs1?]) :-
+    otherwise |
+    route(Objs?, Name?, Msg?, Objs1).
+\end{verbatim}
+
+The \verb|create(Name)| message spawns a new counter and registers it. Subsequent messages like \verb|(alice, add)| are routed to the named counter by \verb|route/4|. The registry maintains name-to-stream mappings---a simple object directory.
+
+\section{Comparison with the Actor Model}
+\label{sec:actor-comparison}
+
+\GLP objects resemble actors but with key differences:
+
+\begin{center}
+\begin{tabular}{lll}
+\textbf{Feature} & \textbf{Actors} & \textbf{GLP Objects} \\
+\hline
+Message delivery & Asynchronous, unordered & Stream-ordered \\
+Response mechanism & Explicit reply-to & Incomplete messages \\
+State update & Internal mutation & Recursive parameter \\
+Creation & \verb|spawn| primitive & Goal reduction \\
+Identity & Actor reference & Stream endpoint \\
+\end{tabular}
+\end{center}
+
+Stream-ordered delivery simplifies reasoning about state consistency---messages are processed in a deterministic sequence. However, this limits concurrency compared to fully asynchronous actors where message order is nondeterministic.
 
 \section{Observing Monitors}
 \label{sec:observing-monitors}
@@ -170,4 +231,7 @@ The staggered \verb|wait| guards ensure deterministic ordering. The log captures
 \item Implement a bounded buffer monitor that blocks producers when full and consumers when empty.
 \item Implement a priority queue monitor with two input streams: one for high-priority, one for low-priority requests.
 \item Implement a readers-writers monitor that allows multiple concurrent readers but exclusive writers.
+\item \textbf{Bank Account.} Implement a bank account object with messages \verb|deposit(Amount)|, \verb|withdraw(Amount, Success)|, and \verb|balance(B)|. The withdraw should set \verb|Success| to \verb|false| if insufficient funds.
+\item \textbf{Stack Object.} Implement a stack with \verb|push(X)|, \verb|pop(X)|, and \verb|is_empty(B)|. Use incomplete messages so \verb|pop| on an empty stack waits for the next \verb|push|.
+\item \textbf{Observable Counter.} Implement a counter that notifies registered observers whenever its value changes.
 \end{enumerate}
