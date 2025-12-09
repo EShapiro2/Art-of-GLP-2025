@@ -1,0 +1,128 @@
+%% Exercise Solutions: Metaprogramming
+
+\section*{Plain Meta-Interpreter Solutions}
+
+\paragraph{Step Counter.}
+\begin{verbatim}
+run_counted(true, 0).
+run_counted((A,B), N?) :-
+    run_counted(A?, NA), run_counted(B?, NB),
+    N := NA? + NB?.
+run_counted(A, N?) :- known(A) |
+    reduce(A?, B), run_counted(B?, NB), N := NB? + 1.
+\end{verbatim}
+
+\paragraph{Depth Limiter.}
+\begin{verbatim}
+run_limited(true, _).
+run_limited((A,B), D) :- D? > 0 |
+    run_limited(A?, D?), run_limited(B?, D?).
+run_limited(A, D) :- D? > 0, known(A) |
+    D1 := D? - 1,
+    reduce(A?, B), run_limited(B?, D1?).
+\end{verbatim}
+
+\paragraph{Call Graph.}
+\begin{verbatim}
+call_graph(true, _, []).
+call_graph((A,B), Caller, Edges?) :-
+    call_graph(A?, Caller?, EA),
+    call_graph(B?, Caller?, EB),
+    append(EA?, EB?, Edges).
+call_graph(A, Caller, [(Caller?,A?)|Edges?]) :- known(A) |
+    reduce(A?, B), call_graph(B?, A?, Edges).
+\end{verbatim}
+
+\section*{Enhanced Meta-Interpreter Solutions}
+
+\paragraph{Replay.}
+\begin{verbatim}
+replay([], true).
+replay([step(Goal,ClauseId)|Steps?], Result?) :-
+    reduce_by_id(Goal?, ClauseId?, Body),
+    replay(Steps?, BodyResult),
+    Result = (Goal?, BodyResult?).
+
+reduce_by_id(Goal, Id, Body) :-
+    clause(Goal?, Body, Id) | true.
+\end{verbatim}
+
+\paragraph{Breakpoints.}
+\begin{verbatim}
+debug_bp(true, _, _, true).
+debug_bp((A,B), Cs, BPs, (TA?,TB?)) :-
+    debug_bp(A?, Cs?, BPs?, TA),
+    debug_bp(B?, Cs?, BPs?, TB).
+debug_bp(A, Cs, BPs, Trace?) :- known(A), member(A?, BPs?) |
+    suspended_debug(A?, Cs?, BPs?, Trace).
+debug_bp(A, Cs, BPs, ((A?:-TB?))) :- known(A), not_member(A?, BPs?) |
+    reduce(A?, B), debug_bp(B?, Cs?, BPs?, TB).
+
+suspended_debug(A, [resume|Cs], BPs, Trace?) :-
+    reduce(A?, B), debug_bp(B?, Cs?, BPs?, Trace).
+suspended_debug(A, [abort|_], _, aborted(A?)).
+\end{verbatim}
+
+\paragraph{Coverage Analysis.}
+\begin{verbatim}
+run_coverage(true, _, []).
+run_coverage((A,B), P, Used?) :-
+    run_coverage(A?, P?, UA),
+    run_coverage(B?, P?, UB),
+    merge(UA?, UB?, Used).
+run_coverage(A, P, [ClauseId?|Used?]) :- known(A) |
+    clause(A?, P?, B, ClauseId),
+    run_coverage(B?, P?, Used).
+\end{verbatim}
+
+\section*{Debugging Solutions}
+
+\paragraph{Termination Detection.}
+\begin{verbatim}
+run_term(P, Goal, Done--Done?) :-
+    reduce_term(P?, Goal?, Done?--Done).
+
+reduce_term(P, true, Chain--Chain?).
+reduce_term(P, (A, B), Left--Right) :-
+    reduce_term(P?, A?, Left?--Middle),
+    reduce_term(P?, B?, Middle?--Right).
+reduce_term(P, Goal, Left--Right) :-
+    Goal =\= true, Goal =\= (_, _),
+    clause(Goal?, P?, Body) |
+    reduce_term(P?, Body?, Left?--Right).
+\end{verbatim}
+
+When the query unifies \verb|Done| with an unbound variable, the circuit is open. When all paths terminate, the difference list closes: \verb|Left| unifies with \verb|Right|.
+
+\paragraph{Snapshot Collection.}
+\begin{verbatim}
+run_snap(true, _, L, L?).
+run_snap((A,B), Cs, L, R?) :-
+    distribute(Cs?, Cs1, Cs2),
+    run_snap(A?, Cs1?, L?, M),
+    run_snap(B?, Cs2?, M?, R).
+run_snap(A, [suspend|Cs], L, R?) :-
+    suspended_snap(A?, Cs?, L?, R).
+run_snap(A, Cs, L, R?) :- known(A) |
+    reduce(A?, B), run_snap(B?, Cs?, L?, R).
+
+suspended_snap(A, [resume|Cs], L, R?) :- run_snap(A?, Cs?, L?, R).
+suspended_snap(A, [abort|_], L, [A?|L?]).
+\end{verbatim}
+
+The difference list \verb|L--R| accumulates goals. On abort, each suspended process adds its goal to the list.
+
+\paragraph{Timestamped Execution Tree.}
+\begin{verbatim}
+run_tree(true, _, leaf).
+run_tree((A,B), P, fork(TA?, TB?)) :-
+    run_tree(A?, P?, TA),
+    run_tree(B?, P?, TB).
+run_tree(Goal, P, node(Goal?, ClauseId?, Time?, Children?)) :-
+    known(Goal) |
+    time(Time),
+    clause(Goal?, P?, Body, ClauseId),
+    run_tree(Body?, P?, Children).
+\end{verbatim}
+
+The tree structure mirrors the computation: \verb|leaf| for termination, \verb|fork| for parallel branches, and \verb|node| for reduction steps with timestamp and clause information.

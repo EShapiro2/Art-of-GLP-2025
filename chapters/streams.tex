@@ -616,6 +616,21 @@ continuation that receives the channel as a reader.
 \item Implement a round-robin scheduler: given a list of streams, output one element from each in turn.
 
 \item \label{ex:biased-merge} \textbf{(Biased Merge)} Implement a biased merge operator that maintains fairness in dynamically-constructed trees.
+
+\item \textbf{Parallel Lookup Table.} Implement a parallel lookup table using channels. Each \verb|table| process manages a key range and handles \verb|lookup| and \verb|store| requests:
+\begin{verbatim}
+table(Self, LowKey, Value, HighKey) :-
+    read(lookup(LowKey, Value?, true), Self?, NewSelf) |
+    table(NewSelf?, LowKey?, Value?, HighKey?).
+\end{verbatim}
+Extend with clauses for: (1) lookup returning \verb|false| when key is in range but not exact match, (2) store that splits the table segment when inserting a new key.
+
+\item \textbf{Binary Address Routing.} Implement \verb|distribute_binary(In,Out1,Out2)| that routes messages based on binary address bits. Messages have the form \verb|req(Addr,Content)| where \verb|Addr| is a list of 0s and 1s. The first bit determines left (0) or right (1) routing; the remaining bits are passed to the subtree:
+\begin{verbatim}
+distribute_binary([req([0|Addr],C)|In], [req(Addr?,C?)|Out1?], Out2?) :-
+    distribute_binary(In?, Out1, Out2).
+\end{verbatim}
+Complete the definition and trace \verb|distribute_binary([req([0],a), req([1],b)], Y, Z)|.
 \end{enumerate}
 
 \subsection{Buffered Communication}
@@ -626,6 +641,14 @@ continuation that receives the channel as a reader.
 \item \textbf{Priority Switch.} Modify the 2×2 switch to give priority to Input 1 over Input 2 when both have messages.
 
 \item \textbf{Load Balancer.} Implement a load balancer that distributes messages from one input to multiple outputs, round-robin.
+
+\item \textbf{2x2 Communication Switch.} Implement \verb|switch2x2(In1,In2,Out1,Out2)| that routes messages from two input ports to two output ports. Each clause receives from one input and sends to one output, with four clauses covering all combinations:
+\begin{verbatim}
+switch2x2(In1, In2, Out1, Out2) :-
+    receive(M, In1?, Ins1), send(M?, Out1?, Outs1) |
+    switch2x2(Ins1?, In2?, Outs1?, Out2?).
+\end{verbatim}
+What determines which routing path is chosen? How does the switch achieve fair interleaving?
 \end{enumerate}
 
 \subsection{Objects and Monitors}
@@ -642,4 +665,29 @@ continuation that receives the channel as a reader.
 \item \textbf{Stack Object.} Implement a stack with \verb|push(X)|, \verb|pop(X)|, and \verb|is_empty(B)|.
 
 \item \textbf{Observable Counter.} Implement a counter that notifies registered observers whenever its value changes.
+
+\item \textbf{Absolute Time Scheduling.} Extend the multi-actor monitor scenario to use absolute time targets instead of relative delays. Compute wait deltas from absolute targets:
+\begin{verbatim}
+bob_at(T0, TTarget, V, Ys?) :-
+    guard_sub(TTarget?, T0?, Delta), wait(Delta?) |
+    Ys = [subtract(3), value(V?)|Ys1?],
+    bob_done(Ys1).
+\end{verbatim}
+Implement \verb|play_absolute| with four actors scheduled at $T_0$, $T_0+50$, $T_0+100$, and $T_0+150$ milliseconds.
+
+\item \textbf{Dynamic Object Management.} Implement \verb|use_many_counters(Input,List)| that dynamically creates and manages multiple counter objects. Handle three message types: \verb|create(Name)| spawns a new counter, \verb|(Name,Cmd)| routes commands to named counters, and \verb|(Name,show(Val))| retrieves a counter's value:
+\begin{verbatim}
+use_many_counters([create(Name)|Input?], List_of_counters) :-
+    counter(Com?, 0),
+    use_many_counters(Input?, [(Name?, Com)|List_of_counters?]).
+\end{verbatim}
+Complete the definition including the \verb|send| helper for routing messages.
+
+\item \textbf{3-Way Network Switch.} Extend the 2-way network switch to three agents $p$, $q$, $r$. Each agent sends messages of the form \verb|msg(Dest,Content)| where \verb|Dest| names the recipient. The switch examines the destination and forwards to the appropriate channel:
+\begin{verbatim}
+network((P,ChP),(Q,ChQ),(R,ChR)) :-
+    ground(Q), receive(ChP?,msg(Q,X),ChP1), send(ChQ?,X?,ChQ1) |
+    network((P,ChP1?),(Q,ChQ1?),(R,ChR?)).
+\end{verbatim}
+How many clauses are needed for complete routing? What is the purpose of \verb|ground(Q)| in the guard?
 \end{enumerate}

@@ -1,0 +1,126 @@
+\chapter{Library Utilities}
+\label{appendix:library}
+
+This appendix documents utility predicates used throughout the book. These predicates provide common functionality for stream processing, channel operations, and protocol support.
+
+\section{Channel Operations}
+\label{sec:lib-channels}
+
+Bidirectional channels are represented as \verb|ch(In?,Out)| where \verb|In?| is the input stream reader and \verb|Out| is the output stream writer.
+
+\begin{verbatim}
+send(X, ch(In,[X?|Out?]), ch(In?,Out)).
+receive(X?, ch([X|In],Out?), ch(In?,Out)).
+new_channel(ch(Xs?,Ys), ch(Ys?,Xs)).
+\end{verbatim}
+
+\begin{description}
+\item[\texttt{send/3}] Adds message \verb|X| to the channel's output stream, returning the updated channel.
+\item[\texttt{receive/3}] Removes message \verb|X| from the channel's input stream, returning the updated channel.
+\item[\texttt{new\_channel/2}] Creates a pair of connected channels where each channel's input is paired with the other's output.
+\end{description}
+
+\section{Stream-Channel Relay}
+\label{sec:lib-relay}
+
+Bidirectional relay between a stream pair and a channel:
+
+\begin{verbatim}
+relay(In, Out?, Ch) :-
+    In? = [X|In1], send(X?, Ch?, Ch1) |
+    relay(In1?, Out, Ch1?).
+relay(In, Out?, Ch) :-
+    receive(X, Ch?, Ch1), Out = [X?|Out1?] |
+    relay(In1?, Out1, Ch1?).
+\end{verbatim}
+
+The first clause reads from the input stream and sends to the channel. The second clause receives from the channel and writes to the output stream. The two clauses alternate based on message availability.
+
+\section{Broadcast}
+\label{sec:lib-broadcast}
+
+Sends a message to all recipients in a friends list:
+
+\begin{verbatim}
+broadcast(_, [], []).
+broadcast(Msg, [(Name, Out)|Fs], [(Name?, [Msg?|Out1?])|Fs1?]) :-
+    broadcast(Msg?, Fs?, Fs1).
+\end{verbatim}
+
+Recursively traverses the friends list, adding the message to each output stream. Returns the updated friends list with new stream tails for subsequent broadcasts.
+
+\section{Lookup Utilities}
+\label{sec:lib-lookup}
+
+Association list operations for friends list management:
+
+\begin{verbatim}
+lookup(Key, [(Key, Value)|_], Value).
+lookup(Key, [(K, _)|Rest], Value) :-
+    Key \= K | lookup(Key?, Rest?, Value).
+
+lookup_send(Key, Msg, Fs, Fs1) :-
+    lookup(Key?, Fs?, Out),
+    Out = [Msg?|Out1?],
+    update(Key?, Out1?, Fs?, Fs1).
+
+update(Key, NewOut, [(Key, _)|Rest], [(Key, NewOut?)|Rest?]).
+update(Key, NewOut, [(K, V)|Rest], [(K?, V?)|Rest1?]) :-
+    Key \= K | update(Key?, NewOut?, Rest?, Rest1).
+\end{verbatim}
+
+\begin{description}
+\item[\texttt{lookup/3}] Finds the value associated with a key in an association list.
+\item[\texttt{lookup\_send/4}] Sends a message through the channel associated with a key, returning the updated friends list.
+\item[\texttt{update/4}] Updates the value associated with a key in an association list.
+\end{description}
+
+\section{Stream Tagging}
+\label{sec:lib-tag}
+
+When multiple streams merge, source identity is lost. Stream tagging preserves source information:
+
+\begin{verbatim}
+tag_stream(Name, [M|In], [msg(Name?, M?)|Out?]) :-
+    tag_stream(Name?, In?, Out).
+tag_stream(_, [], []).
+\end{verbatim}
+
+Each message \verb|M| is wrapped in \verb|msg(Name, M)|, allowing tagged streams to be merged while preserving source identification.
+
+\section{Deferred Injection}
+\label{sec:lib-inject}
+
+Defers insertion of a message until a trigger variable becomes bound:
+
+\begin{verbatim}
+inject(X, Y, Ys, [Y?|Ys?]) :- known(X) | true.
+inject(X, Y, [Y1|Ys], [Y1?|Ys1?]) :- unknown(X) | inject(X?, Y?, Ys?, Ys1).
+\end{verbatim}
+
+When \verb|X| becomes bound, inserts \verb|Y| at the output head. Until then, passes input messages to output while waiting. This enables non-blocking protocol operation where a response must be injected at a later time (Section~\ref{sec:cold-call}).
+
+\section{Time Utilities}
+\label{sec:lib-time}
+
+Timestamp access for tracing and scheduling:
+
+\begin{verbatim}
+current_time(T) :- time(T).
+\end{verbatim}
+
+The \verb|time(T)| guard binds \verb|T| to the current timestamp. Used in tracing metainterpreters (Section~\ref{sec:tracing-meta}) and absolute time scheduling (Section~\ref{sec:monitors}).
+
+\section{Guard Utilities}
+\label{sec:lib-guards}
+
+Commonly used guard predicates (built-in):
+
+\begin{description}
+\item[\texttt{ground(X)}] Succeeds when \verb|X| contains no unbound variables.
+\item[\texttt{known(X)}] Succeeds when \verb|X| is bound to a value.
+\item[\texttt{unknown(X)}] Succeeds when \verb|X| is unbound.
+\item[\texttt{otherwise}] Succeeds when no other clause in the procedure matches (as opposed to suspending).
+\end{description}
+
+See Appendix~\ref{appendix:guard-unification} for the complete guard specification.

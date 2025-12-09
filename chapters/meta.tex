@@ -81,6 +81,35 @@ The program encoding must include a catch-all clause:
 reduce(A, failed(A)) :- otherwise | true.
 \end{verbatim}
 
+\subsection{Certainty Factors}
+
+A metainterpreter that computes certainty factors for derived results. Each clause in the object program has an associated certainty; the result certainty is computed by combining clause certainties.
+
+\begin{verbatim}
+reduce(Program, true, 1).
+reduce(Program, (A, B), C) :-
+    reduce(Program?, A?, C_of_a),
+    reduce(Program?, B?, C_of_b),
+    min(C_of_a?, C_of_b?, C).
+reduce(Program, Goal, C) :-
+    clause(Goal?, Program?, Body, Cr),
+    reduce(Program?, Body?, C_of_body),
+    C := Cr? * C_of_body?.
+
+min(X, Y, X) :- X =< Y | true.
+min(X, Y, Y) :- Y < X | true.
+\end{verbatim}
+
+The three clauses implement distinct certainty combination rules:
+
+\begin{itemize}
+\item \textbf{Halt}: The base case \verb|true| has certainty 1 (complete confidence).
+\item \textbf{Fork}: For conjunctions, certainty is the minimum of the two branch certainties. The concurrent execution of both branches yields the more uncertain result.
+\item \textbf{Reduce}: When reducing a goal using a clause, the result certainty is the product of the clause's intrinsic certainty \verb|Cr| and the body's computed certainty.
+\end{itemize}
+
+The \verb|clause/4| predicate extends the standard \verb|clause/3| with a fourth argument returning the clause's certainty factor. This enables expert system applications where rules have associated confidence levels.
+
 \subsection{Termination Detection}
 \label{sec:termination-detection}
 
@@ -226,15 +255,80 @@ This enables static analysis: determine properties of programs without running t
 
 \subsection{Algorithmic Debugging}
 
-[TO BE DEVELOPED]
+Algorithmic debugging locates bugs by asking questions about the correctness of intermediate results. The debugger traverses the computation tree, asking the user whether each result is correct:
+
+\begin{verbatim}
+algo_debug(true, _, correct).
+algo_debug((A,B), Oracle, Result?) :-
+    algo_debug(A?, Oracle?, RA),
+    algo_debug(B?, Oracle?, RB),
+    combine_results(RA?, RB?, Result).
+algo_debug(Goal, Oracle, Result?) :- known(Goal) |
+    reduce(Goal?, Body),
+    algo_debug(Body?, Oracle?, BodyResult),
+    ask_oracle(Oracle?, Goal?, BodyResult?, Result).
+
+ask_oracle(Oracle, Goal, correct, correct) :-
+    query(Oracle?, is_correct(Goal?), yes) | true.
+ask_oracle(Oracle, Goal, correct, buggy(Goal?)) :-
+    query(Oracle?, is_correct(Goal?), no) | true.
+ask_oracle(_, Goal, buggy(X), buggy(X?)).
+\end{verbatim}
+
+When the body is correct but the goal is wrong, the bug is in the clause used to reduce that goal.
 
 \subsection{Trace-Based Debugging}
 
-[TO BE DEVELOPED]
+Trace-based debugging records the execution history and provides replay capabilities. The trace can be analyzed post-mortem or used for deterministic replay:
+
+\begin{verbatim}
+trace_debug(Goal, Trace?) :-
+    run_traced(Goal?, [], Trace).
+
+run_traced(true, Acc, Acc?).
+run_traced((A,B), Acc, Trace?) :-
+    run_traced(A?, Acc?, Acc1),
+    run_traced(B?, Acc1?, Trace).
+run_traced(Goal, Acc, Trace?) :- known(Goal) |
+    reduce(Goal?, Body, ClauseId),
+    time(T),
+    run_traced(Body?, [step(T?,Goal?,ClauseId?)|Acc?], Trace).
+
+%% Replay from trace
+replay([], true).
+replay([step(_,Goal,ClauseId)|Steps?], (Goal?,Rest?)) :-
+    reduce_by_id(Goal?, ClauseId?, Body),
+    replay(Steps?, Rest).
+\end{verbatim}
+
+The trace records timestamps, enabling analysis of timing-dependent bugs in concurrent executions.
 
 \subsection{Declarative Debugging}
 
-[TO BE DEVELOPED]
+Declarative debugging focuses on \emph{what} is wrong rather than \emph{how} the computation proceeded. It collects failed goals and their contexts:
+
+\begin{verbatim}
+decl_debug(Goal, Diagnosis?) :-
+    run_checked(Goal?, [], Diagnosis).
+
+run_checked(true, Ctx, ok).
+run_checked((A,B), Ctx, Diag?) :-
+    run_checked(A?, Ctx?, DA),
+    run_checked(B?, Ctx?, DB),
+    merge_diag(DA?, DB?, Diag).
+run_checked(Goal, Ctx, Diag?) :- known(Goal) |
+    try_reduce(Goal?, Result),
+    handle_result(Result?, Goal?, Ctx?, Diag).
+
+try_reduce(Goal, success(Body?)) :- reduce(Goal?, Body) | true.
+try_reduce(Goal, failure) :- otherwise | true.
+
+handle_result(success(Body), Goal, Ctx, Diag?) :-
+    run_checked(Body?, [Goal?|Ctx?], Diag).
+handle_result(failure, Goal, Ctx, failed(Goal?, Ctx?)).
+\end{verbatim}
+
+The diagnosis reports which goal failed and the calling context, helping locate the source of the failure.
 
 %% ============================================
 %% Exercises
@@ -269,4 +363,14 @@ This enables static analysis: determine properties of programs without running t
 \item \textbf{Undo.} Design a mechanism to ``undo'' reductions. What challenges arise with concurrent execution?
 
 \item \textbf{Coverage Analysis.} Write a meta-interpreter that tracks which \verb|reduce| clauses are used.
+\end{enumerate}
+
+\subsection{Debugging}
+
+\begin{enumerate}
+\item \textbf{Termination Detection.} Using the short-circuit technique from Section~\ref{sec:termination-detection}, write a meta-interpreter that signals when all concurrent processes have terminated. The circuit should close only when every branch reaches \verb|true|.
+
+\item \textbf{Snapshot Collection.} Extend the snapshot meta-interpreter to collect the full resolvent (all pending goals) when execution is aborted. The result should be a list of goals that were in progress at the time of abort.
+
+\item \textbf{Timestamped Execution Tree.} Write a meta-interpreter that builds a timestamped execution tree. Each node should record: the goal, the clause used, the timestamp, and its children. This enables visualization of concurrent execution.
 \end{enumerate}
