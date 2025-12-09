@@ -280,11 +280,123 @@ This section presents predicates that recursively traverse term structures: dist
 
 \subsection{Non-Ground Stream Distributor}
 
-[TO BE WRITTEN]
+The ground stream distributor (Chapter~\ref{ch:streams}) requires \verb|ground(X?)| because it replicates elements directly in the clause head. For incrementally-constructed messages containing unbound subterms, we need a distributor that recursively copies term structure.
+
+\begin{verbatim}
+distribute([X|Xs], [Y?|Ys?], [Z?|Zs?]) :-
+    copy(X?, Y, Z),
+    distribute(Xs?, Ys, Zs).
+distribute([], [], []).
+
+copy(X, Y, Z) :- atom(X?) | Y = X?, Z = X?.
+copy(X, Y, Z) :- number(X?) | Y = X?, Z = X?.
+copy(X, Y, Z) :- compound(X?) |
+    X? =.. [F|Args],
+    copy_list(Args?, Args1, Args2),
+    Y =.. [F?|Args1?],
+    Z =.. [F?|Args2?].
+
+copy_list([], [], []).
+copy_list([H|T], [H1?|T1?], [H2?|T2?]) :-
+    copy(H?, H1, H2),
+    copy_list(T?, T1, T2).
+\end{verbatim}
+
+The \verb|copy| predicate dispatches on the type of term: atoms and numbers are copied directly (the type guard permits multiple reader occurrences per Formal Box~\ref{formal:guards-multiple-reads}), while compound terms are decomposed using \verb|=..| (univ), their arguments copied recursively, and the results reassembled.
+
+The key insight is that no explicit handling of unbound variables is needed. If a subterm is unbound, none of the guards (\verb|atom(X?)|, \verb|number(X?)|, \verb|compound(X?)|) succeed, so the goal suspends. When the producer later binds the subterm, the appropriate guard succeeds and copying proceeds. This is GLP's natural suspension behavior at work.
+
+\begin{verbatim}
+GLP> distribute([msg(hello, world), msg(foo, bar)]?, Out1, Out2).
+Out1 = [msg(hello, world), msg(foo, bar)]
+Out2 = [msg(hello, world), msg(foo, bar)]
+-> succeeds
+\end{verbatim}
+
+Each output stream receives an independent copy of the message structure.
 
 \subsection{General Communication Observer}
 
-[TO BE WRITTEN]
+The stream observer in Chapter~\ref{ch:streams} monitors unidirectional communication. For bidirectional protocols where response fields flow backward through the same structure, we need a general observer that handles dataflow in both directions.
+
+\paragraph{Bidirectional Observation.} Consider observing communication between alice and bob through a shared term. Alice constructs a message \verb|msg(hello, Reply)| where \verb|Reply| is a fresh writer for bob's response. The observer must copy the message structure to both parties while preserving the response channel.
+
+\begin{verbatim}
+observe(A, A?, A?) :- atom(A?) | true.
+observe(A, A?, A?) :- number(A?) | true.
+observe(A, B, Log) :- compound(A?) |
+    A? =.. [F|ArgsA],
+    observe_list(ArgsA?, ArgsB, ArgsLog),
+    B =.. [F?|ArgsB?],
+    Log =.. [F?|ArgsLog?].
+
+observe_list([], [], []).
+observe_list([A|As], [B?|Bs?], [L?|Ls?]) :-
+    observe(A?, B, L),
+    observe_list(As?, Bs, Ls).
+\end{verbatim}
+
+The observer recursively traverses the term structure, creating copies for both the second party (\verb|B|) and the log (\verb|Log|). When the observer encounters an unbound subterm (a response field), it suspends until that field is bound---either by alice (for outgoing data) or by bob (for responses).
+
+\paragraph{Multi-Round Protocol.} A complete bidirectional protocol demonstrates the SRSW-compliant stream threading pattern discovered during development:
+
+\begin{verbatim}
+test_play(Log?) :-
+    observe(A?, B, Log),
+    alice(A),
+    bob(B?).
+\end{verbatim}
+
+Alice produces a stream of messages with response fields:
+
+\begin{verbatim}
+alice([msg(1, hello, response(Name, Age)) | C1?]) :-
+    alice_wait1(Name?, Age?, C1).
+
+alice_wait1(Name, Age, [msg(2, offer(50), Response) | C2?]) :-
+    atom(Name?), number(Age?) |
+    alice_wait2(Response?, C2).
+\end{verbatim}
+
+The pattern requires careful attention to SRSW:
+\begin{itemize}
+\item Round clauses produce \verb|[msg(...) | Rest?]| with reader tail, passing \verb|Rest| (writer) to the wait clause
+\item Wait clauses receive \verb|Rest?| (reader) in head, pass \verb|Rest| (writer) to the next round clause
+\end{itemize}
+
+This mirrors the merge pattern where the tail hole is a reader that gets filled by the continuation's writer.
+
+Bob consumes the stream, filling response fields with constants:
+
+\begin{verbatim}
+bob([msg(1, Greeting, response(bob, 25)) | R1?]) :-
+    atom(Greeting?) |
+    bob_round2(R1).
+
+bob_round2([msg(2, offer(Price), accept) | R2?]) :-
+    number(Price?), Price? < 100 |
+    bob_round3(R2).
+\end{verbatim}
+
+When bob's clause head \verb|response(bob, 25)| unifies with alice's \verb|response(Name, Age)|, the writers \verb|Name| and \verb|Age| receive the constants \verb|bob| and \verb|25|. The induced reader assignment propagates these values to alice's waiting guards \verb|atom(Name?)| and \verb|number(Age?)|.
+
+\begin{formal}{Guard Placement in Protocols}
+\label{formal:protocol-guards}
+
+A common error is placing guards that test response fields in the same clause that sends the request:
+
+\begin{verbatim}
+% INCORRECT - deadlocks
+alice([msg(hello, Reply)|Rest]) :-
+    atom(Reply?) |    % Waits for Reply before sending
+    process(Reply?),
+    alice(Rest?).
+\end{verbatim}
+
+This deadlocks because alice guards on \verb|Reply?| before the message reaches bob. The solution is to separate sending from waiting (Formal Box~\ref{formal:guard-deadlock}): the first clause sends immediately, and a continuation clause waits for the response.
+\end{formal}
+
+The observer logs the entire protocol exchange, capturing both directions of communication through the shared term structure.
 
 \subsection{Term Freezer}
 
