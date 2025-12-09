@@ -1,0 +1,98 @@
+%% Exercise Solutions: Recursive Programming
+
+\section*{Arithmetic Solutions}
+
+\paragraph{Multiplication (Peano).}
+\begin{verbatim}
+times(0, X, 0).
+times(s(X), Y, Z) :- times(X?, Y?, XY), plus(XY?, Y?, Z).
+\end{verbatim}
+
+\paragraph{Exponentiation.}
+\begin{verbatim}
+exp(s(N), 0, 0).
+exp(0, s(X), s(0)).
+exp(s(N), X, Y) :- exp(N?, X?, Z), times(Z?, X?, Y).
+\end{verbatim}
+
+\paragraph{Minimum (Peano).}
+\begin{verbatim}
+minimum(N1, N2, N1) :- lesseq(N1?, N2?) | true.
+minimum(N1, N2, N2) :- lesseq(N2?, N1?) | true.
+\end{verbatim}
+
+\paragraph{Polygon Area.}
+\begin{verbatim}
+area([Tuple], 0).
+area([(X1,Y1), (X2,Y2) | XYs], Area) :-
+    area([(X2?,Y2?) | XYs?], Area1),
+    Area := (X1? * Y2? - Y1? * X2?) / 2 + Area1?.
+\end{verbatim}
+
+\section*{List Processing Solutions}
+
+\paragraph{Delete.}
+\begin{verbatim}
+delete([X|Xs], X, Ys) :- delete(Xs?, X?, Ys).
+delete([X|Xs], Z, [X|Ys]) :- X? \== Z? | delete(Xs?, Z?, Ys).
+delete([], X, []).
+\end{verbatim}
+
+\paragraph{Maximum.}
+\begin{verbatim}
+maxlist([X|Xs], M) :- maxlist(Xs?, X?, M).
+
+maxlist([X|Xs], Y, M) :- maximum(X?, Y?, Y1), maxlist(Xs?, Y1?, M).
+maxlist([], M, M).
+
+maximum(X, Y, Y) :- X? =< Y? | true.
+maximum(X, Y, X) :- X? > Y? | true.
+\end{verbatim}
+
+\paragraph{Prefix.}
+\begin{verbatim}
+prefix([], Ys).
+prefix([X|Xs], [X|Ys]) :- prefix(Xs?, Ys?).
+\end{verbatim}
+
+\section*{Structure Processing Solutions}
+
+\paragraph{Ancestor.}
+\begin{verbatim}
+ancestor(X, Y) :- parent(X?, Y?) | true.
+ancestor(X, Z) :- parent(X?, Y), ancestor(Y?, Z).
+\end{verbatim}
+
+\paragraph{Tree Traversals.}
+\begin{verbatim}
+preorder(tree(X, L, R), Xs) :-
+    preorder(L?, Ls), preorder(R?, Rs), append([X|Ls?], Rs?, Xs).
+preorder(void, []).
+
+inorder(tree(X, L, R), Xs) :-
+    inorder(L?, Ls), inorder(R?, Rs), append(Ls?, [X|Rs?], Xs).
+inorder(void, []).
+
+postorder(tree(X, L, R), Xs) :-
+    postorder(L?, Ls), postorder(R?, Rs),
+    append(Rs?, [X], Rs1), append(Ls?, Rs1?, Xs).
+postorder(void, []).
+\end{verbatim}
+
+\paragraph{Heapify.}
+\begin{verbatim}
+heapify(void, void).
+heapify(tree(X, L, R), Heap) :-
+    heapify(L?, HeapL), heapify(R?, HeapR),
+    adjust(X?, HeapL?, HeapR?, Heap).
+
+adjust(X, HeapL, HeapR, tree(X, HeapL, HeapR)) :-
+    greater(X?, HeapL?) | greater(X?, HeapR?).
+adjust(X, tree(X1, L, R), HeapR, tree(X1, HeapL, HeapR)) :-
+    X? < X1?, greater(X1?, HeapR?) | adjust(X?, L?, R?, HeapL).
+adjust(X, HeapL, tree(X1, L, R), tree(X1, HeapL, HeapR)) :-
+    X? < X1?, greater(X1?, HeapL?) | adjust(X?, L?, R?, HeapR).
+
+greater(X, void).
+greater(X, tree(X1, L, R)) :- X? >= X1? | true.
+\end{verbatim}
