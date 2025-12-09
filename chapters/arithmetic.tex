@@ -69,6 +69,8 @@ max(X, Y, X?) :- X? >= Y? | true.
 max(X, Y, Y?) :- X? < Y? | true.
 \end{verbatim}
 
+Arithmetic comparison guards (Appendix~\ref{appendix:guard-unification}) test numeric relationships between values. The guard \verb|X? >= 0| succeeds if the reader \verb|X?| is bound to a non-negative number, suspends if \verb|X?| is unbound, and fails if \verb|X?| is bound to a negative number. When guards are mutually exclusive (as \verb|X? >= 0| and \verb|X? < 0| are), exactly one clause commits for any ground numeric input.
+
 Guards suspend until the comparison can be evaluated. The \verb|abs/2| example uses mutually exclusive guards to select the appropriate clause.
 
 \paragraph{Available Operations.}
@@ -181,6 +183,8 @@ flatten_dl([X|Xs], [X?|Front?], Back) :-
 \end{verbatim}
 
 \paragraph{Type-Testing Guards.} The guard \verb|ground(X?), is_list(X?)| tests whether \verb|X| is a ground list (fully instantiated). If so, we recursively flatten it. The \verb|otherwise| guard catches all other cases---non-list elements are added directly to the output.
+
+The \verb|is_list(X?)| guard (Appendix~\ref{appendix:guard-unification}) succeeds if \verb|X?| is bound to a proper list (either \verb|[]| or a cons cell whose tail is a proper list), suspends if \verb|X?| is unbound, and fails otherwise. Combined with \verb|ground(X?)|, this ensures we only recursively flatten complete list structures.
 
 \paragraph{Difference List Threading.} The accumulator pattern \verb|flatten_dl(Input, Front, Back)| means ``flattening \verb|Input| fills the hole between \verb|Front| and \verb|Back|.'' When we encounter a nested list, we flatten it into \verb|Front--Mid|, then flatten the rest into \verb|Mid--Back|.
 
@@ -303,6 +307,8 @@ split_at([X|Xs], N, [X?|Left?], Mid?, Right) :-
 \end{verbatim}
 
 The split extracts the middle element as the root, then recursively builds subtrees from the left and right halves.
+
+The guard \verb|Xs =\= []| (Appendix~\ref{appendix:guard-unification}) is an inequality test that succeeds when \verb|Xs| is bound to a non-empty list, suspends when \verb|Xs| is unbound, and fails when \verb|Xs| is the empty list. This ensures the recursive clause only commits when there is at least one element to process.
 
 \paragraph{Concurrent Tree Construction.} The two \verb|list_to_bst| calls in the recursive case spawn concurrently, building left and right subtrees in parallel.
 
