@@ -218,7 +218,20 @@ X = 0
 -> succeeds
 \end{verbatim}
 
-Compound gates compose simpler ones. Note the output parameter pattern: the reader \verb|Z?| in the head receives the goal's variable, and the writer \verb|Z| in the body produces the value.
+Compound gates compose simpler ones, introducing a fundamental principle of GLP programming.
+
+\begin{formal}{Output Parameter Convention}
+In GLP, output parameters in the clause head are \emph{readers}, not writers. The caller provides a writer (or reader) as the output argument; the clause head receives it as a reader. The clause body contains the paired writer, which produces the output value.
+
+This follows directly from SRSW. Consider a goal \verb|nand(1,1,X)| calling head \verb|nand(A,B,Z?)|:
+\begin{itemize}
+\item The caller's \verb|X| (a writer) unifies with the head's \verb|Z?| (a reader)
+\item The body must contain writer \verb|Z| to produce the output
+\item Each variable occurs exactly once as writer, once as reader
+\end{itemize}
+
+If the head used \verb|Z| (writer) instead of \verb|Z?| (reader), there would be two writers for \verb|Z|---one in the head, one in the body---violating SRSW.
+\end{formal}
 
 \begin{verbatim}
 nand(A,B,Z?) :- and(A?,B?,W), not(W?,Z).
@@ -243,6 +256,51 @@ After head unification succeeds, the body is activated. The Schedule operation (
 
 The body goals execute concurrently. The \verb|and| goal succeeds immediately, binding \verb|W| to \verb|1|. This induced reader assignment propagates to \verb|W?| in the \verb|not| goal, which then matches \verb|not(1,0)| and binds \verb|Z| to \verb|0|. Since \verb|X| was assigned \verb|Z?|, the value flows through: \verb|X = 0|.
 
+\begin{formal}{Input and Output Parameters: Derivation from Writer Unification}
+\label{formal:input-output-derivation}
+
+The parameter conventions in \verb|nand| follow necessarily from writer unification
+(Definition~\ref{definition:GLP-unification}). Understanding this derivation prevents
+common errors.
+
+\mypara{Output Parameters}
+Consider the third argument of \verb|nand(A,B,Z?) :- and(A?,B?,W), not(W?,Z).|
+
+When the goal \verb|nand(1,1,X)| unifies with the head, the third argument position
+has goal writer \verb|X| against head reader \verb|Z?|. From the unification catalog
+(Appendix~\ref{appendix:atomic-unification}, Goal Writer vs.\ Term), this succeeds
+with assignment $\{Z \leftarrow X?\}$.
+
+What does this mean? The head's fresh writer \verb|Z| is assigned the goal's reader
+\verb|X?|. This connects two communication channels: when \verb|Z| in the body is
+bound (via \verb|not(W?,Z)|), that value flows through \verb|X?| to whoever holds
+the goal's writer \verb|X|.
+
+\textbf{Principle:} To produce a value (output), use a reader in the head.
+The goal's writer against the head's reader gives the clause write access to the
+caller's channel.
+
+\mypara{Input Parameters}
+The first two arguments demonstrate input parameters. When goal constant \verb|1|
+meets head writer \verb|A|, this succeeds with $\{A \leftarrow 1\}$. Now \verb|A?|
+in the body equals \verb|1|.
+
+More generally, when a goal reader \verb|X?| meets head writer \verb|V|, the
+assignment is $\{V \leftarrow X?\}$. The head writer is assigned the goal reader,
+giving the clause read access to an incoming channel.
+
+\textbf{Principle:} To receive a value (input), use a writer in the head.
+The goal's reader against the head's writer gives the clause read access to the
+caller's channel.
+
+\mypara{Why This Matters}
+These are not arbitrary conventions. They follow from the asymmetry of writer
+unification: only writers can be assigned, and goal writers can receive values
+while goal readers must wait. A common error is reversing the convention---using
+a writer where a reader is needed, or vice versa---which leads to either SRSW
+violations or incorrect dataflow.
+\end{formal}
+
 \begin{verbatim}
 GLP> nand(0,1,X).
 nand(0,1,X) :- and(0,1,X1), not(X1?,X2)
@@ -260,7 +318,7 @@ half_adder(A,B,Sum?,Carry?) :-
     xor(A?,B?,Sum), and(A?,B?,Carry).
 \end{verbatim}
 
-The \verb|ground| guards are necessary because \verb|A?| and \verb|B?| each appear twice in the body. Without guards, this would violate the single-reader requirement. The \verb|ground(X?)| guard succeeds when \verb|X?| is bound to a term containing no variables; it suspends if \verb|X?| is unbound (Appendix~\ref{appendix:guard-unification}). When the guard succeeds, having multiple occurrences of a ground reader is safe---instantiating the paired writer to a ground term cannot introduce new writers that would violate single-writer.
+The \verb|ground| guards are necessary because \verb|A?| and \verb|B?| each appear twice in the body. Without guards, this would violate the single-reader requirement (see Formal Box~\ref{formal:guards-multiple-reads} for the complete derivation).
 
 \begin{verbatim}
 GLP> half_adder(1,1,S,C).

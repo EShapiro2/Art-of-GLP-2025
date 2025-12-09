@@ -38,8 +38,6 @@ The producer has two clauses:
 \item Otherwise, emit $N$ as the head, decrement, and continue with the tail
 \end{itemize}
 
-Note the output parameter pattern: the stream head \verb|[N?|Xs?]| uses readers in the structure, paired with writers \verb|N| and \verb|Xs| that produce values.
-
 This clause illustrates list structure unification (Appendix~\ref{appendix:list-unification}). When the goal \verb|producer(H, 5)| matches the head \verb|producer([N?|Xs?], N)|, the goal writer \verb|H| unifies with the compound term \verb|[N?|Xs?]|. This succeeds with $\{H \leftarrow [N?|Xs?]\}$---the goal writer receives the entire list structure. The head variables \verb|N| and \verb|Xs| are fresh writers; their paired readers \verb|N?| and \verb|Xs?| appear in the structure assigned to \verb|H|, establishing the communication channel through which values will flow.
 
 A consumer that sums stream elements:
@@ -50,6 +48,38 @@ consumer([X|Xs], Sum, Result?) :- ground(X?) |
     Sum1 := Sum? + X?,
     consumer(Xs?, Sum1?, Result).
 \end{verbatim}
+
+\begin{formal}{SRSW in Continuation Calls}
+\label{formal:srsw-continuations}
+
+The recursive call in the consumer passes readers \verb|Xs?|, \verb|Sum1?|, and
+\verb|Result|---not writers. This is required by SRSW and correct by semantics.
+
+\mypara{Why Readers in Continuations?}
+When the goal \verb|consumer([1|T], 0, R)| matches the head, the argument
+\verb|[1|T]| (a list with writer tail) unifies with \verb|[X|Xs]|. The writer
+\verb|Xs| in the head is assigned \verb|T?| (the tail's reader view).
+
+The writer \verb|Xs| has now served its purpose: it received a value during
+head unification. The SRSW syntactic restriction allows exactly one writer
+occurrence per clause. Since \verb|Xs| already occurred as writer in the head,
+it cannot appear as writer again in the body. Its paired reader \verb|Xs?|
+must be used instead.
+
+Similarly, \verb|Sum1| is a fresh writer created by the arithmetic assignment.
+It occurs once as writer (receiving the sum). To pass the value to the
+continuation, we use \verb|Sum1?|---passing the reader.
+
+\mypara{Common Error}
+Writing \verb|consumer(Xs, Sum1, Result)| would violate SRSW: \verb|Xs| would
+occur twice as writer (in head and body), and \verb|Sum1| likewise. Beyond the
+syntactic violation, this is semantically wrong: it attempts to receive through
+channels that have already received their values.
+
+\textbf{Principle:} In continuation calls, pass readers for values already
+received. The writer served its purpose during unification; the reader carries
+the value forward.
+\end{formal}
 
 The \verb|ground(X?)| guard ensures we only consume elements that are fully available.
 
@@ -378,6 +408,51 @@ counter_loop([], _).
 
 The \verb|read(V)| request is an \emph{incomplete message}: the client sends \verb|read(V)| retaining reader \verb|V?|, and the monitor binds writer \verb|V| to the current count. The \verb|ground(C?)| guard permits replication of \verb|C?| to both the response and the recursive call.
 
+\begin{formal}{Which Guards Enable Multiple Reader Occurrences?}
+\label{formal:guards-multiple-reads}
+
+The counter's \verb|read| clause uses \verb|ground(C?)| to enable replication:
+\begin{verbatim}
+counter_loop([read(V)|In], C) :- ground(C?) | V = C?, counter_loop(In?, C?).
+\end{verbatim}
+
+Here \verb|C?| appears twice in the body. Without the guard, this would violate
+SRSW. Why does \verb|ground(C?)| make it safe?
+
+\mypara{The Danger of Replicating Readers}
+If \verb|C?|'s value contains an unbound writer \verb|W|, then both occurrences
+of \verb|C?| would have access to \verb|W|. Two references to the same writer
+violates single-writer---both could attempt to bind \verb|W|.
+
+\mypara{Ground Guard}
+The guard \verb|ground(C?)| succeeds only if \verb|C?| contains no unbound
+variables. A ground term can be safely replicated because there are no writers
+to share.
+
+\mypara{Type Guards}
+Type guards like \verb|atom(X?)|, \verb|number(X?)|, and \verb|integer(X?)|
+also enable multiple reader occurrences. An atom or number cannot contain
+variables, so success implies groundness.
+
+\mypara{The known Guard Does Not Enable Multiple Reads}
+The guard \verb|known(X?)| only tests that \verb|X?| is bound to \emph{some}
+value---which may contain unbound variables. After \verb|known(X?)| succeeds,
+replicating \verb|X?| could still replicate access to writers embedded in the
+value. Thus \verb|known| does not grant multiple-read permission.
+
+\textbf{Summary:}
+\begin{center}
+\begin{tabular}{ll}
+\textbf{Guard} & \textbf{Multiple reads?} \\
+\hline
+\verb|ground(X?)| & Yes (no variables) \\
+\verb|atom(X?)|, \verb|number(X?)| & Yes (atoms/numbers have no variables) \\
+\verb|compound(X?)| & Yes (compound structure exists) \\
+\verb|known(X?)| & No (value may contain writers) \\
+\end{tabular}
+\end{center}
+\end{formal}
+
 From a unification perspective, when the monitor's clause head \verb|counter_loop([read(V)|In], C)| matches a goal, the \verb|V| in the message is a fresh writer (renamed from the clause). The body assignment \verb|V = C?| binds this writer to the current count. The induced reader assignment then propagates this value through the communication channel: the client's reader \verb|V?| receives the count.
 
 \subsection{Shared Queue}
@@ -471,6 +546,48 @@ observe_accum([], [], []).
 
 duplicate(X, X?, X?) :- ground(X?) | true.
 \end{verbatim}
+
+\begin{formal}{Guard Placement: Avoiding Self-Deadlock}
+\label{formal:guard-deadlock}
+
+Consider an attempt to write a request-response protocol:
+\begin{verbatim}
+% INCORRECT - causes deadlock
+alice([msg(hello, Reply)|Rest]) :-
+    atom(Reply?) |       % Waits for Reply to be bound
+    process(Reply?),     % Process the response
+    alice(Rest?).
+\end{verbatim}
+
+This deadlocks. The guard \verb|atom(Reply?)| waits for \verb|Reply| to be
+bound---but \verb|Reply| is a writer in alice's clause head. Only another
+process (bob) can bind it, by receiving the message and filling in the response.
+But alice hasn't sent the message yet; she's blocked in her guard.
+
+\mypara{The Problem}
+Alice tests a condition on her own output before producing that output.
+This is backwards: she should send first, then wait.
+
+\mypara{The Solution: Separate Send from Wait}
+\begin{verbatim}
+% CORRECT - send then wait
+alice([msg(hello, Reply)|Rest]) :-
+    alice_wait(Reply?, Rest?).
+
+alice_wait(Reply, Rest) :-
+    atom(Reply?) |       % Now waiting for bob's response
+    process(Reply?),
+    alice(Rest?).
+\end{verbatim}
+
+The first clause sends immediately (no guard). The continuation
+\verb|alice_wait| receives the reply channel as a reader and waits for bob
+to fill it.
+
+\textbf{Principle:} Never guard on your own unbound writers. If you need to
+wait for a response, send first (in a guardless clause), then wait in a
+continuation that receives the channel as a reader.
+\end{formal}
 
 %% ============================================
 %% Exercises
