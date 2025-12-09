@@ -30,6 +30,33 @@ plus(s(X), Y, s(Z?)) :- plus(X?, Y?, Z).
 
 The first clause: $0 + Y = Y$. The second clause: $s(X) + Y = s(X + Y)$---adding a successor on the left produces a successor in the result.
 
+\paragraph{Defining Natural Numbers.} The base case and inductive structure:
+
+\begin{verbatim}
+natural_number(0).
+natural_number(s(X)) :- natural_number(X?).
+\end{verbatim}
+
+This recursive definition states: zero is a natural number, and if $X$ is a natural number, so is its successor.
+
+\paragraph{Multiplication.} Multiplication as repeated addition:
+
+\begin{verbatim}
+times(0, X, 0).
+times(s(X), Y, Z) :- times(X?, Y?, XY), plus(XY?, Y?, Z).
+\end{verbatim}
+
+The base case: $0 \times Y = 0$. The recursive case: $s(X) \times Y = (X \times Y) + Y$. The two body goals spawn concurrently; \verb|plus| suspends on \verb|XY?| until \verb|times| produces a value.
+
+\paragraph{Comparison.} Less-than-or-equal for Peano numbers:
+
+\begin{verbatim}
+lesseq(0, X) :- natural_number(X?) | true.
+lesseq(s(X), s(Y)) :- lesseq(X?, Y?).
+\end{verbatim}
+
+Zero is less than or equal to any natural number. For successors, we recursively compare the predecessors.
+
 Peano arithmetic is elegant but inefficient---representing $n$ requires $O(n)$ space. For practical computation, we use built-in arithmetic.
 
 \subsection{Integer Arithmetic}
@@ -141,6 +168,16 @@ Binary trees are represented as:
 \item \verb|node(Value, Left, Right)| --- a node with value and two subtrees
 \end{itemize}
 
+\paragraph{Defining Binary Trees.} The recursive definition:
+
+\begin{verbatim}
+binary_tree(void).
+binary_tree(tree(Element, Left, Right)) :-
+    binary_tree(Left?), binary_tree(Right?).
+\end{verbatim}
+
+A binary tree is either \verb|void| (empty) or a \verb|tree| node containing an element and two subtrees. The two recursive calls spawn concurrently, verifying both subtrees in parallel.
+
 \paragraph{Tree Sum.} Summing all values in a numeric tree:
 
 \begin{verbatim}
@@ -176,6 +213,15 @@ The guard \verb|Xs =\= []| (Appendix~\ref{appendix:guard-unification}) is an ine
 \label{sec:recursive-lists}
 
 This section presents sorting algorithms, demonstrating how concurrent processes naturally arise from recursive structure.
+
+\paragraph{Defining Lists.} The recursive definition of a proper list:
+
+\begin{verbatim}
+list([]).
+list([X|Xs]) :- list(Xs?).
+\end{verbatim}
+
+The empty list is a list. A cons cell is a list if its tail is a list. This definition is used by the \verb|is_list| guard (Appendix~\ref{appendix:guard-unification}) to test whether a term is a proper list structure.
 
 \subsection{Insertion Sort}
 
@@ -398,6 +444,25 @@ This deadlocks because alice guards on \verb|Reply?| before the message reaches 
 
 The observer logs the entire protocol exchange, capturing both directions of communication through the shared term structure.
 
+\subsection{Tree Substitution}
+
+Substituting all occurrences of a value in a tree:
+
+\begin{verbatim}
+substitute(X, Y, void, void).
+substitute(X, Y, tree(Leaf, Left, Right), tree(Leaf1, Left1, Right1)) :-
+    replace(X?, Y?, Leaf?, Leaf1),
+    substitute(X?, Y?, Left?, Left1),
+    substitute(X?, Y?, Right?, Right1).
+
+replace(X, Y, X, Y).
+replace(X, Y, Z, Z) :- X? \== Z? | true.
+\end{verbatim}
+
+The \verb|substitute| predicate replaces all occurrences of \verb|X| with \verb|Y| in a tree. The \verb|replace| helper handles individual elements: if the element equals \verb|X|, replace with \verb|Y|; otherwise keep the original. The guard \verb|X? \== Z?| is an inequality test (Appendix~\ref{appendix:guard-unification}) that succeeds when the two values are different, suspends if either is unbound, and fails if they are equal.
+
+The three recursive calls in \verb|substitute| spawn concurrently, processing the leaf and both subtrees in parallel.
+
 %% ============================================
 %% Exercises
 %% ============================================
@@ -422,6 +487,31 @@ Trace the execution for \verb|gcd(48, 18, G)|.
 \item \textbf{Sum of List.} Implement \verb|sum(Xs, S)| that computes the sum of a numeric stream using an accumulator.
 
 \item \textbf{Memoized Fibonacci.} Design a Fibonacci implementation that avoids redundant computation by memoizing results.
+
+\item \textbf{Multiplication (Peano).} Implement \verb|times(X,Y,Z)| for Peano naturals using \verb|plus|. Verify that \verb|times(s(s(0)), s(s(s(0))), Z)| yields $Z = s(s(s(s(s(s(0))))))$.
+
+\item \textbf{Exponentiation.} Implement \verb|exp(N,X,Y)| computing $X^N$ for Peano naturals using \verb|times|.
+
+\item \textbf{Ackermann's Function.} Implement Ackermann's function for Peano naturals:
+\begin{verbatim}
+ackermann(0, N, s(N)).
+ackermann(s(M), 0, Val) :- ackermann(M?, s(0), Val).
+ackermann(s(M), s(N), Val) :-
+    ackermann(s(M?), N?, Val1), ackermann(M?, Val1?, Val).
+\end{verbatim}
+Trace the execution for \verb|ackermann(s(0), s(0), A)|. How many concurrent processes are spawned?
+
+\item \textbf{Minimum (Peano).} Implement \verb|minimum(N1,N2,Min)| returning the smaller of two Peano numbers using \verb|lesseq|.
+
+\item \textbf{Inner Product.} Implement \verb|inner_product(Xs,Ys,IP)| computing the dot product of two numeric vectors:
+\begin{verbatim}
+inner_product([X|Xs], [Y|Ys], IP) :-
+    inner_product(Xs?, Ys?, IP1), IP := X? * Y? + IP1?.
+inner_product([], [], 0).
+\end{verbatim}
+What happens if the lists have different lengths?
+
+\item \textbf{Polygon Area.} Implement \verb|area(Chain,Area)| computing the area of a polygon given as a list of $(x,y)$ coordinate pairs using the shoelace formula.
 \end{enumerate}
 
 \subsection{Sorting}
@@ -436,4 +526,30 @@ Trace the execution for \verb|gcd(48, 18, G)|.
 \item \textbf{Stable Merge Sort.} Verify that the merge sort implementation is stable.
 
 \item \textbf{Natural Merge Sort.} Implement natural merge sort, which identifies already-sorted runs in the input.
+
+\item \textbf{Delete.} Implement \verb|delete(List,X,Result)| removing all occurrences of \verb|X| from \verb|List|. Use the inequality guard \verb|X? \== Z?|.
+
+\item \textbf{Maximum.} Implement \verb|maxlist(Xs,M)| finding the maximum element of a numeric list using an accumulator.
+
+\item \textbf{Prefix.} Implement \verb|prefix(Prefix,List)| testing whether \verb|Prefix| is a prefix of \verb|List|.
+
+\item \textbf{Translate.} Implement a word-by-word translator using a dictionary:
+\begin{verbatim}
+translate([Word|Words], [Mot|Mots]) :-
+    dict(Word?, Mot), translate(Words?, Mots).
+translate([], []).
+
+dict(the, le).
+dict(dog, chien).
+\end{verbatim}
+\end{enumerate}
+
+\subsection{Structure Processing}
+
+\begin{enumerate}
+\item \textbf{Ancestor.} Implement \verb|ancestor(X,Y)| using a database of \verb|parent| facts. The ancestor relation is the transitive closure of parent.
+
+\item \textbf{Tree Traversals.} Implement \verb|preorder|, \verb|inorder|, and \verb|postorder| traversals of binary trees, each producing a list of elements.
+
+\item \textbf{Heapify.} Implement \verb|heapify(Tree,Heap)| adjusting a binary tree so each node's value is greater than or equal to its children's values.
 \end{enumerate}
