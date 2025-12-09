@@ -218,7 +218,20 @@ X = 0
 -> succeeds
 \end{verbatim}
 
-Compound gates compose simpler ones. Note the output parameter pattern: the reader \verb|Z?| in the head receives the goal's variable, and the writer \verb|Z| in the body produces the value.
+Compound gates compose simpler ones, introducing a fundamental principle of GLP programming.
+
+\begin{formal}{Output Parameter Convention}
+In GLP, output parameters in the clause head are \emph{readers}, not writers. The caller provides a writer (or reader) as the output argument; the clause head receives it as a reader. The clause body contains the paired writer, which produces the output value.
+
+This follows directly from SRSW. Consider a goal \verb|nand(1,1,X)| calling head \verb|nand(A,B,Z?)|:
+\begin{itemize}
+\item The caller's \verb|X| (a writer) unifies with the head's \verb|Z?| (a reader)
+\item The body must contain writer \verb|Z| to produce the output
+\item Each variable occurs exactly once as writer, once as reader
+\end{itemize}
+
+If the head used \verb|Z| (writer) instead of \verb|Z?| (reader), there would be two writers for \verb|Z|---one in the head, one in the body---violating SRSW.
+\end{formal}
 
 \begin{verbatim}
 nand(A,B,Z?) :- and(A?,B?,W), not(W?,Z).
