@@ -1,7 +1,16 @@
+% chapters/streams.tex - Streams, Buffered Communication, Objects and Monitors
+
 \chapter{Streams}
 \label{ch:streams}
 
+This chapter presents stream-based concurrent programming in \GLP: producer-consumer patterns, buffered communication for flow control, and stateful servers (objects and monitors).
+
+%% ============================================
+%% Section 1: Stream Fundamentals
+%% ============================================
+
 \section{Introduction}
+\label{sec:streams-intro}
 
 A \emph{stream} is an incrementally-constructed, potentially-indefinite list. Unlike a complete list that exists all at once, a stream is built element by element during computation. The producer may continue indefinitely, or may eventually close the stream by binding its tail to the empty list \verb|[]|.
 
@@ -88,24 +97,6 @@ The base case \verb|reverse([], [])| illustrates empty list unification: \verb|[
 
 This is correct but inefficient. Each recursive call to \verb|reverse| triggers an \verb|append| that walks the entire accumulated result. For a list of length $n$, the total work is $1 + 2 + \cdots + n = O(n^2)$.
 
-\begin{verbatim}
-GLP> reverse([a,b,c], R).
-reverse([a, b, c], R) :- reverse([b, c], X1), append(X1?, [a], R)
-reverse([b, c], X1) :- reverse([c], X2), append(X2?, [b], X3)
-reverse([c], X2) :- reverse([], X4), append(X4?, [c], X5)
-reverse([], X4) :- true
-append([], [c], X5) :- true
-append([c], [b], X3) :- append([], [b], X6)
-append([], [b], X6) :- true
-append([c, b], [a], R) :- append([b], [a], X7)
-append([b], [a], X7) :- append([], [a], X8)
-append([], [a], X8) :- true
-R = [c, b, a]
-→ succeeds
-\end{verbatim}
-
-The trace reveals the inefficiency: three calls to \verb|reverse|, but six calls to \verb|append|.
-
 \subsection{Reverse with Accumulator}
 
 The efficient version uses an accumulator to build the result during a single pass:
@@ -118,19 +109,6 @@ reverse_acc([X|Xs], Acc, Ys?) :- reverse_acc(Xs?, [X?|Acc?], Ys).
 \end{verbatim}
 
 Each element is prepended to the accumulator as we traverse the list. When we reach the end, the accumulator holds the reversed list. Total work: $O(n)$.
-
-\begin{verbatim}
-GLP> reverse([a,b,c], R).
-reverse([a, b, c], R) :- reverse_acc([a, b, c], [], R)
-reverse_acc([a, b, c], [], R) :- reverse_acc([b, c], [a], X1)
-reverse_acc([b, c], [a], X1) :- reverse_acc([c], [b, a], X2)
-reverse_acc([c], [b, a], X2) :- reverse_acc([], [c, b, a], X3)
-reverse_acc([], [c, b, a], X3) :- true
-R = [c, b, a]
-→ succeeds
-\end{verbatim}
-
-Only four reductions for a three-element list---one per element plus the base case.
 
 \subsection{Iteration vs. Recursion}
 
@@ -158,19 +136,6 @@ merge(Xs, [], Xs?).
 
 The key to fairness is swapping the input streams after each element: \verb|merge(Ys?, Xs?, Zs)| puts the second input first. This ensures neither stream is starved.
 
-\begin{verbatim}
-GLP> merge([a,b,c], [1,2,3], Out).
-merge([a,b,c], [1,2,3], Out) :- merge([1,2,3], [b,c], X1)
-merge([1,2,3], [b,c], X1) :- merge([b,c], [2,3], X2)
-merge([b,c], [2,3], X2) :- merge([2,3], [c], X3)
-merge([2,3], [c], X3) :- merge([c], [3], X4)
-merge([c], [3], X4) :- merge([3], [], X5)
-merge([3], [], X5) :- merge([], [], X6)
-merge([], [], X6) :- true
-Out = [a, 1, b, 2, c, 3]
-→ succeeds
-\end{verbatim}
-
 \subsection{Dynamic Merge}
 \label{sec:streams-dynamic-merge}
 
@@ -192,60 +157,6 @@ dmerger(Ws, Xs, Out?) :- dmerge(Ws?, Xs?, Out).
 
 The \verb|otherwise| guard (Appendix~\ref{appendix:guard-unification}) succeeds only when all prior clauses have either failed or suspended. Here it ensures that regular messages are forwarded only when the head element is not a \verb|merge| request. Without \verb|otherwise|, a regular message \verb|[X|Xs]| would match the third clause even when the first clause (checking for \verb|merge(Ws)|) should apply. The \verb|otherwise| guard defers commitment until the runtime confirms no higher-priority clause can succeed.
 
-When a \verb|merge(Ws)| message arrives, \verb|dmerger| creates a new merge process that combines the new stream \verb|Ws| with the continuation of the original stream. The \verb|otherwise| guard ensures that regular messages are only forwarded when the head is not a \verb|merge| request.
-
-\begin{verbatim}
-GLP> dmerge([a, merge([x,y]), b], [1, 2], Out).
-dmerge([a, merge([x,y]), b], [1, 2], X1) :- dmerge([1, 2], [merge([x,y]), b], X2)
-dmerge([1, 2], [merge([x,y]), b], X2) :-
-    dmerger([x,y], [b], X3), dmerge([1, 2], X3?, X4)
-dmerge([x,y], [b], X5) :- dmerge([b], [y], X6)
-dmerge([1, 2], [x | X6?], X4) :- dmerge([x | X6?], [2], X7)
-...
-Out = [a, 1, x, 2, b, y]
-→ succeeds
-\end{verbatim}
-
-The trace shows stream \verb|[x,y]| being dynamically added when \verb|merge([x,y])| is encountered. The new stream is merged with the continuation \verb|[b]|, and their combined output joins the main merge.
-
-\subsection{The Problem with Dynamic Trees}
-
-Dynamic merge builds a tree of merge processes. Each \verb|merge(NewStream)| message adds a new leaf. The problem: the tree structure depends on \emph{which} stream receives the request, leading to potentially unbalanced trees.
-
-Consider a sequence of processes forking from a single lineage. Each fork adds a new merge node below the previous one, creating a \emph{linear} tree:
-
-\begin{center}
-\begin{verbatim}
-        merge
-       /     \
-    stream1   merge
-             /     \
-          stream2   merge
-                   /     \
-                stream3   stream4
-\end{verbatim}
-\end{center}
-
-A linear tree with $n$ inputs has serious problems:
-\begin{itemize}
-\item \textbf{Exponential bounded-waiting}: A message entering at the deepest leaf may wait for $2^n$ messages from shallower leaves before exiting the root.
-\item \textbf{Linear delay}: Each message from the deepest leaf requires $n$ reductions to reach the output.
-\end{itemize}
-
-Compare this to a balanced tree, which guarantees $O(n)$ bounded-waiting and $O(\log n)$ delay.
-
-\subsection{Solutions for Fair Dynamic Merge}
-
-Several techniques address the unbalanced tree problem:
-
-\paragraph{Biased Merge.} Each merge operator maintains a \emph{bias} proportional to the weight (number of leaves) of its subtrees. When a subtree grows, it sends a \verb|started| message up the tree; when it shrinks, a \verb|halted| message. The bias determines how many messages to forward from each side before switching. This achieves linear bounded-waiting but still has linear delay. See Exercise~\ref{ex:biased-merge}.
-
-\paragraph{Self-Balancing Merge (2-3 Trees).} Binary and ternary merge operators that restructure themselves according to 2-3 tree algorithms. When a binary merge receives a \verb|start| request, it becomes ternary. When a ternary merge receives a request, it splits into two binary merges. This maintains logarithmic height, achieving linear bounded-waiting with logarithmic delay. The implementation is intricate, involving a distributed variant of the 2-3 tree deletion algorithm.
-
-\paragraph{Constant-Delay Multiway Merge.} Using a data structure called \emph{mutual reference}, all $n$ input streams can be merged with constant delay per message. A mutual reference is a shared mutable pointer to the end of the output stream; the \verb|stream_append| operation atomically extends the stream and updates the pointer. All copy processes share this reference, eliminating the need to traverse the stream.
-
-These techniques are described in detail by Shapiro and Mierowsky~\cite{shapiro1984fair} and Shapiro and Safra~\cite{shapiro1986multiway}.
-
 \subsection{Static Balanced Merge Tree}
 
 When the number of streams is known in advance, a balanced tree can be constructed explicitly:
@@ -263,94 +174,7 @@ merge_layer([Xs,Ys|Rest], [Zs?|Layer?]) :-
     merge_layer(Rest?, Layer).
 \end{verbatim}
 
-The predicate \verb|merge_tree| builds a balanced binary tree of merge processes. Each call to \verb|merge_layer| pairs adjacent streams and merges them, halving the count. The recursion continues until a single merged stream remains.
-
-\begin{verbatim}
-GLP> merge_tree([[a,b], [1,2], [x,y], [p,q]], Out).
-merge_tree([[a, b], [1, 2], [x, y], [p, q]], Out) :-
-    merge_layer([...], X1), merge_tree(X1?, X2)
-merge_layer([...], X1) :- merge([a, b], [1, 2], X3), merge_layer([[x, y], [p, q]], X4)
-merge_tree([X3? | X4?], X2) → suspended
-merge([a, b], [1, 2], X3) :- merge([1, 2], [b], X5)
-merge_layer([[x, y], [p, q]], X4) :- merge([x, y], [p, q], X6), merge_layer([], X7)
-...
-merge_tree([[a | [x | X19?]] | []], X10) :- true
-...
-Out = [a, x, 1, p, b, y, 2, q]
-→ succeeds
-\end{verbatim}
-
 For $n$ input streams, the resulting tree has height $\lceil \log_2 n \rceil$ and guarantees $O(n)$ bounded-waiting with $O(\log n)$ delay.
-
-\subsection{Constant-Delay Multiway Merge}
-
-The tree-structured merges described above have $O(\log n)$ delay: each message traverses $\log n$ merge nodes from leaf to root. For applications requiring minimal latency, a \emph{constant-delay} multiway merge is possible using a special data structure called a \emph{mutual reference}.
-
-A mutual reference wraps an unbound writer (the stream's tail) in a mutable container. Multiple concurrent processes can share the same mutual reference and append to the stream via an atomic \verb|stream_append| operation that:
-\begin{enumerate}
-\item Binds the current tail to a new list cell
-\item Updates the mutual reference to point to the new tail
-\end{enumerate}
-
-This destructive update is hidden from the logic level---the mutual reference behaves as a ground term for SRSW purposes.
-
-The \verb|mwm/2| system predicate implements multiway merge with constant delay:
-
-\begin{verbatim}
-mwm(In?, Out)
-\end{verbatim}
-
-where \verb|In| is a stream of \verb|stream(Xs)| terms and \verb|Out| is the merged output. Dynamic addition of streams is supported via \verb|merge(NewStream)| messages in the input.
-
-\paragraph{Implementation.} The implementation uses short-circuit termination detection to close the output stream when all input streams are exhausted:
-
-\begin{verbatim}
-mwm(In, Out?) :-
-    allocate_mutual_reference(Ref, Out),
-    mwm1(In?, Ref?, done, Done),
-    close_when_done(Done?, Ref?).
-
-mwm1([stream(Xs)|Streams], Ref, L, R?) :-
-    is_mutual_ref(Ref?) |
-    mwm_copy(Xs?, Ref?, L?, M),
-    mwm1(Streams?, Ref?, M?, R).
-mwm1([], _, L, L?).
-
-mwm_copy([X|Xs], Ref, L, R?) :-
-    is_mutual_ref(Ref?) |
-    stream_append(X?, Ref?, Ref1),
-    mwm_copy(Xs?, Ref1?, L?, R).
-mwm_copy([], _, L, L?).
-
-close_when_done(done, Ref) :-
-    is_mutual_ref(Ref?) |
-    close_mutual_reference(Ref?).
-\end{verbatim}
-
-The \verb|is_mutual_ref/1| guard verifies the argument is a mutual reference and signals to the SRSW analyzer that multiple reader occurrences are permitted.
-
-\begin{verbatim}
-GLP> mwm([stream([a,b]), stream([1,2])], Out).
-mwm([stream([a, b]), stream([1, 2])], Out) :-
-    mwm_main([stream([a, b]), stream([1, 2])], MutualRef#0)
-mwm1([stream([a, b]), stream([1, 2])], MutualRef#0, done, X1) :-
-    mwm_copy([a, b], MutualRef#0, done, X2),
-    mwm1([stream([1, 2])], MutualRef#0, X2?, X3)
-close_when_done(X1?, MutualRef#0) → suspended
-mwm_copy([a, b], MutualRef#0, done, X2) :-
-    stream_append(a, MutualRef#0, X4), mwm_copy([b], X4?, done, X5)
-mwm1([stream([1, 2])], MutualRef#0, X2?, X3) :-
-    mwm_copy([1, 2], MutualRef#0, X2?, X6), mwm1([], MutualRef#0, X6?, X7)
-...
-mwm1([], MutualRef#0, done, X7) :- true
-close_when_done(done, MutualRef#0) :- close_mutual_reference(MutualRef#0)
-Out = [a, b, 1, 2]
-→ succeeds
-\end{verbatim}
-
-The trace shows two \verb|mwm_copy| processes running concurrently, both appending to the same output via the shared mutual reference. The \verb|close_when_done| goal suspends until the short-circuit chain collapses (all copies terminate), then closes the stream.
-
-\paragraph{Complexity.} Each \verb|stream_append| executes in $O(1)$ time regardless of stream length or number of input streams. This technique was introduced by Shapiro and Safra~\cite{shapiro1986multiway} for Flat Concurrent Prolog.
 
 \section{Stream Distribution}
 
@@ -367,25 +191,6 @@ distribute([], [], []).
 
 The \verb|ground(X?)| guard is essential. Without it, placing \verb|X| in multiple output positions would create multiple writer occurrences, violating SRSW. The guard verifies that \verb|X| contains no unbound variables, making replication safe---a ground term cannot expose writers to multiple readers. With the guard satisfied, multiple reader occurrences \verb|X?| are permitted.
 
-\begin{verbatim}
-GLP> distribute([a,b,c], Y, Z).
-distribute([a, b, c], Y, Z) :- distribute([b, c], X1, X2)
-distribute([b, c], X1, X2) :- distribute([c], X3, X4)
-distribute([c], X3, X4) :- distribute([], X5, X6)
-distribute([], X5, X6) :- true
-Y = [a, b, c]
-Z = [a, b, c]
-→ succeeds
-\end{verbatim}
-
-The pattern generalizes to $n$ outputs:
-
-\begin{verbatim}
-distribute3([X|Xs], [X?|Y1?], [X?|Y2?], [X?|Y3?]) :-
-    ground(X?) | distribute3(Xs?, Y1, Y2, Y3).
-distribute3([], [], [], []).
-\end{verbatim}
-
 \subsection{Indexed Distribution}
 
 Indexed distribution routes each message to a specific output based on a tag:
@@ -398,82 +203,46 @@ distribute_indexed([send(2,X)|In], Out1, [X?|Out2?]) :-
 distribute_indexed([], [], []).
 \end{verbatim}
 
-Each input message is wrapped as \verb|send(N,X)| where \verb|N| indicates the destination. Pattern matching on \verb|N| selects the appropriate output stream. No guard is needed here since each \verb|X| goes to exactly one output.
+Each input message is wrapped as \verb|send(N,X)| where \verb|N| indicates the destination. Pattern matching on \verb|N| selects the appropriate output stream.
+
+\section{Stream Observers}
+\label{sec:streams-observers}
+
+An \emph{observer} monitors a stream without disrupting the communication between producer and consumer. This is useful for logging, debugging, or creating audit trails.
+
+\subsection{Forwarding Observer}
+
+The simplest observer sits between producer and consumer, forwarding elements while creating a copy:
 
 \begin{verbatim}
-GLP> distribute_indexed([send(1,a), send(2,b), send(1,c), send(2,d)], Y, Z).
-distribute_indexed([send(1, a), ...], Y, Z) :- distribute_indexed([send(2, b), ...], X1, X2)
-distribute_indexed([send(2, b), ...], X1, X2) :- distribute_indexed([send(1, c), ...], X3, X4)
-distribute_indexed([send(1, c), ...], X3, X4) :- distribute_indexed([send(2, d)], X5, X6)
-distribute_indexed([send(2, d)], X5, X6) :- distribute_indexed([], X7, X8)
-distribute_indexed([], X7, X8) :- true
-Y = [a, c]
-Z = [b, d]
-→ succeeds
+observer([X|Xs], [X?|Ys?], [X?|Zs?]) :- ground(X?) | observer(Xs?, Ys, Zs).
+observer([], [], []).
 \end{verbatim}
 
-Messages tagged with \verb|send(1,_)| are routed to the first output, \verb|send(2,_)| to the second.
+The \verb|ground(X?)| guard is required because \verb|X?| appears twice---once forwarded to the consumer, once copied to the observation stream.
 
-\subsection{Duality with Merging}
+\subsection{Clause Selection via Writer-to-Writer Failure}
+\label{sec:streams-wxw-selection}
 
-Distribution and merging are duals:
-
-\begin{center}
-\begin{tabular}{lll}
-\textbf{Operation} & \textbf{Direction} & \textbf{Pattern} \\
-\hline
-Merge & many-to-one & multiple inputs, single output \\
-Distribute & one-to-many & single input, multiple outputs \\
-\end{tabular}
-\end{center}
-
-Together they enable complex stream topologies: a process can receive from multiple sources via merge, transform the data, and distribute results to multiple consumers. The metainterpreter with run control in Chapter~\ref{ch:plain-meta} uses distribution to broadcast control messages to all concurrent subgoals.
-
-\section{Cooperative Stream Production}
-
-Multiple producers can cooperate on a single stream by passing the tail writer between them. Each producer extends the stream and hands control to the next:
+Consider observing a stream being \emph{cooperatively} constructed, where you don't know in advance which party is writing at any moment:
 
 \begin{verbatim}
-% Bob produces two a's then hands tail to Alice
-bob([a,a|Tail?], Result?) :- alice(Tail, Result).
-
-% Alice produces three b's then hands tail to Bob
-alice([b,b,b|Tail?], Result?) :- bob_finish(Tail, Result).
-
-% Bob produces two more a's then closes
-bob_finish([a,a], done).
+observe([X|Xs], Ys?, [X?|Zs?]) :- ground(X?) |
+    Ys = [X?|Ys1?], observe(Xs?, Ys1, Zs).
+observe([X|Xs?], Ys, [X?|Zs?]) :- ground(X?) |
+    Ys = [X?|Ys1], observe(Ys1?, Xs, Zs).
+observe([], [], []).
 \end{verbatim}
 
-\begin{verbatim}
-GLP> bob(Stream, Done).
-bob(X1, X2) :- alice(X3, X4)
-alice(X3, X4) :- bob_finish(X5, X6)
-bob_finish(X5, X6) :- true
-Stream = [a, a, b, b, b, a, a]
-Done = done
-→ succeeds
-\end{verbatim}
+The two clauses handle opposite directions:
+\begin{itemize}
+\item Clause 1: First argument has writer tail \verb|Xs|, second has reader tail \verb|Ys?|. The first stream is producing.
+\item Clause 2: First argument has reader tail \verb|Xs?|, second has writer tail \verb|Ys|. The second stream is producing.
+\end{itemize}
 
-The stream is produced cooperatively: Bob writes \verb|[a,a|...]|, Alice continues with \verb|[b,b,b|...]|, Bob finishes with \verb|[a,a]|.
+This technique relies on writer-to-writer unification being \emph{immediate failure}, not suspension. If WxW suspended on an empty set, clause 2 would never be tried. The observer pattern demonstrates that WxW failure is semantically meaningful for clause selection, not merely an optimization.
 
-A reader walks the stream until hitting the end:
-
-\begin{verbatim}
-reader([], Count, Count?).
-reader([X|Xs], Count, Result?) :- ground(X?) |
-    Count1 := Count? + 1,
-    reader(Xs?, Count1?, Result).
-\end{verbatim}
-
-\begin{verbatim}
-GLP> bob(Stream, _), reader(Stream?, 0, Count).
-...
-reader([], 7, X22) :- true
-Count = 7
-→ succeeds
-\end{verbatim}
-
-The reader counts 7 elements: two a's, three b's, two more a's.
+The Writer/Reader Tail Discrimination table in Appendix~\ref{appendix:list-unification} summarizes these cases.
 
 \section{Difference Lists}
 
@@ -493,71 +262,6 @@ Head: [1,2|T?]    (structure with hole T?)
 Tail: T           (writer that can fill the hole)
 \end{verbatim}
 
-An empty difference list:
-\begin{verbatim}
-Head: T?
-Tail: T
-\end{verbatim}
-
-The ``list'' is whatever lies between the current head and the eventual tail binding.
-
-\subsection{Creating Difference Lists}
-
-To create a difference list with $N$ empty slots:
-
-\begin{verbatim}
-create_dl(0, H?, H).
-create_dl(N, [_|H?], T) :- N? > 0 | N1 := N? - 1, create_dl(N1?, H, T?).
-\end{verbatim}
-
-\begin{verbatim}
-GLP> create_dl(3, H, T?).
-create_dl(3, H, T) :- :=/2(X1, -(3, 1)), create_dl(X1?, X2, T?)
-:=/2(X1, -(3, 1)) :- true
-create_dl(2, X2, T?) :- :=/2(X3, -(2, 1)), create_dl(X3?, X4, T?)
-:=/2(X3, -(2, 1)) :- true
-create_dl(1, X4, T?) :- :=/2(X5, -(1, 1)), create_dl(X5?, X6, T?)
-:=/2(X5, -(1, 1)) :- true
-create_dl(0, X6, T?) :- true
-H = [_, _, _ | T?]
-T = <unbound>
-→ succeeds
-\end{verbatim}
-
-The result is a structure with three empty slots, followed by the open tail.
-
-\subsection{Converting Lists}
-
-To convert a standard list to a difference list:
-
-\begin{verbatim}
-list_to_dl([], T?, T).
-list_to_dl([X|Xs], [X?|Ys?], T) :- list_to_dl(Xs?, Ys, T?).
-\end{verbatim}
-
-\begin{verbatim}
-GLP> list_to_dl([1, 2, 3], H, T?).
-list_to_dl([1, 2, 3], H, T?) :- list_to_dl([2, 3], X1, T?)
-list_to_dl([2, 3], X1, T?) :- list_to_dl([3], X2, T?)
-list_to_dl([3], X2, T?) :- list_to_dl([], X3, T?)
-list_to_dl([], X3, T?) :- true
-H = [1, 2, 3 | T?]
-T = <unbound>
-→ succeeds
-\end{verbatim}
-
-To close a difference list into a standard list, bind the tail to empty:
-
-\begin{verbatim}
-close_dl(H, T, H?) :- T? = [].
-\end{verbatim}
-
-\begin{verbatim}
-GLP> close_dl(H, [], [a, b, c]).
-H = [a, b, c]
-→ succeeds
-\end{verbatim}
-
 \subsection{Constant-Time Append}
 
 The power of difference lists: O(1) concatenation. To append two difference lists, unify the first tail with the second head:
@@ -566,445 +270,259 @@ The power of difference lists: O(1) concatenation. To append two difference list
 append_dl(H1, T1?, T1, T2?, H1?, T2).
 \end{verbatim}
 
-The arguments are:
-\begin{enumerate}
-\item \verb|H1|: first difference list head (input)
-\item \verb|T1?|: first tail as reader (pairs with arg 3)
-\item \verb|T1|: second head (input, bound to close first tail)
-\item \verb|T2?|: second tail as reader (input)
-\item \verb|H1?|: result head (output)
-\item \verb|T2|: result tail (output)
-\end{enumerate}
+The append completed in constant time---six unifications regardless of list length.
 
-The key is arguments 2 and 3: \verb|T1?| and \verb|T1| form a reader/writer pair within the clause. The goal passes the first tail writer at position 2 and the second head at position 3. The clause binds them together through the pair.
+%% ============================================
+%% Section 2: Buffered Communication
+%% ============================================
 
-\subsection{Detailed Unification Trace}
+\section{Buffered Communication}
+\label{sec:buffered-communication}
 
-Let us append \verb|[1,2]| and \verb|[3,4]|:
+\subsection{The Back-Pressure Problem}
+\label{sec:backpressure-problem}
+
+In producer-consumer systems, a fast producer can overwhelm a slow consumer. Without flow control, messages accumulate unboundedly, exhausting memory. \emph{Back-pressure} is the mechanism by which consumers signal producers to slow down.
+
+In \GLP, the standard stream communication pattern offers no back-pressure---the producer can emit messages as fast as it runs, regardless of consumer speed. The solution is \emph{bounded buffers}.
+
+\subsection{Difference-List Bounded Buffer}
+\label{sec:buffer-difference-list}
+
+We represent the buffer as a difference list \verb|Head--Tail|, where \verb|Head| is the read end and \verb|Tail| is the write end:
 
 \begin{verbatim}
-Goal:   append_dl([1,2|T1?], T1, [3,4|T2?], T2, H, T?)
-Clause: append_dl(Ha, Ta?, Ta, Tb?, Ha?, Tb).
+%% Send suspends when buffer is full
+send(Msg, [Msg|NBuf?], NBuf).
+
+%% Receive creates a new slot, allowing more sends
+receive(Msg, [Msg|NBuf]--[_|NTail?], NBuf--NTail).
+
+%% Close the buffer
+close([end_of_stream|_]).
+closed(end_of_stream).
 \end{verbatim}
 
+The \verb|--| operator is simply a binary functor with no special meaning---we use it to pair the read and write ends of the buffer. When the goal \verb|receive(I, Buf?, NBuf)| unifies with the head \verb|receive(Msg, [Msg|NBuf]--[_|NTail?], NBuf--NTail)|, the second argument demonstrates compound term unification (Appendix~\ref{appendix:compound-unification}): the goal's \verb|Buf?| must match the structure \verb|[...]--[...]|. If \verb|Buf?| is unbound (its paired writer not yet assigned), unification suspends. When \verb|Buf| receives a difference-list value, the goal reactivates and unification proceeds by matching the \verb|--| functor and recursively unifying its arguments.
+
+The key insight: \verb|receive| not only extracts a message but also extends the tail with a new slot \verb|[_|NTail?]|. This ``credits'' the producer to send one more message.
+
+\subsection{Opening a Buffer}
+
+The \verb|open/2| predicate creates a buffer with a specified number of slots:
+
+\begin{verbatim}
+open(0, X--X).
+open(N, [_|Y]--Z) :- N > 0 | N1 := N? - 1, open(N1?, Y--Z).
+\end{verbatim}
+
+For \verb|open(3, Buf)|, we get a buffer with 3 empty slots: \verb|[_,_,_|T]--T|. The producer can \verb|send| up to 3 messages before suspending.
+
+\subsection{Flow Control Semantics}
+\label{sec:buffer-flow-control}
+
+The bounded buffer achieves flow control through suspension:
+
+\begin{enumerate}
+\item \textbf{Buffer not full:} \verb|send| succeeds immediately, filling a slot
+\item \textbf{Buffer full:} \verb|send| attempts to unify with a full buffer and suspends
+\item \textbf{Consumer receives:} \verb|receive| extends the tail, unblocking the suspended \verb|send|
+\end{enumerate}
+
+This creates a feedback loop: the consumer's consumption rate controls the producer's production rate.
+
+\subsection{Network Switches}
+\label{sec:network-switch}
+
+A network switch routes messages between multiple ports based on destination:
+
+\begin{verbatim}
+switch2x2(In1, In2, Out1, Out2) :-
+    receive(M, In1?, Ins1), send(M?, Out1?, Outs1) |
+    switch2x2(Ins1?, In2?, Outs1?, Out2?).
+switch2x2(In1, In2, Out1, Out2) :-
+    receive(M, In2?, Ins2), send(M?, Out1?, Outs1) |
+    switch2x2(In1?, Ins2?, Outs1?, Out2?).
+switch2x2(In1, In2, Out1, Out2) :-
+    receive(M, In1?, Ins1), send(M?, Out2?, Outs2) |
+    switch2x2(Ins1?, In2?, Out1?, Outs2?).
+switch2x2(In1, In2, Out1, Out2) :-
+    receive(M, In2?, Ins2), send(M?, Out2?, Outs2) |
+    switch2x2(In1?, Ins2?, Out1?, Outs2?).
+\end{verbatim}
+
+The guards \verb|receive(...), send(...)| ensure the clause commits only when both a message is available on an input and space is available on an output. If both outputs are full, all clauses suspend---back-pressure propagates from outputs to inputs.
+
+%% ============================================
+%% Section 3: Objects and Monitors
+%% ============================================
+
+\section{Objects and Monitors}
+\label{sec:objects-monitors}
+
+This section shows how reader/writer pairs naturally give rise to bidirectional channels and stateful servers. The concepts presented here---processes maintaining state in recursive parameters, responding to messages via streams, and communicating through incomplete message variables---are the \GLP realization of \emph{objects}. A \emph{monitor} is simply an object accessed by multiple clients through a merge network.
+
+\subsection{Counter}
+\label{sec:monitors-counter}
+
+The simplest monitor maintains a counter responding to \verb|clear|, \verb|add|, and \verb|read(X)|:
+
+\begin{verbatim}
+counter(In) :- counter_loop(In?, 0).
+
+counter_loop([clear|In], _) :- counter_loop(In?, 0).
+counter_loop([add|In], C) :- C1 := C? + 1, counter_loop(In?, C1?).
+counter_loop([read(V)|In], C) :- ground(C?) | V = C?, counter_loop(In?, C?).
+counter_loop([], _).
+\end{verbatim}
+
+The \verb|read(V)| request is an \emph{incomplete message}: the client sends \verb|read(V)| retaining reader \verb|V?|, and the monitor binds writer \verb|V| to the current count. The \verb|ground(C?)| guard permits replication of \verb|C?| to both the response and the recursive call.
+
+From a unification perspective, when the monitor's clause head \verb|counter_loop([read(V)|In], C)| matches a goal, the \verb|V| in the message is a fresh writer (renamed from the clause). The body assignment \verb|V = C?| binds this writer to the current count. The induced reader assignment then propagates this value through the communication channel: the client's reader \verb|V?| receives the count.
+
+\subsection{Shared Queue}
+\label{sec:monitors-queue}
+
+A more sophisticated monitor implements a shared queue using a difference-list:
+
+\begin{verbatim}
+queue(In) :- queue_loop(In?, Q, Q).
+
+queue_loop([dequeue(X)|In], H, T) :-
+    H = [X|H1?],
+    queue_loop(In?, H1, T?).
+queue_loop([enqueue(X)|In], H, T) :-
+    T = [X|T1?],
+    queue_loop(In?, H?, T1).
+queue_loop([], _, _).
+\end{verbatim}
+
+The key insight: when the queue is empty and \verb|dequeue(X)| arrives, \verb|X| unifies with the head variable. When \verb|enqueue(V)| later arrives, \verb|V| fills the tail---which is the same variable. Thus \verb|X| receives \verb|V| through implicit synchronization.
+
+\subsection{Objects and Encapsulation}
+
+The counter demonstrates how object-oriented concepts emerge from process-based programming:
+
 \begin{center}
-\begin{tabular}{clll}
-\textbf{Arg} & \textbf{Goal} & \textbf{Head} & \textbf{Binding} \\
+\begin{tabular}{ll}
+\textbf{OOP Concept} & \textbf{GLP Realization} \\
 \hline
-1 & \verb|[1,2|T1?]| & \verb|Ha| & \verb|Ha := [1,2|T1?]| \\
-2 & \verb|T1| & \verb|Ta?| & \verb|T1 := Ta?| \\
-3 & \verb|[3,4|T2?]| & \verb|Ta| & \verb|Ta := [3,4|T2?]| \\
-4 & \verb|T2| & \verb|Tb?| & \verb|T2 := Tb?| \\
-5 & \verb|H| & \verb|Ha?| & \verb|H := Ha?| \\
-6 & \verb|T?| & \verb|Tb| & \verb|Tb := T?| \\
+Private fields & Recursive parameters \\
+Public methods & Message patterns \\
+Method call & Stream element \\
+Return value & Incomplete message variable \\
+Object instance & Process with its own stream \\
 \end{tabular}
 \end{center}
 
-The critical binding is at argument 3: \verb|Ta := [3,4|T2?]|. Its induced reader assignment delivers:
-\[
-\mathtt{Ta?} := \mathtt{[3,4|T2?]}
-\]
+\emph{Encapsulation} arises naturally: the state parameter is internal to the recursion---no external process can directly read or modify it. Messages are processed in stream order, so each message sees the state left by previous messages.
 
-Since argument 2 bound \verb|T1 := Ta?|, the induced reader assignment flows through:
-\[
-\mathtt{T1?} := \mathtt{[3,4|T2?]}
-\]
+\subsection{Multiple Object Instances}
+\label{sec:object-instances}
 
-This fills the hole in \verb|[1,2|T1?]|, yielding \verb|[1,2,3,4|T2?]|.
-
-The append completed in constant time---six unifications regardless of list length.
-
-\subsection{Complete Append Example}
-
-Here is a full example: convert two lists to difference lists, append them, and close the result:
+Each monitor call creates a distinct instance with its own state. Managing multiple named instances requires a registry:
 
 \begin{verbatim}
-GLP> list_to_dl([1,2], H1, T1), list_to_dl([3,4], H2, T2),
-     append_dl(H1?, T1, H2?, T2, R, T?), close_dl(R?, T, Result).
-Result = [1, 2, 3, 4]
-→ succeeds
+registry([create(Name)|In], Objects) :-
+    counter(Cmds?),
+    registry(In?, [(Name?, Cmds)|Objects?]).
+registry([(Name, Msg)|In], Objects) :-
+    route(Objects?, Name?, Msg?, Objects1),
+    registry(In?, Objects1?).
+registry([], _).
+
+route([(Name, [Msg|Rest?])|Objs], Name, Msg, [(Name?, Rest)|Objs?]).
+route([Obj|Objs], Name, Msg, [Obj?|Objs1?]) :-
+    otherwise |
+    route(Objs?, Name?, Msg?, Objs1).
 \end{verbatim}
 
-The sequence:
-\begin{enumerate}
-\item \verb|list_to_dl([1,2], H1, T1)| creates difference list \verb|([1,2|T1?], T1)|
-\item \verb|list_to_dl([3,4], H2, T2)| creates difference list \verb|([3,4|T2?], T2)|
-\item \verb|append_dl| unifies \verb|T1| with \verb|[3,4|T2?]|, filling the first hole
-\item \verb|close_dl| binds \verb|T| to \verb|[]|, closing the result
-\end{enumerate}
+\subsection{Comparison with the Actor Model}
+\label{sec:actor-comparison}
 
-All operations except the initial conversions are O(1).
+\GLP objects resemble actors but with key differences:
 
-\subsection{Why Difference Lists Work in GLP}
+\begin{center}
+\begin{tabular}{lll}
+\textbf{Feature} & \textbf{Actors} & \textbf{GLP Objects} \\
+\hline
+Message delivery & Asynchronous, unordered & Stream-ordered \\
+Response mechanism & Explicit reply-to & Incomplete messages \\
+State update & Internal mutation & Recursive parameter \\
+Creation & \verb|spawn| primitive & Goal reduction \\
+Identity & Actor reference & Stream endpoint \\
+\end{tabular}
+\end{center}
 
-Difference lists rely on:
-\begin{enumerate}
-\item Holding an ``open'' structure with an unbound reader at the end
-\item Later instantiating the paired writer to extend the structure
-\end{enumerate}
+Stream-ordered delivery simplifies reasoning about state consistency---messages are processed in a deterministic sequence.
 
-In GLP, this maps to reader/writer pairs:
-\begin{itemize}
-\item The structure contains a \emph{reader} at the hole position
-\item We hold the paired \emph{writer} to fill it later
-\item SRSW ensures exactly one writer exists---no conflicts
-\item When the writer is bound, the reader receives the value
-\end{itemize}
+\subsection{Observing Monitors}
+\label{sec:observing-monitors}
 
-\section{Bounded Buffers}
-
-When a fast producer meets a slow consumer, unbounded buffering can exhaust memory. A \emph{bounded buffer} limits how far the producer can advance beyond the consumer.
-
-\subsection{List-Based Bounded Buffer}
-
-The simplest technique: the consumer's pattern determines buffer capacity. Consider:
+Observing a monitor's request stream requires handling \emph{incomplete messages}. Input operations like \verb|add(N)| have ground arguments, but output operations like \verb|value(V)| contain variables that the monitor will bind. A type-aware observer must handle both modes:
 
 \begin{verbatim}
-bb_consumer([X1,X2|Xs?]) :- ground(X1?) | bb_consumer([X2?|Xs]).
+observe_accum([add(N)|In], [add(N?)|Out?], [add(N?)|Log?]) :-
+    ground(N?) | observe_accum(In?, Out, Log).
+observe_accum([value(V1?)|In], [value(V)|Out?], [value(V2?)|Log?]) :-
+    duplicate(V?, V1, V2),
+    observe_accum(In?, Out, Log).
+observe_accum([], [], []).
+
+duplicate(X, X?, X?) :- ground(X?) | true.
 \end{verbatim}
 
-The pattern \verb|[X1,X2|Xs?]| requires \emph{two} elements to be visible before consuming one. This creates backpressure: if the producer is only one element ahead, the consumer suspends.
-
-The buffer capacity is one: the producer can be at most one element ahead of the consumer.
-
-For buffer size $N$, require $N+1$ visible elements:
-\begin{verbatim}
-% Buffer size 2
-bb_cons2([X1,X2,X3|Xs?]) :- ground(X1?) | bb_cons2([X2?,X3?|Xs]).
-\end{verbatim}
-
-\subsection{Backpressure in Action}
-
-The trace reveals backpressure. With buffer size 2, the consumer requires two visible elements:
-
-\begin{verbatim}
-bb_cons2([X1,X2|Xs?], Sum, Result?) :- ground(X1?) |
-    Sum1 := Sum? + X1?,
-    bb_cons2([X2?|Xs], Sum1?, Result).
-bb_cons2([X], Sum, Result?) :- ground(X?) | Result := Sum? + X?.
-bb_cons2([], Sum, Sum?).
-\end{verbatim}
-
-\begin{verbatim}
-GLP> slow_producer(H, 5), bb_cons2(H?, 0, R).
-slow_producer(X1, 5) :- ...
-bb_cons2([5 | X4?], 0, X2) → suspended    ← waiting for 2nd element
-slow_producer(X4, 4) :- ...
-bb_cons2([5, 4 | X6?], 0, X2) :- ...      ← now has 2, proceeds
-...
-R = 15
-→ succeeds
-\end{verbatim}
-
-The key moment: after the producer emits 5, the consumer sees \verb|[5 | X4?]|---only one element with an unbound tail. The pattern \verb|[X1,X2|Xs?]| requires two, so \verb|bb_cons2| suspends.
-
-Only when the producer emits 4, giving \verb|[5, 4 | X6?]|, can the consumer proceed. This is backpressure: the consumer cannot outpace the producer by more than the buffer size.
-
-\subsection{Difference List Bounded Buffer}
-
-With difference lists, buffer capacity is explicit. The consumer creates the buffer and advances the tail as it consumes:
-
-\begin{verbatim}
-% Create buffer with N slots
-create_dl(0, H?, H).
-create_dl(N, [_|H?], T) :- N? > 0 | N1 := N? - 1, create_dl(N1?, H, T?).
-
-% Producer fills slots
-bb_producer([], 0).
-bb_producer([N?|Xs?], N) :- N? > 0 | N1 := N? - 1, bb_producer(Xs, N1?).
-
-% Consumer reads and advances tail to free slots
-consumer([], Sum, Sum?).
-consumer([X|Xs], Sum, Result?) :- ground(X?) |
-    Sum1 := Sum? + X?,
-    consumer(Xs?, Sum1?, Result).
-\end{verbatim}
-
-\begin{verbatim}
-GLP> bb_producer(H, 3), consumer(H?, 0, R).
-H = [3, 2, 1]
-R = 6
-→ succeeds
-\end{verbatim}
-
-\section{Stream Transducers}
-
-A \emph{transducer} transforms an input stream into an output stream. Each element of input produces zero, one, or more elements of output.
-
-\subsection{Copier}
-
-The identity transducer:
-
-\begin{verbatim}
-copier([], []).
-copier([X|Xs], [X?|Ys?]) :- copier(Xs?, Ys).
-\end{verbatim}
-
-\begin{verbatim}
-GLP> copier([1, 2, 3], Out).
-copier([1, 2, 3], Out) :- copier([2, 3], X1)
-copier([2, 3], X1) :- copier([3], X2)
-copier([3], X2) :- copier([], X3)
-copier([], X3) :- true
-Out = [1, 2, 3]
-→ succeeds
-\end{verbatim}
-
-\subsection{Duplicator}
-
-Each input element appears twice in output:
-
-\begin{verbatim}
-duplicator([], []).
-duplicator([X|Xs], [X?,X?|Ys?]) :- ground(X?) | duplicator(Xs?, Ys).
-\end{verbatim}
-
-The \verb|ground(X?)| guard enables two occurrences of \verb|X?| without violating SRSW.
-
-\begin{verbatim}
-GLP> duplicator([1, 2], Out).
-duplicator([1, 2], Out) :- duplicator([2], X1)
-duplicator([2], X1) :- duplicator([], X2)
-duplicator([], X2) :- true
-Out = [1, 1, 2, 2]
-→ succeeds
-\end{verbatim}
-
-\subsection{Separator}
-
-Insert a marker (here, 0) after each element:
-
-\begin{verbatim}
-separator([], []).
-separator([X|Xs], [X?,0|Ys?]) :- separator(Xs?, Ys).
-\end{verbatim}
-
-\begin{verbatim}
-GLP> separator([a, b], Out).
-separator([a, b], Out) :- separator([b], X1)
-separator([b], X1) :- separator([], X2)
-separator([], X2) :- true
-Out = [a, 0, b, 0]
-→ succeeds
-\end{verbatim}
-
-\subsection{Differentiator}
-
-Output the difference between consecutive elements:
-
-\begin{verbatim}
-differentiator([], []).
-differentiator([_], []).
-differentiator([X,Y|Xs], [D?|Ds?]) :- ground(X?), ground(Y?) |
-    D := Y? - X?,
-    differentiator([Y?|Xs?], Ds).
-\end{verbatim}
-
-\begin{verbatim}
-GLP> differentiator([1, 4, 7], Out).
-differentiator([1, 4, 7], Out) :- :=/2(X1, -(4, 1)), differentiator([4 | [7]], X2)
-:=/2(X1, -(4, 1)) :- true
-differentiator([4 | [7]], X2) :- :=/2(X3, -(7, 4)), differentiator([7 | []], X4)
-:=/2(X3, -(7, 4)) :- true
-differentiator([7 | []], X4) :- true
-Out = [3, 3]
-→ succeeds
-\end{verbatim}
-
-The sequence 1, 4, 7 has differences 3, 3.
-
-\subsection{Integrator}
-
-Output the running sum:
-
-\begin{verbatim}
-integrator(Xs, Ys?) :- integrator_acc(Xs?, 0, Ys).
-integrator_acc([], _, []).
-integrator_acc([X|Xs], Acc, Out?) :- ground(X?) |
-    Sum := Acc? + X?,
-    emit_sum(Sum?, Xs?, Out).
-emit_sum(V, Xs, [V?|Ys?]) :- ground(V?) | integrator_acc(Xs?, V?, Ys).
-\end{verbatim}
-
-\begin{verbatim}
-GLP> integrator([1, 2, 3, 4], Out).
-Out = [1, 3, 6, 10]
-→ succeeds
-\end{verbatim}
-
-The running sums: 1, 1+2=3, 1+2+3=6, 1+2+3+4=10.
-
-\subsection{Chaining Transducers}
-
-Transducers compose naturally:
-
-\begin{verbatim}
-GLP> duplicator([1,2], Mid), separator(Mid?, Out).
-duplicator([1, 2], X1) :- duplicator([2], X3)
-separator([1, 1 | X3?], Out) :- separator([1 | X3?], X6)
-duplicator([2], X3) :- duplicator([], X5)
-separator([1 | [2, 2 | X5?]], X6) :- separator([2, 2 | X5?], X7)
-duplicator([], X5) :- true
-separator([2, 2 | []], X7) :- separator([2 | []], X8)
-separator([2 | []], X8) :- separator([], X9)
-separator([], X9) :- true
-Out = [1, 0, 1, 0, 2, 0, 2, 0]
-→ succeeds
-\end{verbatim}
-
-The trace shows interleaving: \verb|duplicator| produces elements that \verb|separator| immediately processes.
-
-\section{Stream Observers}
-\label{sec:streams-observers}
-
-An \emph{observer} monitors a stream without disrupting the communication between producer and consumer. This is useful for logging, debugging, or creating audit trails.
-
-\subsection{Forwarding Observer}
-
-The simplest observer sits between producer and consumer, forwarding elements while creating a copy:
-
-\begin{verbatim}
-observer([X|Xs], [X?|Ys?], [X?|Zs?]) :- ground(X?) | observer(Xs?, Ys, Zs).
-observer([], [], []).
-\end{verbatim}
-
-Arguments:
-\begin{enumerate}
-\item Input stream from producer
-\item Output stream to consumer (forwarded)
-\item Observation stream (copy)
-\end{enumerate}
-
-The \verb|ground(X?)| guard is required because \verb|X?| appears twice---once forwarded to the consumer, once copied to the observation stream.
-
-\begin{verbatim}
-GLP> test_obs1(Sum, Copy).
-producer(X1, 5) :- :=/2(X5, -(5, 1)), producer(X6, X5?)
-observer1([5 | X6?], X2, X3) :- observer1(X6?, X7, X8)
-consumer([5 | X7?], 0, X4) :- :=/2(X9, +(0, 5)), consumer(X7?, X9?, X10)
-...
-observer1([], X31, X32) :- true
-consumer([], 15, X34) :- true
-Sum = 15
-Copy = [5, 4, 3, 2, 1]
-→ succeeds
-\end{verbatim}
-
-The trace shows three-way interleaving: producer emits an element, observer immediately forwards and copies it, consumer processes it---all concurrent through the shared streams.
-
-\subsection{Observing Cooperative Streams}
-
-A harder problem: observe a stream being \emph{cooperatively} constructed, where you don't know in advance which party is writing at any moment.
-
-Consider bob and alice cooperatively writing a stream, handing the tail back and forth. The observer must:
-\begin{enumerate}
-\item Detect who is currently writing
-\item Copy elements to the observation stream
-\item Forward correctly regardless of direction
-\end{enumerate}
-
-\begin{verbatim}
-observe([X|Xs], Ys?, [X?|Zs?]) :- ground(X?) |
-    Ys = [X?|Ys1?], observe(Xs?, Ys1, Zs).
-observe([X|Xs?], Ys, [X?|Zs?]) :- ground(X?) |
-    Ys = [X?|Ys1], observe(Ys1?, Xs, Zs).
-observe([], [], []).
-\end{verbatim}
-
-The two clauses handle opposite directions:
-\begin{itemize}
-\item Clause 1: First argument has writer tail \verb|Xs|, second has reader tail \verb|Ys?|. The first stream is producing.
-\item Clause 2: First argument has reader tail \verb|Xs?|, second has writer tail \verb|Ys|. The second stream is producing.
-\end{itemize}
-
-\subsection{Clause Selection via Writer-to-Writer Failure}
-\label{sec:streams-wxw-selection}
-
-How does clause selection work? Consider a goal where the first stream is producing:
-
-\begin{verbatim}
-Goal: observe([a|Tail], S2?, Copy)    where Tail is a writer
-\end{verbatim}
-
-Try clause 1: \verb|observe([X|Xs], Ys?, ...)|
-\begin{itemize}
-\item Unify goal's \verb|Tail| (writer) with head's \verb|Xs| (writer)
-\item Writer-to-writer unification \emph{fails}
-\item Try next clause
-\end{itemize}
-
-Try clause 2: \verb|observe([X|Xs?], Ys, ...)|
-\begin{itemize}
-\item Unify goal's \verb|Tail| (writer) with head's \verb|Xs?| (reader)
-\item Succeeds: writer bound to reader
-\end{itemize}
-
-When the second stream is producing, the pattern reverses: clause 1 succeeds, clause 2 would fail.
-
-This technique relies on writer-to-writer unification being \emph{immediate failure}, not suspension. If WxW suspended on an empty set, clause 2 would never be tried. The observer pattern demonstrates that WxW failure is semantically meaningful for clause selection, not merely an optimization.
-
-The Writer/Reader Tail Discrimination table in Appendix~\ref{appendix:list-unification} summarizes these cases. Programs routinely exploit WxW failure to discriminate which stream is producing, enabling bidirectional protocols without explicit coordination.
-
-\subsection{Observing Bob and Alice}
-
-Recall cooperative production:
-
-\begin{verbatim}
-bob([a,a|Tail?], Result?) :- alice(Tail, Result).
-alice([b,b,b|Tail?], Result?) :- bob_finish(Tail, Result).
-bob_finish([a,a], done).
-\end{verbatim}
-
-To observe this cooperative stream:
-
-\begin{verbatim}
-GLP> test_obs2(Copy, Done).
-bob(X1, X2) :- alice(X5, X6)
-observe([a, a | X5?], X3, X4) :- =/2(X7, [a | X8?]), observe([a | X5?], X8, X9)
-alice(X5, X6) :- bob_finish(X10, X11)
-observe([a | [b, b, b | X10?]], X8, X9) :- =/2(X12, [a | X13?]), observe([b, b, b | X10?], X13, X14)
-bob_finish(X10, X11) :- true
-...
-observe([], X28, X29) :- true
-Copy = [a, a, b, b, b, a, a]
-Done = done
-→ succeeds
-\end{verbatim}
-
-The trace shows the observer detecting each handover. When bob hands off to alice (the tail \verb|X5| becomes a reader), the observer switches clauses via WxW failure and continues copying from alice's production.
+%% ============================================
+%% Exercises
+%% ============================================
 
 \section{Exercises}
+\label{sec:streams-exercises}
+
+\subsection{Stream Fundamentals}
 
 \begin{enumerate}
 \item[$\star$] Implement \verb|length(Xs?, N)| that computes the length of a list using an accumulator.
 
-\item[$\star$] Implement \verb|map_inc(Xs?, Ys)| that increments each element of a list of numbers. For example, \verb|map_inc([1,2,3], Ys)| yields \verb|Ys = [2,3,4]|.
+\item[$\star$] Implement \verb|map_inc(Xs?, Ys)| that increments each element of a list of numbers.
 
-\item[$\star\star$] Implement \verb|filter_even(Xs?, Ys)| that keeps only even numbers from a list. For example, \verb|filter_even([1,2,3,4,5,6], Ys)| yields \verb|Ys = [2,4,6]|. Use guards to test each element.
+\item[$\star\star$] Implement \verb|filter_even(Xs?, Ys)| that keeps only even numbers from a list.
 
-\item[$\star\star$] The predicates in this chapter process lists element-by-element using tail recursion with an accumulator. Explain why these are \emph{iterative} rather than \emph{recursive}. What would you see in a trace---concurrent processes or a single process stepping through the list?
-
-\item[$\star\star\star$] Generalize \verb|map_inc| to \verb|map(Xs?, F, Ys)| that applies an arbitrary transformation \verb|F| to each element. What language features would you need? (This is explored in Chapter~\ref{ch:plain-meta}.)
+\item[$\star\star$] Explain why list processing with accumulators is \emph{iterative} rather than \emph{recursive}.
 
 \item Write a transducer \verb|filter(Pred, In, Out)| that outputs only elements satisfying predicate \verb|Pred|.
 
 \item Write \verb|take(N, In, Out)| that outputs the first $N$ elements of a stream.
 
-\item Write \verb|zip(Xs, Ys, Zs)| that pairs corresponding elements: \verb|zip([1,2], [a,b], Zs)| yields \verb|Zs = [(1,a), (2,b)]|.
+\item Write \verb|zip(Xs, Ys, Zs)| that pairs corresponding elements.
 
 \item Implement a round-robin scheduler: given a list of streams, output one element from each in turn.
 
-\item Design a difference list representation for queues with O(1) enqueue and dequeue. Test with concurrent producers and consumers.
+\item \label{ex:biased-merge} \textbf{(Biased Merge)} Implement a biased merge operator that maintains fairness in dynamically-constructed trees.
+\end{enumerate}
 
-\item Explain why the \verb|differentiator| needs two elements visible (\verb|[X,Y|Xs]|) while most transducers need only one.
+\subsection{Buffered Communication}
 
-\item The \verb|integrator| and \verb|differentiator| are inverses in calculus. Show that \verb|integrator| followed by \verb|differentiator| on \verb|[1,2,3,4]| yields \verb|[1,2,3,4]| (after handling boundary).
+\begin{enumerate}
+\item \textbf{Bounded Buffer Size.} Experiment with different buffer sizes. What happens with size 0? Size 1?
 
-\item \label{ex:biased-merge} \textbf{(Biased Merge)} Implement a biased merge operator that maintains fairness in dynamically-constructed trees. The operator should:
-\begin{itemize}
-\item Track the bias (weight) of each subtree
-\item Forward \verb|started| and \verb|halted| messages to update weights
-\item Alternate between inputs according to the current bias
-\end{itemize}
-Hint: Use a bias ratio \verb|Bx:By| and a counter \verb|N| that determines when to switch priorities. When \verb|N| reaches zero, swap the streams and reset the counter to the new high-priority bias.
+\item \textbf{Priority Switch.} Modify the 2×2 switch to give priority to Input 1 over Input 2 when both have messages.
+
+\item \textbf{Load Balancer.} Implement a load balancer that distributes messages from one input to multiple outputs, round-robin.
+\end{enumerate}
+
+\subsection{Objects and Monitors}
+
+\begin{enumerate}
+\item Extend the counter to support \verb|subtract| in addition to \verb|add|.
+
+\item Implement a bounded buffer monitor that blocks producers when full and consumers when empty.
+
+\item Implement a priority queue monitor with two input streams.
+
+\item \textbf{Bank Account.} Implement a bank account object with messages \verb|deposit(Amount)|, \verb|withdraw(Amount, Success)|, and \verb|balance(B)|.
+
+\item \textbf{Stack Object.} Implement a stack with \verb|push(X)|, \verb|pop(X)|, and \verb|is_empty(B)|.
+
+\item \textbf{Observable Counter.} Implement a counter that notifies registered observers whenever its value changes.
 \end{enumerate}

@@ -1,0 +1,272 @@
+% chapters/meta.tex - Metaprogramming
+
+\chapter{Metaprogramming}
+\label{ch:meta}
+
+This chapter presents metaprogramming in \GLP: programs that manipulate, interpret, and transform other programs. In logic programming, programs are data: clauses are terms, goals are terms. This fundamental property enables powerful metaprogramming techniques.
+
+%% ============================================
+%% Section 1: Plain Meta-Interpreter
+%% ============================================
+
+\section{Plain Meta-Interpreter}
+\label{sec:plain-meta}
+
+\subsection{Programs as Data}
+\label{sec:programs-as-data}
+
+A \GLP clause like:
+\begin{verbatim}
+merge([X|Xs], Ys, [X?|Zs?]) :- merge(Xs?, Ys?, Zs).
+\end{verbatim}
+
+can be represented as a term using a \verb|reduce/2| encoding:
+\begin{verbatim}
+reduce(merge([X|Xs], Ys, [X?|Zs?]), merge(Xs?, Ys?, Zs)).
+\end{verbatim}
+
+This representation allows programs to examine, modify, and execute other programs.
+
+\subsection{The Vanilla Meta-Interpreter}
+\label{sec:vanilla-meta}
+
+The simplest meta-interpreter for logic programming:
+
+\begin{verbatim}
+solve(true).
+solve((A, B)) :- solve(A), solve(B).
+solve(A) :- clause(A, B), solve(B).
+\end{verbatim}
+
+\subsection{The GLP Plain Meta-Interpreter}
+\label{sec:glp-plain-meta}
+
+The \GLP version uses \verb|reduce/2| encoding and adds concurrency:
+
+\begin{verbatim}
+run(true).                              % halt
+run((A,B)) :- run(A?), run(B?).         % fork
+run(A) :- known(A) | reduce(A?,B), run(B?).  % reduce
+\end{verbatim}
+
+The \verb|known(A)| guard (Appendix~\ref{appendix:guard-unification}) tests whether the term \verb|A| has a known principal functor---that is, whether we can determine which predicate is being called. Unlike \verb|ground|, which requires all subterms to be bound, \verb|known| succeeds as soon as the outer structure is determined. For example, \verb|known(merge([X|Xs], Ys, Zs))| succeeds even if \verb|X|, \verb|Xs|, \verb|Ys|, and \verb|Zs| are unbound, because the functor \verb|merge/3| is known. The guard suspends if \verb|A| is an unbound reader, since clause selection cannot proceed until we know which predicate to reduce.
+
+\paragraph{The Fork Rule.} When running a conjunction \verb|(A,B)|, we spawn two concurrent processes: \verb|run(A?)| and \verb|run(B?)|.
+
+\paragraph{Program Encoding.} The object program is encoded as \verb|reduce/2| facts:
+
+\begin{verbatim}
+%% merge encoded for meta-interpreter
+reduce(merge([X|Xs],Ys,[X?|Zs?]), merge(Xs?,Ys?,Zs)).
+reduce(merge(Xs,[Y|Ys],[Y?|Zs?]), merge(Xs?,Ys?,Zs)).
+reduce(merge([],[],[]), true).
+\end{verbatim}
+
+\subsection{Fail-Safe Meta-Interpreter}
+\label{sec:failsafe-meta}
+
+The plain meta-interpreter aborts on failure. The \emph{fail-safe} meta-interpreter reports failures instead:
+
+\begin{verbatim}
+run(true, []).                              % halt
+run((A,B), Zs?) :-                          % fork
+    run(A?, Xs), run(B?, Ys),
+    merge(Xs?, Ys?, Zs).
+run(fail(A), [fail(A?)]).                   % report failure
+run(A, Xs?) :- known(A) | reduce(A?,B), run(B?,Xs).  % reduce
+\end{verbatim}
+
+The program encoding must include a catch-all clause:
+\begin{verbatim}
+reduce(A, failed(A)) :- otherwise | true.
+\end{verbatim}
+
+\subsection{Termination Detection}
+\label{sec:termination-detection}
+
+The \emph{short-circuit} technique detects when all processes have terminated:
+
+\begin{verbatim}
+reduce(P, true, Chain--Chain?).              % halt - close circuit
+reduce(P, (A, B), Left--Right) :-            % fork - split chain
+    reduce(P?, A?, Left?--Middle),
+    reduce(P?, B?, Middle?--Right).
+reduce(P, Goal, Left--Right) :-              % reduce - pass chain
+    Goal =\= true, Goal =\= (_, _),
+    clause(Goal?, P?, Body) |
+    reduce(P?, Body?, Left?--Right).
+\end{verbatim}
+
+Each \verb|true| (termination) closes part of the circuit. When all parallel paths terminate, the circuit closes completely.
+
+\subsection{Program Transformation}
+\label{sec:program-transformation}
+
+\paragraph{Adding Instrumentation.}
+\begin{verbatim}
+run_counted(true, 0).
+run_counted((A,B), N?) :-
+    run_counted(A?, NA), run_counted(B?, NB),
+    N := NA? + NB?.
+run_counted(A, N?) :- known(A) |
+    reduce(A?,B), run_counted(B?, NB), N := NB? + 1.
+\end{verbatim}
+
+\paragraph{Partial Evaluation.} A meta-interpreter can partially evaluate a program:
+\begin{verbatim}
+pe(true, true).
+pe((A,B), (PA?, PB?)) :- pe(A?, PA), pe(B?, PB).
+pe(A, PA?) :- known(A), reduce(A,B) | pe(B?, PA).
+pe(A, A?) :- unknown(A) | true.  % leave unresolved
+\end{verbatim}
+
+The \verb|unknown(A)| guard is the complement of \verb|known|: it succeeds when \verb|A|'s principal functor is not yet determined (i.e., \verb|A| is an unbound variable). This allows the partial evaluator to preserve goals that cannot yet be reduced, leaving them for later instantiation.
+
+%% ============================================
+%% Section 2: Enhanced Meta-Interpreters
+%% ============================================
+
+\section{Enhanced Meta-Interpreters}
+\label{sec:enhanced-meta}
+
+\subsection{Tracing Meta-Interpreter}
+\label{sec:tracing-meta}
+
+A \emph{tracing} meta-interpreter records the execution history:
+
+\begin{verbatim}
+run(true, true).                               % halt
+run((A,B), (TA?,TB?)) :- run(A?,TA), run(B?,TB).   % fork
+run(A, ((I?:Time?):-TB?)) :- known(A) |
+    time(Time), reduce(A?,B,I), run(B?, TB).
+\end{verbatim}
+
+The trace records which clause was used at each step with timestamps, enabling performance profiling and debugging race conditions.
+
+\subsection{Control Meta-Interpreter}
+\label{sec:control-meta}
+
+The \emph{control} meta-interpreter supports runtime control: suspend, resume, and abort:
+
+\begin{verbatim}
+run(true, _).                                       % halt
+run((A,B), Cs) :-                                   % fork
+    distribute(Cs?,Cs1,Cs2),
+    run(A?,Cs1?), run(B?,Cs2?).
+run(A, [suspend|Cs]) :- suspended_run(A,Cs?).       % suspend
+run(A, Cs) :- known(A) |                            % reduce
+    distribute(Cs?,Cs1,Cs2),
+    reduce(A?,B,Cs1?), run(B?,Cs2?).
+
+suspended_run(A, [resume|Cs]) :- run(A,Cs?).        % resume
+suspended_run(A, [abort|_]).                        % abort
+\end{verbatim}
+
+The control stream \verb|Cs| carries commands: \verb|suspend|, \verb|resume|, \verb|abort|.
+
+\subsection{Snapshot Collection}
+\label{sec:snapshot-meta}
+
+The \emph{snapshot} meta-interpreter collects the current resolvent when aborted:
+
+\begin{verbatim}
+suspended_run(A, [resume|Cs], L, R?) :- run(A,Cs?,L?,R).
+suspended_run(A, [abort|_], L, [A?|L?]).
+\end{verbatim}
+
+When aborted, each \verb|suspended_run| adds its goal \verb|A| to the resolvent list. This enables checkpointing: save the state of a computation for later inspection.
+
+\subsection{Debugger Meta-Interpreter}
+\label{sec:debugger-meta}
+
+Combining tracing and control yields an interactive debugger:
+
+\begin{verbatim}
+debug(true, _, _, true).
+debug((A,B), Cs, Budget, (TA?,TB?)) :-
+    distribute(Cs?, Cs1, Cs2),
+    split_budget(Budget?, B1, B2),
+    debug(A?, Cs1?, B1?, TA),
+    debug(B?, Cs2?, B2?, TB).
+debug(A, [step|Cs], Budget, ((I?:A?):-TB?)) :-
+    Budget? > 0, known(A) |
+    B1 := Budget? - 1,
+    reduce(A?,B,I),
+    debug(B?, Cs?, B1?, TB).
+\end{verbatim}
+
+The \verb|[step|Cs]| command advances one reduction. The budget limits total reductions.
+
+\subsection{Abstract Interpretation}
+\label{sec:abstract-interpretation}
+
+Meta-interpreters can perform abstract interpretation---executing programs over abstract domains:
+
+\begin{verbatim}
+%% Abstract domain: pos, neg, zero, unknown
+abstract_add(pos, pos, pos).
+abstract_add(pos, neg, unknown).
+abstract_add(zero, X, X?).
+%% ... etc
+
+abstract_run(true, _).
+abstract_run((A,B), Env) :-
+    abstract_run(A?, Env?),
+    abstract_run(B?, Env?).
+\end{verbatim}
+
+This enables static analysis: determine properties of programs without running them on concrete inputs.
+
+%% ============================================
+%% Section 3: Debugging
+%% ============================================
+
+\section{Debugging}
+\label{sec:debugging}
+
+\subsection{Algorithmic Debugging}
+
+[TO BE DEVELOPED]
+
+\subsection{Trace-Based Debugging}
+
+[TO BE DEVELOPED]
+
+\subsection{Declarative Debugging}
+
+[TO BE DEVELOPED]
+
+%% ============================================
+%% Exercises
+%% ============================================
+
+\section{Exercises}
+\label{sec:meta-exercises}
+
+\subsection{Plain Meta-Interpreter}
+
+\begin{enumerate}
+\item \textbf{Step Counter.} Modify the plain meta-interpreter to count the number of reduction steps taken.
+
+\item \textbf{Depth Limiter.} Add a depth limit to prevent infinite recursion.
+
+\item \textbf{Choice Point Collector.} Modify the fail-safe meta-interpreter to collect choice points---goals where multiple \verb|reduce| clauses match.
+
+\item \textbf{Call Graph.} Write a meta-interpreter that builds a call graph showing which predicates call which others.
+
+\item \textbf{Time-Bounded Execution.} Combine termination detection with a timeout mechanism.
+\end{enumerate}
+
+\subsection{Enhanced Meta-Interpreters}
+
+\begin{enumerate}
+\item \textbf{Replay.} Given a trace from the tracing meta-interpreter, write a replaying meta-interpreter that executes the same computation deterministically.
+
+\item \textbf{Breakpoints.} Add breakpoint support to the debugger: suspend when a specific predicate is called.
+
+\item \textbf{Watch Variables.} Extend the debugger to notify when a specific variable is bound.
+
+\item \textbf{Undo.} Design a mechanism to ``undo'' reductions. What challenges arise with concurrent execution?
+
+\item \textbf{Coverage Analysis.} Write a meta-interpreter that tracks which \verb|reduce| clauses are used.
+\end{enumerate}
