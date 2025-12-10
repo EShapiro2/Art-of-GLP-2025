@@ -43,62 +43,88 @@ The cold-call protocol enables agents to establish friendship without prior shar
 When the user requests connection to a target agent:
 
 \begin{verbatim}
-social_graph(Id, [msg(user, Id, connect(Target))|In], Fs) :-
-    ground(Id), ground(Target) |
-    lookup_send(net, msg(Id, Target, intro(Id?, Id?, Resp)), Fs?, Fs1),
-    inject(Resp?, msg(Target, Id, response(Resp)), In?, In1),
-    social_graph(Id, In1?, Fs1?).
+social_graph(Id, [msg(user, Id?, connect(Target))|In], Fs) :-
+    ground(Id?), ground(Target?) |
+    send_and_setup_response(Id?, Target?, Fs?, Fs1, In?, In1),
+    social_graph(Id?, In1?, Fs1?).
+
+send_and_setup_response(Id, Target, Fs, Fs1?, In, In1?) :-
+    atom(Id?), atom(Target?) |
+    lookup_send(net, msg(Id?, Target?, intro(Id?, Id?, Resp)), Fs?, Fs1),
+    setup_inject(Resp?, Target?, Id?, In?, In1).
+
+setup_inject(Resp, Target, Id, In, In1?) :-
+    atom(Target?), atom(Id?) |
+    inject(Resp?, msg(Target?, Id?, response(Resp)), In?, In1).
 \end{verbatim}
 
-The agent sends an introduction message through the network channel containing its identity and a fresh response variable \verb|Resp|. The \verb|inject| predicate defers insertion of the response into the input stream until \verb|Resp| becomes bound.
+The agent sends an introduction message through the network channel containing its identity and a fresh response variable \verb|Resp|. The helper predicates \verb|send_and_setup_response| and \verb|setup_inject| ensure SRSW compliance by isolating each reader variable occurrence. The \verb|inject| predicate defers insertion of the response into the input stream until \verb|Resp| becomes bound.
 
 \subsection{Processing Received Introductions}
 
 When an agent receives a self-introduction:
 
 \begin{verbatim}
-social_graph(Id, [msg(From, Id, intro(From, From, Resp))|In], Fs) :-
-    ground(Id) |
+social_graph(Id, [msg(From, Id?, intro(From?, From?, Resp))|In], Fs) :-
+    ground(Id?), ground(From?) |
     lookup_send(user, msg(agent, user, befriend(From?, Resp)), Fs?, Fs1),
-    social_graph(Id, In?, Fs1?).
+    social_graph(Id?, In?, Fs1?).
 \end{verbatim}
 
-In deployment, an \verb|attestation| guard would verify the introduction carries a valid signature from the claimed sender. In simulation, we assume all agents are correct. Upon receiving the introduction, the agent consults the user about whether to accept.
+In deployment, an \verb|attestation| guard would verify the introduction carries a valid signature from the claimed sender. In GLPSAM simulation, we assume all agents are correct, so attestation guards are omitted. Upon receiving the introduction, the agent consults the user about whether to accept.
 
 \subsection{User Decision and Channel Establishment}
 
 When the user decides:
 
 \begin{verbatim}
-social_graph(Id, [msg(user, Id, decision(Dec, From, Resp?))|In], Fs) :-
-    ground(Id) |
+social_graph(Id, [msg(user, Id?, decision(Dec, From, Resp?))|In], Fs) :-
+    ground(Id?) |
     bind_response(Dec?, From?, Resp, Fs?, Fs1, In?, In1),
-    social_graph(Id, In1?, Fs1?).
+    social_graph(Id?, In1?, Fs1?).
 \end{verbatim}
 
 The \verb|bind_response| predicate handles both acceptance and rejection:
 
 \begin{verbatim}
-bind_response(yes, From, accept(FCh), Fs, Fs1, In, In1) :-
+bind_response(yes, From, Out?, Fs, Fs1?, In, In1?) :-
+    atom(From?),
     new_channel(ch(FIn, FOut), FCh) |
-    handle_response(accept(FCh?), From?, Fs?, Fs1, In?, In1).
+    wrap_accept(FCh?, Out),
+    handle_accept(From?, ch(FIn?, FOut?), Fs?, Fs1, In?, In1).
 bind_response(no, _, no, Fs, Fs?, In, In?).
+
+wrap_accept(Ch, accept(Ch?)).
 \end{verbatim}
 
-On acceptance, \verb|new_channel| creates a pair of connected channels. The acceptor keeps one half and sends the other to the initiator via the response variable.
+On acceptance, \verb|new_channel| creates a pair of connected channels. The \verb|wrap_accept| helper binds the output to an \verb|accept| wrapper containing the channel, ensuring single-writer use. The acceptor keeps one half and sends the other to the initiator via the response variable.
 
 \subsection{Establishing the Connection}
 
-The \verb|handle_response| predicate completes channel establishment:
+The \verb|handle_accept| predicate completes channel establishment for the accepting agent:
 
 \begin{verbatim}
-handle_response(accept(ch(FIn, FOut)), From, Fs, [(From?, FOut?)|Fs?], In, In1) :-
+handle_accept(From, ch(FIn, FOut), Fs, Fs1?, In, In1?) :-
+    atom(From?) |
     tag_stream(From?, FIn?, Tagged),
-    merge(In?, Tagged?, In1).
-handle_response(no, _, Fs, Fs?, In, In?).
+    merge(In?, Tagged?, In1),
+    add_friend(From?, FOut?, Fs?, Fs1).
 \end{verbatim}
 
-On acceptance, the friend's output stream is added to the friends list, and the friend's input stream (tagged with the friend's identity) is merged into the main input stream.
+The \verb|handle_response| predicate handles responses for the initiating agent:
+
+\begin{verbatim}
+handle_response(accept(ch(FIn, FOut)), From, Fs, Fs1?, In, In1?) :-
+    atom(From?) |
+    tag_stream(From?, FIn?, Tagged),
+    merge(In?, Tagged?, In1),
+    add_friend(From?, FOut?, Fs?, Fs1).
+handle_response(no, _, Fs, Fs?, In, In?).
+
+add_friend(Name, Out, Fs, [(Name?, Out?)|Fs?]).
+\end{verbatim}
+
+On acceptance, the friend's output stream is added to the friends list via \verb|add_friend|, and the friend's input stream (tagged with the friend's identity) is merged into the main input stream.
 
 \subsection{The Inject Predicate}
 \label{sec:inject-pattern}
@@ -106,11 +132,11 @@ On acceptance, the friend's output stream is added to the friends list, and the 
 The \verb|inject| predicate defers message insertion until a trigger variable becomes bound:
 
 \begin{verbatim}
-inject(X, Y, Ys, [Y?|Ys?]) :- known(X?) | true.
-inject(X, Y, [Y1|Ys], [Y1?|Ys1?]) :- unknown(X?) | inject(X?, Y?, Ys?, Ys1).
+inject(X, Y, Ys, [Y?|Ys?]) :- ground(X?) | true.
+inject(X, Y, [Y1|Ys], [Y1?|Ys1?]) :- writer(X) | inject(X?, Y?, Ys?, Ys1).
 \end{verbatim}
 
-When \verb|X| is unbound, messages pass through unchanged. When \verb|X| becomes bound, the deferred message \verb|Y| is inserted. This enables non-blocking protocol operation where a response must be processed at a later time.
+The \verb|ground(X?)| guard succeeds when \verb|X| is bound to a ground term. The \verb|writer(X)| guard succeeds when \verb|X| is still an unbound writer variable. When \verb|X| is unbound, messages pass through unchanged. When \verb|X| becomes bound, the deferred message \verb|Y| is inserted. This enables non-blocking protocol operation where a response must be processed at a later time.
 
 \section{Friend-Mediated Introduction}
 \label{sec:friend-intro}
@@ -122,8 +148,8 @@ When agent $r$ is friends with both $p$ and $q$, $r$ can introduce them. This le
 The introducer creates channel pairs and sends invitations:
 
 \begin{verbatim}
-social_graph(Id, [msg(user, Id, introduce(P, Q))|In], Fs) :-
-    ground(Id), ground(P), ground(Q),
+social_graph(Id, [msg(user, Id?, introduce(P, Q))|In], Fs) :-
+    ground(Id?), ground(P?), ground(Q?),
     new_channel(ch(PQIn, PQOut), ch(QPIn, QPOut)) |
     lookup_send(P?, msg(Id?, P?, intro(Q?, ch(QPIn?, PQOut?))), Fs?, Fs1),
     lookup_send(Q?, msg(Id?, Q?, intro(P?, ch(PQIn?, QPOut?))), Fs1?, Fs2),
@@ -134,17 +160,40 @@ Each party receives one half of the channel pair, enabling direct communication 
 
 \subsection{Processing the Introduction}
 
-Recipients verify the introduction came from a trusted friend. In simulation, we assume correct agents:
+Recipients verify the introduction came from a trusted friend. In GLPSAM simulation, attestation guards are omitted:
 
 \begin{verbatim}
-social_graph(Id, [msg(From, Id, intro(Other, Ch))|In], Fs) :-
-    ground(Id) |
+social_graph(Id, [msg(From, Id?, intro(Other, Ch))|In], Fs) :-
+    ground(Id?), ground(From?), ground(Other?) |
     lookup_send(user, msg(agent, user,
         befriend_intro(From?, Other?, Ch?)), Fs?, Fs1),
     social_graph(Id?, In?, Fs1?).
 \end{verbatim}
 
-The user is consulted about whether to accept the introduction. Upon acceptance, the provided channel is added to the friends list.
+The user is consulted about whether to accept the introduction.
+
+\subsection{Accepting or Rejecting the Introduction}
+
+When the user accepts:
+
+\begin{verbatim}
+social_graph(Id, [msg(user, Id?, accept_intro(Other, ch(FIn, FOut)))|In], Fs) :-
+    ground(Id?), ground(Other?) |
+    tag_stream(Other?, FIn?, Tagged),
+    merge(In?, Tagged?, In1),
+    add_friend(Other?, FOut?, Fs?, Fs1),
+    social_graph(Id?, In1?, Fs1?).
+\end{verbatim}
+
+When the user rejects:
+
+\begin{verbatim}
+social_graph(Id, [msg(user, Id?, reject_intro(_, _))|In], Fs) :-
+    ground(Id?) |
+    social_graph(Id?, In?, Fs?).
+\end{verbatim}
+
+Upon acceptance, the provided channel is added to the friends list and its input merged into the main stream.
 
 \section{Defined Guards for Channels}
 \label{sec:channel-guards}
@@ -177,7 +226,7 @@ lookup_send(Key, Msg, Fs, Fs1) :-
     update(Key?, Out1, Fs?, Fs1).
 
 tag_stream(Name, [M|In], [msg(Name?, M?)|Out?]) :-
-    tag_stream(Name?, In?, Out).
+    atom(Name?) | tag_stream(Name?, In?, Out).
 tag_stream(_, [], []).
 \end{verbatim}
 

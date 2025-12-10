@@ -42,11 +42,11 @@ This recursive definition states: zero is a natural number, and if $X$ is a natu
 \paragraph{Multiplication.} Multiplication as repeated addition:
 
 \begin{verbatim}
-times(0, X, 0).
-times(s(X), Y, Z) :- times(X?, Y?, XY), plus(XY?, Y?, Z).
+times(0, _, 0).
+times(s(X), Y, Z?) :- tuple(Y?) | times(X?, Y?, XY), plus(XY?, Y?, Z).
 \end{verbatim}
 
-The base case: $0 \times Y = 0$. The recursive case: $s(X) \times Y = (X \times Y) + Y$. The two body goals spawn concurrently; \verb|plus| suspends on \verb|XY?| until \verb|times| produces a value.
+The base case: $0 \times Y = 0$. The underscore \verb|_| indicates an unused argument---we don't need to bind the second argument when the first is zero. The recursive case: $s(X) \times Y = (X \times Y) + Y$. The \verb|tuple(Y?)| guard ensures \verb|Y| is a Peano term (like \verb|s(s(0))|) before proceeding; it also permits multiple reader occurrences of \verb|Y?| in the body (per Formal Box~\ref{formal:guards-multiple-reads}). The two body goals spawn concurrently; \verb|plus| suspends on \verb|XY?| until \verb|times| produces a value.
 
 \paragraph{Comparison.} Less-than-or-equal for Peano numbers:
 
