@@ -43,31 +43,24 @@ The cold-call protocol enables agents to establish friendship without prior shar
 When the user requests connection to a target agent:
 
 \begin{verbatim}
-social_graph(Id, [msg(user, Id?, connect(Target))|In], Fs) :-
-    ground(Id?), ground(Target?) |
-    send_and_setup_response(Id?, Target?, Fs?, Fs1, In?, In1),
-    social_graph(Id?, In1?, Fs1?).
-
-send_and_setup_response(Id, Target, Fs, Fs1?, In, In1?) :-
-    atom(Id?), atom(Target?) |
+social_graph(Id, [msg(user, Id, connect(Target))|In], Fs) :-
+    ground(Id), ground(Target) |
     lookup_send(net, msg(Id?, Target?, intro(Id?, Id?, Resp)), Fs?, Fs1),
-    setup_inject(Resp?, Target?, Id?, In?, In1).
-
-setup_inject(Resp, Target, Id, In, In1?) :-
-    atom(Target?), atom(Id?) |
-    inject(Resp?, msg(Target?, Id?, response(Resp)), In?, In1).
+    response_stream(Resp?, Target?, Id?, Rs),
+    merge(In?, Rs?, In1),
+    social_graph(Id?, In1?, Fs1?).
 \end{verbatim}
 
-The agent sends an introduction message through the network channel containing its identity and a fresh response variable \verb|Resp|. The helper predicates \verb|send_and_setup_response| and \verb|setup_inject| ensure SRSW compliance by isolating each reader variable occurrence. The \verb|inject| predicate defers insertion of the response into the input stream until \verb|Resp| becomes bound.
+The agent sends an introduction message through the network channel containing its identity and a fresh response variable \verb|Resp|. The \verb|response_stream| predicate produces a single-element stream when the response arrives; this stream is merged into the input stream so the response can be processed by the main event loop.
 
 \subsection{Processing Received Introductions}
 
 When an agent receives a self-introduction:
 
 \begin{verbatim}
-social_graph(Id, [msg(From, Id?, intro(From?, From?, Resp))|In], Fs) :-
-    ground(Id?), ground(From?) |
-    lookup_send(user, msg(agent, user, befriend(From?, Resp)), Fs?, Fs1),
+social_graph(Id, [msg(From, Id, intro(From, From, Resp))|In], Fs) :-
+    ground(Id), ground(From) |
+    lookup_send(user, msg(agent, user, befriend(From?, Resp?)), Fs?, Fs1),
     social_graph(Id?, In?, Fs1?).
 \end{verbatim}
 
@@ -78,9 +71,9 @@ In deployment, an \verb|attestation| guard would verify the introduction carries
 When the user decides:
 
 \begin{verbatim}
-social_graph(Id, [msg(user, Id?, decision(Dec, From, Resp?))|In], Fs) :-
-    ground(Id?) |
-    bind_response(Dec?, From?, Resp, Fs?, Fs1, In?, In1),
+social_graph(Id, [msg(user, Id, decision(Dec, From, Resp))|In], Fs) :-
+    ground(Id) |
+    bind_response(Dec?, From?, Resp?, Fs?, Fs1, In?, In1),
     social_graph(Id?, In1?, Fs1?).
 \end{verbatim}
 
@@ -97,7 +90,7 @@ bind_response(no, _, no, Fs, Fs?, In, In?).
 wrap_accept(Ch, accept(Ch?)).
 \end{verbatim}
 
-On acceptance, \verb|new_channel| creates a pair of connected channels. The \verb|wrap_accept| helper binds the output to an \verb|accept| wrapper containing the channel, ensuring single-writer use. The acceptor keeps one half and sends the other to the initiator via the response variable.
+On acceptance, \verb|new_channel| creates a pair of connected channels. The \verb|wrap_accept| helper binds the output to \verb|accept(Ch?)| using a separate writer, ensuring SRSW compliance. The acceptor keeps one half of the channel pair and sends the other to the initiator via the response variable.
 
 \subsection{Establishing the Connection}
 
@@ -126,17 +119,44 @@ add_friend(Name, Out, Fs, [(Name?, Out?)|Fs?]).
 
 On acceptance, the friend's output stream is added to the friends list via \verb|add_friend|, and the friend's input stream (tagged with the friend's identity) is merged into the main input stream.
 
+\subsection{Processing Responses}
+
+When the initiating agent receives a response to their introduction:
+
+\begin{verbatim}
+social_graph(Id, [msg(From, Id, response(Resp))|In], Fs) :-
+    ground(Id) |
+    handle_response(Resp?, From?, Fs?, Fs1, In?, In1),
+    social_graph(Id?, In1?, Fs1?).
+\end{verbatim}
+
+The response message arrives via the merged input stream (from \verb|response_stream|). The \verb|handle_response| predicate establishes the connection on acceptance or does nothing on rejection.
+
+\subsection{Response Stream}
+\label{sec:response-stream}
+
+The \verb|response_stream| predicate produces a single-element stream when a trigger variable becomes bound:
+
+\begin{verbatim}
+response_stream(Resp, Target, Id, [msg(Target?, Id?, response(Resp?))]) :-
+    known(Resp?) | true.
+\end{verbatim}
+
+The \verb|known(X?)| guard succeeds when \verb|X| is bound to any value. Until the response arrives, the stream remains unbound. When the remote agent binds \verb|Resp| (via acceptance or rejection), the guard succeeds and the stream produces a single response message that gets merged into the main input stream.
+
 \subsection{The Inject Predicate}
 \label{sec:inject-pattern}
 
-The \verb|inject| predicate defers message insertion until a trigger variable becomes bound:
+An alternative to \verb|response_stream| is the \verb|inject| predicate, which defers message insertion into an existing stream:
 
 \begin{verbatim}
-inject(X, Y, Ys, [Y?|Ys?]) :- ground(X?) | true.
-inject(X, Y, [Y1|Ys], [Y1?|Ys1?]) :- writer(X) | inject(X?, Y?, Ys?, Ys1).
+inject(X, Y, Ys, [Y?|Ys?]) :- known(X) | true.
+inject(X, Y, [Y1|Ys], [Y1?|Ys1?]) :- unknown(X) | inject(X?, Y?, Ys?, Ys1).
 \end{verbatim}
 
-The \verb|ground(X?)| guard succeeds when \verb|X| is bound to a ground term. The \verb|writer(X)| guard succeeds when \verb|X| is still an unbound writer variable. When \verb|X| is unbound, messages pass through unchanged. When \verb|X| becomes bound, the deferred message \verb|Y| is inserted. This enables non-blocking protocol operation where a response must be processed at a later time.
+The \verb|known(X)| guard succeeds when \verb|X| is bound; \verb|unknown(X)| succeeds when \verb|X| is unbound. When \verb|X| is unbound, messages pass through unchanged. When \verb|X| becomes bound, the deferred message \verb|Y| is inserted. This enables non-blocking protocol operation where a response must be processed at a later time.
+
+Note: \verb|inject| works when the message \verb|Y| is pre-constructed. For messages that must reference the trigger variable (like \verb|response(Resp?)|), use \verb|response_stream| with \verb|merge| instead.
 
 \section{Friend-Mediated Introduction}
 \label{sec:friend-intro}
@@ -194,6 +214,18 @@ social_graph(Id, [msg(user, Id?, reject_intro(_, _))|In], Fs) :-
 \end{verbatim}
 
 Upon acceptance, the provided channel is added to the friends list and its input merged into the main stream.
+
+\subsection{Catch-All Clause}
+
+Messages that don't match any specific clause are handled by a catch-all:
+
+\begin{verbatim}
+social_graph(Id, [msg(_, _, _)|In], Fs) :-
+    ground(Id), otherwise |
+    social_graph(Id?, In?, Fs?).
+\end{verbatim}
+
+The \verb|otherwise| guard ensures this clause only matches when no other clause applies. Unrecognized messages are silently dropped, allowing the event loop to continue processing.
 
 \section{Defined Guards for Channels}
 \label{sec:channel-guards}
