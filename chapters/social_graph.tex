@@ -248,14 +248,14 @@ These definitions follow the GLP mechanism for defined guards: when a unit claus
 The social graph protocol uses several utility predicates:
 
 \begin{verbatim}
-lookup(Key, [(Key?, Value?)|_], Value).
-lookup(Key, [(K, _)|Rest], Value) :-
-    Key? \= K? | lookup(Key?, Rest?, Value).
+lookup(Key, [(K, Value)|_], Value?) :- Key? =?= K? | true.
+lookup(Key, [_|Rest], Value?) :-
+    otherwise | lookup(Key?, Rest?, Value).
 
-lookup_send(Key, Msg, Fs, Fs1) :-
-    lookup(Key?, Fs?, (_, Out)),
-    Out = [Msg?|Out1?],
-    update(Key?, Out1, Fs?, Fs1).
+lookup_send(Key, Msg, Fs, Fs1?) :-
+    ground(Key?), ground(Fs?) |
+    lookup(Key?, Fs?, [Msg?|Out1]),
+    update(Key?, Out1?, Fs?, Fs1).
 
 tag_stream(Name, [M|In], [msg(Name?, M?)|Out?]) :-
     atom(Name?) | tag_stream(Name?, In?, Out).
