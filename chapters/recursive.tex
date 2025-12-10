@@ -248,27 +248,30 @@ Merge sort achieves $O(n \log n)$ complexity by dividing the list in half, sorti
 \begin{verbatim}
 mergesort([], []).
 mergesort([X], [X?]).
-mergesort(Xs, Sorted?) :-
-    split(Xs?, Left, Right),
+mergesort([A,B|Xs], Sorted?) :-
+    split2(A?, B?, Xs?, Left, Right),
     mergesort(Left?, SortedL),
     mergesort(Right?, SortedR),
     merge_sorted(SortedL?, SortedR?, Sorted).
 
-split([], [], []).
-split([X], [X?], []).
-split([X,Y|Xs], [X?|Left?], [Y?|Right?]) :- split(Xs?, Left, Right).
+split2(A, B, [], [A?], [B?]).
+split2(A, B, [X], [A?,X?], [B?]).
+split2(A, B, [X,Y|Xs], [A?|Left?], [B?|Right?]) :-
+    split2(X?, Y?, Xs?, Left, Right).
 
 merge_sorted([], Ys, Ys?).
 merge_sorted(Xs, [], Xs?).
 merge_sorted([X|Xs], [Y|Ys], [X?|Zs?]) :-
-    X? =< Y? |
-    merge_sorted(Xs?, [Y?|Ys?], Zs).
+    number(X?), number(Y?), X? =< Y? |
+    merge_sorted_keep(Y?, Ys?, Xs?, Zs).
 merge_sorted([X|Xs], [Y|Ys], [Y?|Zs?]) :-
-    Y? < X? |
-    merge_sorted([X?|Xs?], Ys?, Zs).
+    number(X?), number(Y?), X? > Y? |
+    merge_sorted_keep(X?, Xs?, Ys?, Zs).
+
+merge_sorted_keep(H, T, Ys, Zs?) :- merge_sorted([H?|T?], Ys?, Zs).
 \end{verbatim}
 
-The two recursive \verb|mergesort| calls are independent and spawn as concurrent processes.
+The \verb|split2| helper takes the first two elements separately, enabling proper SRSW-compliant list construction. The \verb|merge_sorted_keep| helper reconstructs the non-selected list to avoid multiple reader occurrences of \verb|X?| or \verb|Y?|. The \verb|number| guards enable safe comparison and permit multiple reader occurrences (per Formal Box~\ref{formal:guards-multiple-reads}). The two recursive \verb|mergesort| calls are independent and spawn as concurrent processes.
 
 \subsection{Quicksort}
 \label{sec:quicksort}

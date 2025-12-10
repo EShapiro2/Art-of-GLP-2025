@@ -46,10 +46,10 @@ The \GLP version uses \verb|reduce/2| encoding and adds concurrency:
 \begin{verbatim}
 run(true).                              % halt
 run((A,B)) :- run(A?), run(B?).         % fork
-run(A) :- known(A) | reduce(A?,B), run(B?).  % reduce
+run(A) :- tuple(A?) | reduce(A?, B), run(B?).  % reduce
 \end{verbatim}
 
-The \verb|known(A)| guard (Appendix~\ref{appendix:guard-unification}) tests whether the term \verb|A| has a known principal functor---that is, whether we can determine which predicate is being called. Unlike \verb|ground|, which requires all subterms to be bound, \verb|known| succeeds as soon as the outer structure is determined. For example, \verb|known(merge([X|Xs], Ys, Zs))| succeeds even if \verb|X|, \verb|Xs|, \verb|Ys|, and \verb|Zs| are unbound, because the functor \verb|merge/3| is known. The guard suspends if \verb|A| is an unbound reader, since clause selection cannot proceed until we know which predicate to reduce.
+The \verb|tuple(A?)| guard (Appendix~\ref{appendix:guard-unification}) tests whether \verb|A?| is bound to a compound term---that is, whether we can determine which predicate is being called. Unlike \verb|ground|, which requires all subterms to be bound, \verb|tuple| succeeds as soon as the outer structure is determined. For example, \verb|tuple(merge([X|Xs], Ys, Zs))| succeeds even if \verb|X|, \verb|Xs|, \verb|Ys|, and \verb|Zs| are unbound, because the functor \verb|merge/3| is known. The guard suspends if \verb|A?| is unbound, since clause selection cannot proceed until we know which predicate to reduce. As a type guard, \verb|tuple| also permits multiple occurrences of \verb|A?| in the body (per Formal Box~\ref{formal:guards-multiple-reads}).
 
 \paragraph{The Fork Rule.} When running a conjunction \verb|(A,B)|, we spawn two concurrent processes: \verb|run(A?)| and \verb|run(B?)|.
 
@@ -73,7 +73,7 @@ run((A,B), Zs?) :-                          % fork
     run(A?, Xs), run(B?, Ys),
     merge(Xs?, Ys?, Zs).
 run(fail(A), [fail(A?)]).                   % report failure
-run(A, Xs?) :- known(A) | reduce(A?,B), run(B?,Xs).  % reduce
+run(A, Xs?) :- tuple(A?) | reduce(A?,B), run(B?,Xs).  % reduce
 \end{verbatim}
 
 The program encoding must include a catch-all clause:
@@ -137,7 +137,7 @@ run_counted(true, 0).
 run_counted((A,B), N?) :-
     run_counted(A?, NA), run_counted(B?, NB),
     N := NA? + NB?.
-run_counted(A, N?) :- known(A) |
+run_counted(A, N?) :- tuple(A?) |
     reduce(A?,B), run_counted(B?, NB), N := NB? + 1.
 \end{verbatim}
 
@@ -145,11 +145,11 @@ run_counted(A, N?) :- known(A) |
 \begin{verbatim}
 pe(true, true).
 pe((A,B), (PA?, PB?)) :- pe(A?, PA), pe(B?, PB).
-pe(A, PA?) :- known(A), reduce(A,B) | pe(B?, PA).
-pe(A, A?) :- unknown(A) | true.  % leave unresolved
+pe(A, PA?) :- tuple(A?), reduce(A?,B) | pe(B?, PA).
+pe(A, A?) :- otherwise | true.  % leave unresolved
 \end{verbatim}
 
-The \verb|unknown(A)| guard is the complement of \verb|known|: it succeeds when \verb|A|'s principal functor is not yet determined (i.e., \verb|A| is an unbound variable). This allows the partial evaluator to preserve goals that cannot yet be reduced, leaving them for later instantiation.
+The \verb|otherwise| guard succeeds when no other clause matches---here, when \verb|A?| is not a compound term (either unbound or atomic). This allows the partial evaluator to preserve goals that cannot yet be reduced, leaving them for later instantiation.
 
 %% ============================================
 %% Section 2: Enhanced Meta-Interpreters
@@ -166,7 +166,7 @@ A \emph{tracing} meta-interpreter records the execution history:
 \begin{verbatim}
 run(true, true).                               % halt
 run((A,B), (TA?,TB?)) :- run(A?,TA), run(B?,TB).   % fork
-run(A, ((I?:Time?):-TB?)) :- known(A) |
+run(A, ((I?:Time?):-TB?)) :- tuple(A?) |
     time(Time), reduce(A?,B,I), run(B?, TB).
 \end{verbatim}
 
@@ -183,7 +183,7 @@ run((A,B), Cs) :-                                   % fork
     distribute(Cs?,Cs1,Cs2),
     run(A?,Cs1?), run(B?,Cs2?).
 run(A, [suspend|Cs]) :- suspended_run(A,Cs?).       % suspend
-run(A, Cs) :- known(A) |                            % reduce
+run(A, Cs) :- tuple(A?) |                            % reduce
     distribute(Cs?,Cs1,Cs2),
     reduce(A?,B,Cs1?), run(B?,Cs2?).
 
@@ -218,7 +218,7 @@ debug((A,B), Cs, Budget, (TA?,TB?)) :-
     debug(A?, Cs1?, B1?, TA),
     debug(B?, Cs2?, B2?, TB).
 debug(A, [step|Cs], Budget, ((I?:A?):-TB?)) :-
-    Budget? > 0, known(A) |
+    Budget? > 0, tuple(A?) |
     B1 := Budget? - 1,
     reduce(A?,B,I),
     debug(B?, Cs?, B1?, TB).
