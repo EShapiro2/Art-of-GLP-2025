@@ -1,0 +1,73 @@
+\chapter*{Introduction to Part III}
+\addcontentsline{toc}{chapter}{Introduction to Part III}
+
+The preceding parts developed \GLP as a concurrent logic programming language. We now turn to its intended application: programming grassroots platforms where autonomous agents interact through authenticated channels. Before deploying such systems across distributed networks with cryptographic security, we must be able to develop and test the underlying protocol logic. This part presents a simulation framework that achieves exactly this.
+
+\section*{The GLP Sequential Abstract Machine}
+
+All programs in this part execute on a single \emph{GLP Sequential Abstract Machine} (GLPSAM)---the standard \GLP runtime executing interleaved processes on one computer. When we write a program with goals \verb|alice(...)| and \verb|bob(...)| spawning concurrently, both execute as processes within the same GLPSAM, communicating through shared stream variables on a common heap.
+
+This is simulation, not distribution. There is no network, no separate address spaces, no cryptographic signing. Yet the simulation faithfully captures the logical structure of multiagent interaction, allowing us to develop and verify protocol correctness before adding the complexity of deployment.
+
+\section*{What the Simulation Captures}
+
+The GLPSAM simulation models the essential aspects of multiagent communication:
+
+\paragraph{Stream-based messaging.} Agents communicate by producing and consuming stream elements. A message sent by Alice appears as a cons cell on a stream that Bob reads. The suspension and reactivation mechanics of \GLP---where a reader blocks until its paired writer provides a value---model the asynchrony of real network communication.
+
+\paragraph{Channel abstractions.} Bidirectional channels, represented as pairs of streams, provide the foundation for agent interaction. The defined guards \verb|send/3|, \verb|receive/3|, and \verb|new_channel/2| (Chapter~\ref{ch:social-graph}) establish channel-based communication patterns that transfer directly to distributed implementation.
+
+\paragraph{Protocol sequencing.} The befriending protocols---cold-call introduction, friend-mediated introduction, response handling---execute with their full logical structure. Message ordering, response variables, and the inject pattern for deferred message insertion all function exactly as they would in a distributed setting.
+
+\paragraph{SRSW security properties.} The single-reader/single-writer invariant provides unforkability: no agent can create two different continuations of the same stream. This property, enforced by \GLP's core semantics, holds equally in simulation and deployment.
+
+\paragraph{Concurrent process structure.} When Alice sends messages to Bob and Carol simultaneously, the GLPSAM spawns concurrent processes that interleave fairly. The causal structure of communication---which messages depend on which---emerges correctly from stream synchronization.
+
+\section*{What the Simulation Abstracts Away}
+
+The simulation omits aspects that are orthogonal to protocol logic:
+
+\paragraph{Cryptographic operations.} In deployment, every message carries an attestation---a cryptographic signature binding the message to its sender's public key. The \verb|attestation/2| guard verifies these signatures. In simulation, we assume all agents are correct and all messages authentic. The attestation guard is simply omitted; protocol logic proceeds as if verification always succeeds.
+
+\paragraph{Network transport.} Deployed agents communicate over UDP or other network protocols, with attendant latency, packet loss, and reordering. In simulation, messages pass instantaneously through shared variables. The logical content of protocols is independent of transport mechanics.
+
+\paragraph{Physical distribution.} Real grassroots systems run on separate devices with no shared memory. The GLPSAM runs everything on one machine with a shared heap. This difference is invisible to protocol logic, which sees only streams and channels.
+
+\paragraph{Agent identity.} In deployment, agents are identified by public keys derived from cryptographic keypairs. In simulation, agents are simply atoms: \verb|alice|, \verb|bob|, \verb|carol|. Protocol logic treats identities as opaque values for routing and addressing.
+
+\paragraph{Byzantine failures.} The simulation assumes all agents follow the protocol correctly. Malicious agents who deviate from specified behavior, forge messages, or attempt to violate invariants are not modeled. Security against Byzantine behavior requires the cryptographic layer that simulation omits.
+
+\section*{The Value of Simulation}
+
+Why simulate before deploying? Three reasons:
+
+First, \emph{correctness verification}. Protocol bugs are easier to find and fix when execution is deterministic and observable. The GLPSAM allows tracing message flow, inspecting stream contents, and verifying that protocols reach expected states.
+
+Second, \emph{separation of concerns}. Protocol logic and cryptographic implementation are independent. By developing protocols in simulation, we ensure the logical structure is sound before adding the complexity of key management, signature verification, and secure channels.
+
+Third, \emph{pedagogical clarity}. Understanding how agents coordinate through streams is simpler without the overhead of cryptographic concepts. This part teaches the protocol patterns; deployment adds the security layer.
+
+\section*{From Simulation to Deployment}
+
+The transition from GLPSAM simulation to distributed deployment requires:
+
+\begin{enumerate}
+\item \textbf{Agent runtime}: Each agent runs its own \GLP instance on its device.
+\item \textbf{Network layer}: Stream messages are serialized, signed, and transmitted over the network.
+\item \textbf{Attestation}: The \verb|attestation/2| guard is implemented to verify cryptographic signatures.
+\item \textbf{Module isolation}: Each agent's code runs in a separate module with its own identity.
+\end{enumerate}
+
+The protocol logic---the \GLP code presented in the following chapters---remains unchanged. This is the power of the abstraction: what works in simulation works in deployment, with security added by the runtime rather than the programmer.
+
+\section*{Chapter Overview}
+
+Chapter~\ref{ch:social-graph} presents the grassroots social graph and befriending protocols. Agents establish authenticated friendships through cold-call and friend-mediated introduction, building a distributed graph of trust relationships.
+
+Chapter~\ref{ch:social-networks} develops social networking applications atop the social graph: feed distribution with verified authorship, direct messaging channels, and group formation.
+
+Chapter~\ref{ch:interlaced-streams} introduces interlaced streams---the distributed data structure underlying group communication and the blocklace consensus mechanism.
+
+Subsequent chapters extend these foundations to cryptocurrencies and constitutional consensus, demonstrating how grassroots platforms can provide the services of centralized systems without centralized control.
+
+Throughout, remember: the code executes on GLPSAM, simulating multiagent interaction. The protocols are real; the distribution is simulated. When you see Alice sending a message to Bob, both are processes in your \GLP runtime, communicating through streams on a shared heap. This simulation captures the logic that will, in deployment, span devices and networks across the globe.
