@@ -1,279 +1,664 @@
 % chapters/moded_types.tex - Polymorphic Moded Types
+%% Chapter: Polymorphic Moded Types
+%% Formalizes type and mode declarations for GLP
 
 \chapter{Polymorphic Moded Types}
 \label{ch:moded-types}
 
-GLP's reader/writer discipline ensures orderly communication between concurrent processes. This chapter formalizes that discipline through \emph{polymorphic moded types}---a type system that captures both the structure and the access patterns of data.
+The previous chapters introduced reader/writer variables through examples. We saw that \verb|merge| has two input streams (readers) and one output stream (writer), that \verb|and| takes two input bits and produces one output bit, and that \verb|half_adder| needs \verb|ground| guards when inputs are used multiple times.
+
+This chapter formalizes these patterns through \emph{polymorphic moded types}. A type describes the structure of data; a mode specifies the direction of data flow. Together, they enable:
+\begin{itemize}
+\item Static verification of SRSW---catching errors before runtime
+\item Automatic derivation of reader/writer annotations from pure logic programs
+\item Clear documentation of predicate interfaces
+\end{itemize}
 
 \section{Types}
-\label{sec:types}
 
-Types describe the structure of terms. GLP supports three kinds of types.
+A \emph{type} describes the structure of terms.
 
 \subsection{Built-in Types}
 
-The basic types correspond to GLP's atomic values:
+GLP provides built-in types for primitive values:
 
-\begin{itemize}
-\item \verb|Atom| --- symbolic constants like \verb|alice|, \verb|done|, \verb|nil|
-\item \verb|Number| --- integers and floating-point numbers
-\item \verb|Any| --- any ground term (the universal type)
-\end{itemize}
+\begin{verbatim}
+Num    % numeric values: 0, 1, 42, 3.14
+Atom   % symbolic constants: red, green, ready
+Bool   % boolean values: true, false (represented as atoms)
+\end{verbatim}
 
 \subsection{Recursive Types}
 
-Recursive types define structures that contain themselves. The canonical example is the list:
+Recursive types define structures that contain instances of themselves:
 
 \begin{verbatim}
-List(T) := [] | [T | List(T)]
+List := [] | [_ | List]
 \end{verbatim}
 
-This reads: a \verb|List(T)| is either the empty list \verb|[]|, or a cons cell containing an element of type \verb|T| and a tail of type \verb|List(T)|.
+This declares: a \verb|List| is either the empty list \verb|[]|, or a cons cell \verb|[H|T]| containing an element (of any type, denoted \verb|_|) followed by another \verb|List|.
 
-Difference lists use an explicit constructor to pair a list with its tail variable:
+More examples:
 
 \begin{verbatim}
-DiffList(T) := dl(List(T)?, List(T))
+Tree := empty | node(_, Tree, Tree)     % binary tree
+Nat  := zero | succ(Nat)                % natural numbers (Peano)
 \end{verbatim}
-
-The first component is a reader (the list being built), and the second is a writer (the hole at the end).
 
 \subsection{Polymorphic Types}
 
-Type parameters (written with capital letters like \verb|T|, \verb|K|, \verb|V|) allow types to be reused with different element types:
+The underscore \verb|_| in type definitions is a \emph{type parameter}---a placeholder for any type. This makes \verb|List| polymorphic: we can have lists of numbers, lists of atoms, or lists of lists.
+
+When precision matters, we can name the parameter:
 
 \begin{verbatim}
-Pair(K, V) := pair(K, V)
-Tree(T) := leaf | node(Tree(T), T, Tree(T))
+List(A) := [] | [A | List(A)]           % list of A's
+Tree(A) := empty | node(A, Tree(A), Tree(A))
 \end{verbatim}
 
-The type \verb|List(Number)| is a list of numbers; \verb|List(Atom)| is a list of atoms.
+For most GLP programming, the simpler form with \verb|_| suffices.
 
 \section{Modes}
-\label{sec:modes}
 
-While types describe structure, \emph{modes} describe access patterns. Each argument position in a predicate has a mode:
+A \emph{mode} specifies the direction of data flow at a predicate argument.
+
+\subsection{Reader and Writer Arguments}
 
 \begin{itemize}
-\item \verb|?| (reader) --- the predicate reads this argument
-\item (unmarked, writer) --- the predicate writes this argument
+\item \textbf{Reader argument} ($T?$): The predicate \emph{receives} data---it reads input from this position.
+\item \textbf{Writer argument} ($T$): The predicate \emph{produces} data---it writes output to this position.
 \end{itemize}
 
-A \emph{moded type signature} combines both:
+The terminology reflects the predicate's perspective: at a reader argument, the predicate reads; at a writer argument, the predicate writes.
+
+\subsection{Mode Declarations}
+
+A \emph{mode declaration} specifies the mode of each argument:
 
 \begin{verbatim}
-append(List(T)?, List(T)?, List(T))
+and : (Num?, Num?, Num)           % two inputs, one output
+not : (Num?, Num)                 % one input, one output
 \end{verbatim}
 
-This declares that \verb|append| reads its first two arguments and writes its third.
+Reading these declarations:
+\begin{itemize}
+\item \verb|and| reads two numbers (first and second arguments), writes one number (third argument)
+\item \verb|not| reads one number, writes one number
+\end{itemize}
+
+\subsection{Mode Declarations for Programs in Previous Chapters}
+
+The logic gates from Chapter~\ref{ch:constants}:
+
+\begin{verbatim}
+and  : (Num?, Num?, Num)
+or   : (Num?, Num?, Num)
+not  : (Num?, Num)
+xor  : (Num?, Num?, Num)
+nand : (Num?, Num?, Num)
+\end{verbatim}
+
+The compound gates:
+
+\begin{verbatim}
+half_adder : (Num?, Num?, Num, Num)      % A, B in; Sum, Carry out
+full_adder : (Num?, Num?, Num?, Num, Num) % A, B, Cin in; Sum, Cout out
+adder      : (List?, List?, Num?, List)   % As, Bs, Cin in; Result out
+\end{verbatim}
+
+The stream merger from Chapter~\ref{ch:glp-core}:
+
+\begin{verbatim}
+merge : (List?, List?, List)     % two input streams, one output stream
+\end{verbatim}
+
+\subsection{Multiple Modes}
+
+Some predicates support multiple modes. The \verb|not| gate works in two directions:
+
+\begin{verbatim}
+not(1, 0).
+not(0, 1).
+\end{verbatim}
+
+With mode \verb|(Num?, Num)|, it computes the negation of the first argument. But it also works with mode \verb|(Num, Num?)|---given an output, find the input. GLP does not require declaring all possible modes; the mode declaration documents the \emph{intended} usage.
 
 \section{Reader and Writer Occurrences}
-\label{sec:occurrences}
 
-Within a clause, each variable occurrence is classified as either a reader or a writer:
+Mode declarations determine which variable occurrences are \emph{readers} (consume values) and which are \emph{writers} (produce values).
 
-\begin{definition}[Occurrence Classification]
+\subsection{The Classification Rule}
+
+Consider a variable occurrence in a clause. Its classification depends on:
+\begin{enumerate}
+\item Whether it appears in the \emph{head} or \emph{body}
+\item The \emph{mode} of its argument position
+\end{enumerate}
+
+\begin{definition}[Reader and Writer Occurrences]
+\label{def:reader-writer-occurrence}
+A variable occurrence is a \textbf{writer occurrence} if it appears in:
 \begin{itemize}
-\item \textbf{Head occurrences}: In the head \verb|p(X, Y?, Z)|, unmarked variables are writers (bound by the caller) and \verb|?|-marked variables are readers (read from caller-provided values).
-\item \textbf{Guard occurrences}: All variable occurrences in guards must be readers.
-\item \textbf{Body occurrences}: Follows the predicate's declared modes---if a position is declared as reader, the occurrence is a reader; if declared as writer, the occurrence is a writer.
+\item A reader argument of the head, or
+\item A writer argument of a body goal
+\end{itemize}
+
+A variable occurrence is a \textbf{reader occurrence} if it appears in:
+\begin{itemize}
+\item A writer argument of the head, or
+\item A reader argument of a body goal
 \end{itemize}
 \end{definition}
 
-\subsection{Example: Append}
+\subsection{Intuition}
 
-Consider the standard \verb|append| definition:
+The rule follows from how data flows:
+
+\begin{itemize}
+\item \textbf{Head reader argument $\to$ writer occurrence}: The predicate receives input. Pattern matching \emph{binds} variables from incoming data---they are writers.
+
+\item \textbf{Head writer argument $\to$ reader occurrence}: The predicate produces output. Variables \emph{contribute} their values to construct the output---they are readers.
+
+\item \textbf{Body reader argument $\to$ reader occurrence}: We pass values to a callee. Variables \emph{provide} data---they are readers.
+
+\item \textbf{Body writer argument $\to$ writer occurrence}: We receive values from a callee. Variables are \emph{bound} by the callee---they are writers.
+\end{itemize}
+
+The pattern: \textbf{head inverts, body preserves}.
+
+\subsection{Example: \texttt{nand}}
+
+Consider \verb|nand| with mode \verb|(Num?, Num?, Num)|:
+
+\begin{verbatim}
+nand(A, B, Z) :- and(A, B, W), not(W, Z).
+\end{verbatim}
+
+Classification of each variable:
+
+\medskip
+\noindent\textbf{Variable A:}
+\begin{itemize}
+\item Head arg 1 (reader) $\to$ writer occurrence
+\item Body arg 1 of \verb|and| (reader) $\to$ reader occurrence
+\end{itemize}
+One writer, one reader. $\checkmark$
+
+\medskip
+\noindent\textbf{Variable B:}
+\begin{itemize}
+\item Head arg 2 (reader) $\to$ writer occurrence
+\item Body arg 2 of \verb|and| (reader) $\to$ reader occurrence
+\end{itemize}
+One writer, one reader. $\checkmark$
+
+\medskip
+\noindent\textbf{Variable W:}
+\begin{itemize}
+\item Body arg 3 of \verb|and| (writer) $\to$ writer occurrence
+\item Body arg 1 of \verb|not| (reader) $\to$ reader occurrence
+\end{itemize}
+One writer, one reader. $\checkmark$
+
+\medskip
+\noindent\textbf{Variable Z:}
+\begin{itemize}
+\item Body arg 2 of \verb|not| (writer) $\to$ writer occurrence
+\item Head arg 3 (writer) $\to$ reader occurrence
+\end{itemize}
+One writer, one reader. $\checkmark$
+
+Every variable has exactly one writer and one reader occurrence.
+
+\subsection{Example: \texttt{merge}}
+
+Consider \verb|merge| with mode \verb|(List?, List?, List)|:
+
+\begin{verbatim}
+merge([X|Xs], Ys, [X|Zs]) :- merge(Ys, Xs, Zs).
+\end{verbatim}
+
+\medskip
+\noindent\textbf{Variable X:}
+\begin{itemize}
+\item Head arg 1 (reader) $\to$ writer occurrence
+\item Head arg 3 (writer) $\to$ reader occurrence
+\end{itemize}
+One writer, one reader. $\checkmark$
+
+\medskip
+\noindent\textbf{Variable Xs:}
+\begin{itemize}
+\item Head arg 1 (reader) $\to$ writer occurrence
+\item Body arg 2 (reader) $\to$ reader occurrence
+\end{itemize}
+One writer, one reader. $\checkmark$
+
+\medskip
+\noindent\textbf{Variable Ys:}
+\begin{itemize}
+\item Head arg 2 (reader) $\to$ writer occurrence
+\item Body arg 1 (reader) $\to$ reader occurrence
+\end{itemize}
+One writer, one reader. $\checkmark$
+
+\medskip
+\noindent\textbf{Variable Zs:}
+\begin{itemize}
+\item Body arg 3 (writer) $\to$ writer occurrence
+\item Head arg 3 (writer) $\to$ reader occurrence
+\end{itemize}
+One writer, one reader. $\checkmark$
+
+\section{Static SRSW Checking}
+
+The SRSW requirement from Chapter~\ref{ch:glp-core} can now be stated as a type-checkable property.
+
+\begin{definition}[SRSW-Valid Clause]
+\label{def:srsw-valid}
+A clause is \textbf{SRSW-valid} with respect to its mode declaration if every variable occurs exactly once as a writer and exactly once as a reader.
+\end{definition}
+
+This is the same SRSW rule from Chapter~\ref{ch:glp-core}, but now we determine reader/writer status from modes rather than from explicit \verb|?| annotations.
+
+\subsection{The Type Checking Algorithm}
+
+Given a predicate with mode declaration and a clause, the following algorithm checks SRSW validity:
+
+\begin{enumerate}
+\item \textbf{Collect variables}: List all variables occurring in the clause.
+
+\item \textbf{For each variable $X$, classify each occurrence}:
+\begin{enumerate}
+\item If occurrence is in head argument $i$:
+\begin{itemize}
+\item If argument $i$ has mode $T?$ (reader): mark as \emph{writer occurrence}
+\item If argument $i$ has mode $T$ (writer): mark as \emph{reader occurrence}
+\end{itemize}
+\item If occurrence is in body goal argument $j$:
+\begin{itemize}
+\item If argument $j$ has mode $T?$ (reader): mark as \emph{reader occurrence}
+\item If argument $j$ has mode $T$ (writer): mark as \emph{writer occurrence}
+\end{itemize}
+\end{enumerate}
+
+\item \textbf{For each variable $X$, count occurrences}:
+\begin{itemize}
+\item Let $w$ = number of writer occurrences
+\item Let $r$ = number of reader occurrences
+\end{itemize}
+
+\item \textbf{Check SRSW compliance}:
+\begin{itemize}
+\item If $w = 1$ and $r = 1$: valid
+\item If $w = 1$ and $r > 1$ and \verb|ground(X)| in guard: valid
+\item Otherwise: \textbf{error}
+\end{itemize}
+\end{enumerate}
+
+\mypara{Error messages}
+The algorithm reports specific errors:
+\begin{itemize}
+\item $w = 0$: ``Variable $X$ has no writer occurrence''
+\item $w > 1$: ``Variable $X$ has $w$ writer occurrences (expected 1)''
+\item $r = 0$: ``Variable $X$ has no reader occurrence''
+\item $r > 1$ without guard: ``Variable $X$ has $r$ reader occurrences; add \verb|ground(X)| guard''
+\end{itemize}
+
+\subsection{Invalid Programs}
+
+The type checker rejects programs that violate SRSW:
+
+\medskip
+\noindent\textbf{Two writers, no reader:}
+\begin{verbatim}
+eq : (Num?, Num?)
+
+eq(X, X).    % INVALID
+\end{verbatim}
+
+Both occurrences of \verb|X| are in head reader arguments, making them both writers. No reader occurrence exists.
+
+\medskip
+\noindent\textbf{No writer, two readers:}
+\begin{verbatim}
+dup : (Num?, Num, Num)
+
+dup(X, X, X).    % INVALID
+\end{verbatim}
+
+The first \verb|X| is in a head reader argument (writer). The second and third are in head writer arguments (both readers). One writer, two readers---violates SRSW.
+
+\medskip
+\noindent\textbf{Orphan variables:}
+\begin{verbatim}
+bad : (Num?, Num)
+
+bad(X, Y).    % INVALID
+\end{verbatim}
+
+Variable \verb|X| has only a writer occurrence (head arg 1). Variable \verb|Y| has only a reader occurrence (head arg 2). Neither has both.
+
+\subsection{Error Detection}
+
+Static SRSW checking catches errors that would otherwise manifest as runtime failures or subtle bugs. Consider an incorrect \verb|append|:
+
+\begin{verbatim}
+append : (List?, List?, List)
+
+append([], Ys, Ys).              % Suspicious...
+append([X|Xs], Ys, [X|Zs]) :- append(Xs, Ys, Zs).
+\end{verbatim}
+
+Analyzing the first clause:
+
+\medskip
+\noindent\textbf{Variable Ys:}
+\begin{itemize}
+\item Head arg 2 (reader) $\to$ writer occurrence
+\item Head arg 3 (writer) $\to$ reader occurrence
+\end{itemize}
+One writer, one reader. $\checkmark$
+
+This clause is valid! But what if someone wrote:
+
+\begin{verbatim}
+append([], Ys, Ys) :- true.     % Same semantics, explicit body
+\end{verbatim}
+
+Still valid. Now consider a buggy version where someone confused the modes:
+
+\begin{verbatim}
+bad_append : (List?, List?, List)
+
+bad_append([], Ys, Ys) :- use(Ys).    % INVALID if use : (List?)
+\end{verbatim}
+
+Now \verb|Ys| appears three times:
+\begin{itemize}
+\item Head arg 2 (reader) $\to$ writer
+\item Head arg 3 (writer) $\to$ reader
+\item Body arg 1 (reader) $\to$ reader
+\end{itemize}
+
+One writer, two readers. The type checker catches this.
+
+\section{Deriving Annotations}
+
+Given a pure logic program and mode declarations, we can automatically derive the reader/writer annotations.
+
+\subsection{The Derivation Algorithm}
+
+\begin{enumerate}
+\item \textbf{For each clause}, process all variable occurrences:
+
+\item \textbf{For each occurrence of variable $X$}:
+\begin{enumerate}
+\item Determine if it is in the head or body
+\item Look up the mode of the argument position
+\item Apply the classification rule:
+\begin{itemize}
+\item Head + reader argument $\to$ writer occurrence $\to$ emit \verb|X|
+\item Head + writer argument $\to$ reader occurrence $\to$ emit \verb|X?|
+\item Body + reader argument $\to$ reader occurrence $\to$ emit \verb|X?|
+\item Body + writer argument $\to$ writer occurrence $\to$ emit \verb|X|
+\end{itemize}
+\end{enumerate}
+
+\item \textbf{Output}: The clause with all reader occurrences annotated with \verb|?|
+\end{enumerate}
+
+\subsection{Example: Deriving \texttt{merge}}
+
+Starting from pure logic program:
+
+\begin{verbatim}
+merge : (List?, List?, List)
+
+merge([X|Xs], Ys, [X|Zs]) :- merge(Ys, Xs, Zs).
+merge(Xs, [Y|Ys], [Y|Zs]) :- merge(Xs, Ys, Zs).
+merge([], [], []).
+\end{verbatim}
+
+Applying the derivation to clause 1:
+\begin{itemize}
+\item \verb|X| at head arg 1: writer $\to$ \verb|X|
+\item \verb|Xs| at head arg 1: writer $\to$ \verb|Xs|
+\item \verb|Ys| at head arg 2: writer $\to$ \verb|Ys|
+\item \verb|X| at head arg 3: reader $\to$ \verb|X?|
+\item \verb|Zs| at head arg 3: reader $\to$ \verb|Zs?|
+\item \verb|Ys| at body arg 1: reader $\to$ \verb|Ys?|
+\item \verb|Xs| at body arg 2: reader $\to$ \verb|Xs?|
+\item \verb|Zs| at body arg 3: writer $\to$ \verb|Zs|
+\end{itemize}
+
+Result:
+
+\begin{verbatim}
+merge([X|Xs], Ys, [X?|Zs?]) :- merge(Ys?, Xs?, Zs).
+merge(Xs, [Y|Ys], [Y?|Zs?]) :- merge(Xs?, Ys?, Zs).
+merge([], [], []).
+\end{verbatim}
+
+This matches the annotated program from Chapter~\ref{ch:glp-core}.
+
+\subsection{Example: Deriving \texttt{nand}}
+
+Starting from:
+
+\begin{verbatim}
+nand : (Num?, Num?, Num)
+
+nand(A, B, Z) :- and(A, B, W), not(W, Z).
+\end{verbatim}
+
+Derivation:
+\begin{itemize}
+\item \verb|A| at head arg 1: writer $\to$ \verb|A|
+\item \verb|B| at head arg 2: writer $\to$ \verb|B|
+\item \verb|Z| at head arg 3: reader $\to$ \verb|Z?|
+\item \verb|A| at body \verb|and| arg 1: reader $\to$ \verb|A?|
+\item \verb|B| at body \verb|and| arg 2: reader $\to$ \verb|B?|
+\item \verb|W| at body \verb|and| arg 3: writer $\to$ \verb|W|
+\item \verb|W| at body \verb|not| arg 1: reader $\to$ \verb|W?|
+\item \verb|Z| at body \verb|not| arg 2: writer $\to$ \verb|Z|
+\end{itemize}
+
+Result:
+
+\begin{verbatim}
+nand(A, B, Z?) :- and(A?, B?, W), not(W?, Z).
+\end{verbatim}
+
+This matches the program from Chapter~\ref{ch:constants}.
+
+\section{The \texttt{ground} Guard Revisited}
+
+Chapter~\ref{ch:constants} introduced \verb|ground| guards for \verb|half_adder|:
+
+\begin{verbatim}
+half_adder(A, B, Sum, Carry) :-
+    ground(A), ground(B) |
+    xor(A, B, Sum), and(A, B, Carry).
+\end{verbatim}
+
+Now we can explain precisely why they are needed.
+
+\subsection{The Problem}
+
+With mode \verb|half_adder : (Num?, Num?, Num, Num)|, analyze the clause:
+
+\medskip
+\noindent\textbf{Variable A:}
+\begin{itemize}
+\item Head arg 1 (reader) $\to$ writer
+\item Body \verb|xor| arg 1 (reader) $\to$ reader
+\item Body \verb|and| arg 1 (reader) $\to$ reader
+\end{itemize}
+
+One writer, \emph{two} readers. SRSW violation!
+
+\medskip
+\noindent\textbf{Variable B:} Same problem---one writer, two readers.
+
+\subsection{The Solution}
+
+The \verb|ground(X)| guard \emph{relaxes} SRSW for variable \verb|X|: when \verb|X| is ground (contains no unbound variables), it can safely have multiple reader occurrences.
+
+\begin{definition}[Extended SRSW Rule]
+\label{def:extended-srsw}
+A clause is SRSW-valid if every variable either:
+\begin{enumerate}
+\item Has exactly one writer and one reader occurrence, or
+\item Has exactly one writer, multiple reader occurrences, and appears in a \verb|ground| guard
+\end{enumerate}
+\end{definition}
+
+With this rule, \verb|half_adder| is valid: \verb|A| and \verb|B| have multiple readers but are protected by \verb|ground| guards.
+
+\subsection{Why Ground Allows Multiple Readers}
+
+The fundamental reason for SRSW is to prevent a writer embedded in a value from being accessed by multiple readers. If \verb|X| is bound to \verb|f(Y)| where \verb|Y| is a writer, then duplicating \verb|X| would give multiple paths to \verb|Y|.
+
+But if \verb|X| is ground, it contains no writers. Duplicating a ground value is safe---it's just copying data, not creating multiple access paths to a single-assignment variable.
+
+\section{Embedded Modes}
+
+Some data structures contain positions with different modes. This enables sophisticated communication patterns.
+
+\subsection{Difference Lists}
+
+A \emph{difference list} represents a list with a ``hole'' at the end, encoded as a pair of a list and its tail variable:
+
+\begin{verbatim}
+DiffList := dl(List?, List)
+\end{verbatim}
+
+The first component is a reader (the list with the hole); the second is a writer (the hole to be filled). This enables O(1) append:
+
+\begin{verbatim}
+dl_append : (DiffList?, DiffList?, DiffList)
+
+dl_append(dl(Xs,Hole), dl(Hole,End), dl(Xs?,End?)).
+\end{verbatim}
+
+The middle \verb|Hole| connects the two difference lists: the first list's hole becomes the second list's content.
+
+\subsection{Request-Response Patterns}
+
+Commands with embedded response channels:
+
+\begin{verbatim}
+Cmd := inc | dec | get(_)
+\end{verbatim}
+
+The \verb|get| constructor contains an embedded writer slot (unmarked \verb|_|). A counter receiving \verb|get(X)| writes its current value to \verb|X|:
+
+\begin{verbatim}
+counter : (List?, Num?)
+
+counter([inc|Cmds], N) :- N1 := N? + 1, counter(Cmds?, N1?).
+counter([dec|Cmds], N) :- N1 := N? - 1, counter(Cmds?, N1?).
+counter([get(Response)|Cmds], N) :-
+    Response = N?,
+    counter(Cmds?, N?).
+counter([], _).
+\end{verbatim}
+
+In \verb|get(Response)|, the \verb|Response| position is a writer within a reader structure. The clause binds \verb|Response| to the current count.
+
+\subsection{Mode Distribution}
+
+When a type contains embedded modes, classification follows the composed mode:
+
+\begin{itemize}
+\item Reader argument + embedded writer = writer occurrence
+\item Reader argument + embedded reader = reader occurrence
+\item Writer argument + embedded writer = reader occurrence
+\item Writer argument + embedded reader = writer occurrence
+\end{itemize}
+
+The embedded mode inverts within a reader argument, preserves within a writer argument.
+
+\section{Benefits of Polymorphic Moded Types}
+
+\subsection{Documentation}
+
+Mode declarations document predicate interfaces clearly:
+
+\begin{verbatim}
+merge  : (List?, List?, List)    % Two inputs, one output
+split  : (List?, List, List)     % One input, two outputs
+map    : (List?, List)           % Input list, output list
+\end{verbatim}
+
+The signature tells you immediately how to use the predicate.
+
+\subsection{Error Prevention}
+
+Static SRSW checking catches errors at compile time:
+\begin{itemize}
+\item Missing reader/writer annotations
+\item Duplicated readers without \verb|ground| guards
+\item Orphan variables
+\item Mode mismatches between caller and callee
+\end{itemize}
+
+\subsection{Annotation-Free Programming}
+
+With mode declarations, you write pure logic programs:
+
+\begin{verbatim}
+append([], Ys, Ys).
+append([X|Xs], Ys, [X|Zs]) :- append(Xs, Ys, Zs).
+\end{verbatim}
+
+The compiler derives the annotations:
 
 \begin{verbatim}
 append([], Ys, Ys?).
-append([X|Xs], Ys, [X?|Zs]) :- append(Xs?, Ys?, Zs).
-\end{verbatim}
-
-With moded signature \verb|append(List(T)?, List(T)?, List(T))|:
-
-\textbf{First clause} \verb|append([], Ys, Ys?)|:
-\begin{itemize}
-\item \verb|[]| --- reader position, constant (ok)
-\item \verb|Ys| --- reader position, so this is a writer occurrence (receives input)
-\item \verb|Ys?| --- writer position, so this is a reader occurrence (provides output)
-\end{itemize}
-
-The variable \verb|Ys| has one writer (head, position 2) and one reader (head, position 3). $\checkmark$
-
-\textbf{Second clause} \verb|append([X|Xs], Ys, [X?|Zs]) :- append(Xs?, Ys?, Zs)|:
-\begin{itemize}
-\item \verb|X| in head --- writer (reader position, receives from caller)
-\item \verb|Xs| in head --- writer (reader position, receives from caller)
-\item \verb|Ys| in head --- writer (reader position, receives from caller)
-\item \verb|X?| in head --- reader (writer position, provides to caller)
-\item \verb|Zs| in head --- writer (writer position, provides to caller)
-\item \verb|Xs?| in body --- reader (reader position in recursive call)
-\item \verb|Ys?| in body --- reader (reader position in recursive call)
-\item \verb|Zs| in body --- writer (writer position in recursive call)
-\end{itemize}
-
-Each variable: \verb|X| has 1 writer, 1 reader. \verb|Xs| has 1 writer, 1 reader. \verb|Ys| has 1 writer, 1 reader. \verb|Zs| has 2 writers---\textbf{violation!}
-
-\subsection{Fixing the Violation}
-
-The issue is that \verb|Zs| appears as a writer in both the head and the body. The fix: use a reader in one position:
-
-\begin{verbatim}
 append([X|Xs], Ys, [X?|Zs?]) :- append(Xs?, Ys?, Zs).
 \end{verbatim}
 
-Now \verb|Zs| has one writer (body, position 3) and one reader (head, position 3). $\checkmark$
+You focus on logic; the type system handles data flow.
 
-\section{The SRSW Rule}
-\label{sec:srsw-rule}
+\section{Summary}
 
-\begin{definition}[Single-Reader Single-Writer (SRSW)]
-Every variable in a clause must have exactly one writer occurrence and at most one reader occurrence.
-\end{definition}
-
-This rule ensures:
-\begin{enumerate}
-\item \textbf{Deterministic binding}: Each variable is bound exactly once
-\item \textbf{No races}: At most one process reads each binding
-\item \textbf{Clear dataflow}: The direction of information flow is explicit
-\end{enumerate}
-
-\section{Type Guards and Multiple Readers}
-\label{sec:type-guards}
-
-The basic SRSW rule allows at most one reader per variable. However, once a term's structure is known to be \emph{fully determined} (ground), it can safely be read multiple times.
-
-GLP provides \emph{type guards} that test and guarantee groundness:
+Polymorphic moded types formalize the reader/writer patterns used throughout GLP:
 
 \begin{itemize}
-\item \verb|atom(X?)| --- succeeds if \verb|X| is bound to an atom
-\item \verb|number(X?)| --- succeeds if \verb|X| is bound to a number
-\item \verb|tuple(X?)| --- succeeds if \verb|X| is bound to a ground compound term
-\item \verb|ground(X?)| --- succeeds if \verb|X| is bound to any ground term
+\item \textbf{Types} describe data structure
+\item \textbf{Modes} specify data flow direction (reader $T?$ vs writer $T$)
+\item \textbf{Mode declarations} document predicate interfaces
+\item \textbf{Reader/writer occurrences} are determined by position (head/body) and argument mode
+\item \textbf{SRSW} requires each variable to have one writer and one reader occurrence
+\item \textbf{Static checking} catches SRSW violations at compile time
+\item \textbf{Annotation derivation} generates explicit reader/writer syntax from modes
+\item \textbf{Ground guards} relax SRSW for safely duplicable values
+\item \textbf{Embedded modes} enable complex communication patterns
 \end{itemize}
 
-When a type guard succeeds, the guarded variable may appear multiple times as a reader in the body:
-
-\begin{verbatim}
-broadcast(X, Outs) :- ground(X?) | send_to_all(X?, X?, Outs?).
-\end{verbatim}
-
-Here \verb|X?| appears twice in the body, which is permitted because \verb|ground(X?)| guarantees \verb|X| is fully determined.
-
-\section{Deriving Annotations}
-\label{sec:deriving}
-
-Given a moded type signature, annotations can be derived mechanically:
-
-\begin{enumerate}
-\item Mark head arguments according to declared modes (readers get \verb|?|)
-\item Mark body arguments according to callee's declared modes
-\item Verify SRSW: each variable has exactly one writer, at most one reader
-\item If a variable needs multiple readers, add an appropriate type guard
-\end{enumerate}
-
-\subsection{Example: Factorial}
-
-\begin{verbatim}
-factorial(N, F) :- ...
-\end{verbatim}
-
-With signature \verb|factorial(Number?, Number)|:
-
-\begin{verbatim}
-factorial(0, 1).
-factorial(N, F) :-
-    N? > 0 |
-    N1 is N? - 1,
-    factorial(N1?, F1),
-    F is N? * F1?.
-\end{verbatim}
-
-Analysis of second clause:
-\begin{itemize}
-\item \verb|N| in head: writer (reader position)
-\item \verb|N?| in guard and body: readers (3 occurrences---needs \verb|number| guard)
-\item \verb|F| in head: writer (writer position)
-\item \verb|N1|: writer from \verb|is|, reader in recursive call
-\item \verb|F1|: writer from recursive call, reader in \verb|is|
-\item \verb|F|: writer from \verb|is| (but \verb|F| in head is also writer!)
-\end{itemize}
-
-The issue: \verb|F| has two writers. Fix by making head occurrence a reader:
-
-\begin{verbatim}
-factorial(N, F?) :-
-    N? > 0 |
-    N1 is N? - 1,
-    factorial(N1?, F1),
-    F is N? * F1?.
-\end{verbatim}
-
-But wait---\verb|N?| appears three times. The guard \verb|N? > 0| implicitly tests that \verb|N| is a number, enabling multiple reads.
-
-\section{Embedded Modes}
-\label{sec:embedded-modes}
-
-Modes can appear inside type definitions, not just at the top level:
-
-\begin{verbatim}
-DiffList(T) := dl(List(T)?, List(T))
-\end{verbatim}
-
-This specifies that the first component of a \verb|dl| term is read and the second is written. When a predicate receives a \verb|DiffList|, it reads the list portion and writes to the hole.
-
-\subsection{Example: Difference List Append}
-
-\begin{verbatim}
-dl_append(dl(Xs?, Ys), dl(Ys?, Zs), dl(Xs?, Zs?)).
-\end{verbatim}
-
-With signature \verb|dl_append(DiffList(T)?, DiffList(T)?, DiffList(T))|:
-\begin{itemize}
-\item First diff-list: \verb|Xs| read, \verb|Ys| written (receives the hole)
-\item Second diff-list: \verb|Ys| read (now connected), \verb|Zs| written
-\item Result diff-list: \verb|Xs| read, \verb|Zs| read (provides the combined structure)
-\end{itemize}
-
-The magic: \verb|Ys| connects the first list's hole to the second list's front, achieving O(1) append.
-
-\section{Benefits of Moded Types}
-\label{sec:benefits}
-
-Polymorphic moded types provide:
-
-\begin{enumerate}
-\item \textbf{Static SRSW checking}: Violations detected at compile time
-\item \textbf{Documentation}: Signatures clarify intended usage
-\item \textbf{Optimization}: Compiler can exploit mode information
-\item \textbf{Error messages}: Type errors pinpoint the problem
-\end{enumerate}
+The type system does not change GLP's semantics---it provides static verification that programs satisfy SRSW, and enables annotation-free programming.
 
 \section{Exercises}
-\label{sec:moded-types-exercises}
 
 \begin{enumerate}
-\item Annotate the following predicate and verify SRSW compliance:
+\item Write mode declarations for \verb|reverse|, \verb|length|, and \verb|member|.
+
+\item Given mode \verb|split : (List?, List, List)|, derive the reader/writer annotations for:
 \begin{verbatim}
-length([], 0).
-length([_|Xs], N) :- length(Xs, N1), N is N1 + 1.
+split([], [], []).
+split([X], [X], []).
+split([X,Y|Zs], [X|Xs], [Y|Ys]) :- split(Zs, Xs, Ys).
 \end{verbatim}
 
-\item The predicate \verb|reverse(Xs, Ys)| reverses a list. Give its moded signature and annotate:
+\item Explain why the following is invalid, and how to fix it:
 \begin{verbatim}
-reverse(Xs, Ys) :- reverse_acc(Xs, [], Ys).
-reverse_acc([], Acc, Acc).
-reverse_acc([X|Xs], Acc, Ys) :- reverse_acc(Xs, [X|Acc], Ys).
+broadcast : (Num?, Num, Num)
+broadcast(X, X, X).
 \end{verbatim}
 
-\item Explain why the following violates SRSW and fix it:
-\begin{verbatim}
-copy(X, X).
-\end{verbatim}
+\item Design a \verb|Queue| type with embedded modes for enqueue/dequeue operations where dequeue returns the removed element via an embedded writer.
 
-\item Design a moded type for a binary tree with values at leaves:
-\begin{verbatim}
-Tree(T) := ...
-\end{verbatim}
-Then write and annotate \verb|sum_tree(Tree(Number)?, Number)| that sums all values.
+\item Given a predicate \verb|tree_sum : (Tree?, Num)|, write the program and verify it satisfies SRSW.
 \end{enumerate}
