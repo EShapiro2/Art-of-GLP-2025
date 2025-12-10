@@ -177,15 +177,23 @@ dmerge([merge(Ws)|Xs], Ys, Zs?) :-
 dmerge(Xs, [merge(Ws)|Ys], Zs?) :-
     dmerger(Ws?, Ys?, Ys1), dmerge(Xs?, Ys1?, Zs).
 dmerge([X|Xs], Ys, [X?|Zs?]) :-
-    otherwise | dmerge(Ys?, Xs?, Zs).
+    tuple(X?), X? =\= merge(_) | dmerge(Ys?, Xs?, Zs).
+dmerge([X|Xs], Ys, [X?|Zs?]) :-
+    atom(X?) | dmerge(Ys?, Xs?, Zs).
+dmerge([X|Xs], Ys, [X?|Zs?]) :-
+    number(X?) | dmerge(Ys?, Xs?, Zs).
 dmerge(Xs, [Y|Ys], [Y?|Zs?]) :-
-    otherwise | dmerge(Xs?, Ys?, Zs).
+    tuple(Y?), Y? =\= merge(_) | dmerge(Xs?, Ys?, Zs).
+dmerge(Xs, [Y|Ys], [Y?|Zs?]) :-
+    atom(Y?) | dmerge(Xs?, Ys?, Zs).
+dmerge(Xs, [Y|Ys], [Y?|Zs?]) :-
+    number(Y?) | dmerge(Xs?, Ys?, Zs).
 dmerge([], [], []).
 
 dmerger(Ws, Xs, Out?) :- dmerge(Ws?, Xs?, Out).
 \end{verbatim}
 
-The \verb|otherwise| guard (Appendix~\ref{appendix:guard-unification}) succeeds only when all prior clauses have either failed or suspended. Here it ensures that regular messages are forwarded only when the head element is not a \verb|merge| request. Without \verb|otherwise|, a regular message \verb|[X|Xs]| would match the third clause even when the first clause (checking for \verb|merge(Ws)|) should apply. The \verb|otherwise| guard defers commitment until the runtime confirms no higher-priority clause can succeed.
+The type guards (\verb|tuple|, \verb|atom|, \verb|number|) distinguish regular messages from \verb|merge| requests. For tuples, the additional guard \verb|X? =\= merge(_)| ensures we don't accidentally match a merge request. Splitting clauses by type is SRSW-compliant: type guards permit multiple reader occurrences (per Formal Box~\ref{formal:guards-multiple-reads}), so \verb|X?| can appear both in the output and in the type test.
 
 \subsection{Static Balanced Merge Tree}
 
@@ -402,11 +410,11 @@ counter(In) :- counter_loop(In?, 0).
 
 counter_loop([clear|In], _) :- counter_loop(In?, 0).
 counter_loop([add|In], C) :- C1 := C? + 1, counter_loop(In?, C1?).
-counter_loop([read(V)|In], C) :- ground(C?) | V = C?, counter_loop(In?, C?).
+counter_loop([read(C?)|In], C) :- number(C?) | counter_loop(In?, C?).
 counter_loop([], _).
 \end{verbatim}
 
-The \verb|read(V)| request is an \emph{incomplete message}: the client sends \verb|read(V)| retaining reader \verb|V?|, and the monitor binds writer \verb|V| to the current count. The \verb|ground(C?)| guard permits replication of \verb|C?| to both the response and the recursive call.
+The \verb|read(C?)| pattern uses the state reader directly in the message structure. The client sends \verb|read(V)| retaining reader \verb|V?|; when the clause head matches, pattern unification binds the client's writer \verb|V| to the current count \verb|C?|. The \verb|number(C?)| guard permits replication of \verb|C?| to both the message and the recursive call (per Formal Box~\ref{formal:guards-multiple-reads}).
 
 \begin{formal}{Which Guards Enable Multiple Reader Occurrences?}
 \label{formal:guards-multiple-reads}
