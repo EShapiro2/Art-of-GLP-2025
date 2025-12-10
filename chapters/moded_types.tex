@@ -1,0 +1,279 @@
+% chapters/moded_types.tex - Polymorphic Moded Types
+
+\chapter{Polymorphic Moded Types}
+\label{ch:moded-types}
+
+GLP's reader/writer discipline ensures orderly communication between concurrent processes. This chapter formalizes that discipline through \emph{polymorphic moded types}---a type system that captures both the structure and the access patterns of data.
+
+\section{Types}
+\label{sec:types}
+
+Types describe the structure of terms. GLP supports three kinds of types.
+
+\subsection{Built-in Types}
+
+The basic types correspond to GLP's atomic values:
+
+\begin{itemize}
+\item \verb|Atom| --- symbolic constants like \verb|alice|, \verb|done|, \verb|nil|
+\item \verb|Number| --- integers and floating-point numbers
+\item \verb|Any| --- any ground term (the universal type)
+\end{itemize}
+
+\subsection{Recursive Types}
+
+Recursive types define structures that contain themselves. The canonical example is the list:
+
+\begin{verbatim}
+List(T) := [] | [T | List(T)]
+\end{verbatim}
+
+This reads: a \verb|List(T)| is either the empty list \verb|[]|, or a cons cell containing an element of type \verb|T| and a tail of type \verb|List(T)|.
+
+Difference lists use an explicit constructor to pair a list with its tail variable:
+
+\begin{verbatim}
+DiffList(T) := dl(List(T)?, List(T))
+\end{verbatim}
+
+The first component is a reader (the list being built), and the second is a writer (the hole at the end).
+
+\subsection{Polymorphic Types}
+
+Type parameters (written with capital letters like \verb|T|, \verb|K|, \verb|V|) allow types to be reused with different element types:
+
+\begin{verbatim}
+Pair(K, V) := pair(K, V)
+Tree(T) := leaf | node(Tree(T), T, Tree(T))
+\end{verbatim}
+
+The type \verb|List(Number)| is a list of numbers; \verb|List(Atom)| is a list of atoms.
+
+\section{Modes}
+\label{sec:modes}
+
+While types describe structure, \emph{modes} describe access patterns. Each argument position in a predicate has a mode:
+
+\begin{itemize}
+\item \verb|?| (reader) --- the predicate reads this argument
+\item (unmarked, writer) --- the predicate writes this argument
+\end{itemize}
+
+A \emph{moded type signature} combines both:
+
+\begin{verbatim}
+append(List(T)?, List(T)?, List(T))
+\end{verbatim}
+
+This declares that \verb|append| reads its first two arguments and writes its third.
+
+\section{Reader and Writer Occurrences}
+\label{sec:occurrences}
+
+Within a clause, each variable occurrence is classified as either a reader or a writer:
+
+\begin{definition}[Occurrence Classification]
+\begin{itemize}
+\item \textbf{Head occurrences}: In the head \verb|p(X, Y?, Z)|, unmarked variables are writers (bound by the caller) and \verb|?|-marked variables are readers (read from caller-provided values).
+\item \textbf{Guard occurrences}: All variable occurrences in guards must be readers.
+\item \textbf{Body occurrences}: Follows the predicate's declared modes---if a position is declared as reader, the occurrence is a reader; if declared as writer, the occurrence is a writer.
+\end{itemize}
+\end{definition}
+
+\subsection{Example: Append}
+
+Consider the standard \verb|append| definition:
+
+\begin{verbatim}
+append([], Ys, Ys?).
+append([X|Xs], Ys, [X?|Zs]) :- append(Xs?, Ys?, Zs).
+\end{verbatim}
+
+With moded signature \verb|append(List(T)?, List(T)?, List(T))|:
+
+\textbf{First clause} \verb|append([], Ys, Ys?)|:
+\begin{itemize}
+\item \verb|[]| --- reader position, constant (ok)
+\item \verb|Ys| --- reader position, so this is a writer occurrence (receives input)
+\item \verb|Ys?| --- writer position, so this is a reader occurrence (provides output)
+\end{itemize}
+
+The variable \verb|Ys| has one writer (head, position 2) and one reader (head, position 3). $\checkmark$
+
+\textbf{Second clause} \verb|append([X|Xs], Ys, [X?|Zs]) :- append(Xs?, Ys?, Zs)|:
+\begin{itemize}
+\item \verb|X| in head --- writer (reader position, receives from caller)
+\item \verb|Xs| in head --- writer (reader position, receives from caller)
+\item \verb|Ys| in head --- writer (reader position, receives from caller)
+\item \verb|X?| in head --- reader (writer position, provides to caller)
+\item \verb|Zs| in head --- writer (writer position, provides to caller)
+\item \verb|Xs?| in body --- reader (reader position in recursive call)
+\item \verb|Ys?| in body --- reader (reader position in recursive call)
+\item \verb|Zs| in body --- writer (writer position in recursive call)
+\end{itemize}
+
+Each variable: \verb|X| has 1 writer, 1 reader. \verb|Xs| has 1 writer, 1 reader. \verb|Ys| has 1 writer, 1 reader. \verb|Zs| has 2 writers---\textbf{violation!}
+
+\subsection{Fixing the Violation}
+
+The issue is that \verb|Zs| appears as a writer in both the head and the body. The fix: use a reader in one position:
+
+\begin{verbatim}
+append([X|Xs], Ys, [X?|Zs?]) :- append(Xs?, Ys?, Zs).
+\end{verbatim}
+
+Now \verb|Zs| has one writer (body, position 3) and one reader (head, position 3). $\checkmark$
+
+\section{The SRSW Rule}
+\label{sec:srsw-rule}
+
+\begin{definition}[Single-Reader Single-Writer (SRSW)]
+Every variable in a clause must have exactly one writer occurrence and at most one reader occurrence.
+\end{definition}
+
+This rule ensures:
+\begin{enumerate}
+\item \textbf{Deterministic binding}: Each variable is bound exactly once
+\item \textbf{No races}: At most one process reads each binding
+\item \textbf{Clear dataflow}: The direction of information flow is explicit
+\end{enumerate}
+
+\section{Type Guards and Multiple Readers}
+\label{sec:type-guards}
+
+The basic SRSW rule allows at most one reader per variable. However, once a term's structure is known to be \emph{fully determined} (ground), it can safely be read multiple times.
+
+GLP provides \emph{type guards} that test and guarantee groundness:
+
+\begin{itemize}
+\item \verb|atom(X?)| --- succeeds if \verb|X| is bound to an atom
+\item \verb|number(X?)| --- succeeds if \verb|X| is bound to a number
+\item \verb|tuple(X?)| --- succeeds if \verb|X| is bound to a ground compound term
+\item \verb|ground(X?)| --- succeeds if \verb|X| is bound to any ground term
+\end{itemize}
+
+When a type guard succeeds, the guarded variable may appear multiple times as a reader in the body:
+
+\begin{verbatim}
+broadcast(X, Outs) :- ground(X?) | send_to_all(X?, X?, Outs?).
+\end{verbatim}
+
+Here \verb|X?| appears twice in the body, which is permitted because \verb|ground(X?)| guarantees \verb|X| is fully determined.
+
+\section{Deriving Annotations}
+\label{sec:deriving}
+
+Given a moded type signature, annotations can be derived mechanically:
+
+\begin{enumerate}
+\item Mark head arguments according to declared modes (readers get \verb|?|)
+\item Mark body arguments according to callee's declared modes
+\item Verify SRSW: each variable has exactly one writer, at most one reader
+\item If a variable needs multiple readers, add an appropriate type guard
+\end{enumerate}
+
+\subsection{Example: Factorial}
+
+\begin{verbatim}
+factorial(N, F) :- ...
+\end{verbatim}
+
+With signature \verb|factorial(Number?, Number)|:
+
+\begin{verbatim}
+factorial(0, 1).
+factorial(N, F) :-
+    N? > 0 |
+    N1 is N? - 1,
+    factorial(N1?, F1),
+    F is N? * F1?.
+\end{verbatim}
+
+Analysis of second clause:
+\begin{itemize}
+\item \verb|N| in head: writer (reader position)
+\item \verb|N?| in guard and body: readers (3 occurrences---needs \verb|number| guard)
+\item \verb|F| in head: writer (writer position)
+\item \verb|N1|: writer from \verb|is|, reader in recursive call
+\item \verb|F1|: writer from recursive call, reader in \verb|is|
+\item \verb|F|: writer from \verb|is| (but \verb|F| in head is also writer!)
+\end{itemize}
+
+The issue: \verb|F| has two writers. Fix by making head occurrence a reader:
+
+\begin{verbatim}
+factorial(N, F?) :-
+    N? > 0 |
+    N1 is N? - 1,
+    factorial(N1?, F1),
+    F is N? * F1?.
+\end{verbatim}
+
+But wait---\verb|N?| appears three times. The guard \verb|N? > 0| implicitly tests that \verb|N| is a number, enabling multiple reads.
+
+\section{Embedded Modes}
+\label{sec:embedded-modes}
+
+Modes can appear inside type definitions, not just at the top level:
+
+\begin{verbatim}
+DiffList(T) := dl(List(T)?, List(T))
+\end{verbatim}
+
+This specifies that the first component of a \verb|dl| term is read and the second is written. When a predicate receives a \verb|DiffList|, it reads the list portion and writes to the hole.
+
+\subsection{Example: Difference List Append}
+
+\begin{verbatim}
+dl_append(dl(Xs?, Ys), dl(Ys?, Zs), dl(Xs?, Zs?)).
+\end{verbatim}
+
+With signature \verb|dl_append(DiffList(T)?, DiffList(T)?, DiffList(T))|:
+\begin{itemize}
+\item First diff-list: \verb|Xs| read, \verb|Ys| written (receives the hole)
+\item Second diff-list: \verb|Ys| read (now connected), \verb|Zs| written
+\item Result diff-list: \verb|Xs| read, \verb|Zs| read (provides the combined structure)
+\end{itemize}
+
+The magic: \verb|Ys| connects the first list's hole to the second list's front, achieving O(1) append.
+
+\section{Benefits of Moded Types}
+\label{sec:benefits}
+
+Polymorphic moded types provide:
+
+\begin{enumerate}
+\item \textbf{Static SRSW checking}: Violations detected at compile time
+\item \textbf{Documentation}: Signatures clarify intended usage
+\item \textbf{Optimization}: Compiler can exploit mode information
+\item \textbf{Error messages}: Type errors pinpoint the problem
+\end{enumerate}
+
+\section{Exercises}
+\label{sec:moded-types-exercises}
+
+\begin{enumerate}
+\item Annotate the following predicate and verify SRSW compliance:
+\begin{verbatim}
+length([], 0).
+length([_|Xs], N) :- length(Xs, N1), N is N1 + 1.
+\end{verbatim}
+
+\item The predicate \verb|reverse(Xs, Ys)| reverses a list. Give its moded signature and annotate:
+\begin{verbatim}
+reverse(Xs, Ys) :- reverse_acc(Xs, [], Ys).
+reverse_acc([], Acc, Acc).
+reverse_acc([X|Xs], Acc, Ys) :- reverse_acc(Xs, [X|Acc], Ys).
+\end{verbatim}
+
+\item Explain why the following violates SRSW and fix it:
+\begin{verbatim}
+copy(X, X).
+\end{verbatim}
+
+\item Design a moded type for a binary tree with values at leaves:
+\begin{verbatim}
+Tree(T) := ...
+\end{verbatim}
+Then write and annotate \verb|sum_tree(Tree(Number)?, Number)| that sums all values.
+\end{enumerate}
