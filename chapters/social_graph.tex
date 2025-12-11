@@ -407,6 +407,34 @@ play_4agents :-
 
 With appropriate actor scripts, this play can test scenarios such as: Alice befriends Bob, Carol befriends Dave, then Bob befriends Carol---demonstrating independent befriending operations and graph connectivity growth.
 
+\subsection{Testing Friend-Mediated Introduction}
+
+The cold-call plays test network-routed befriending. To test friend-mediated introduction, we need a scenario where an agent already has multiple friends.
+
+The \verb|play_introduction| scenario proceeds in three phases:
+\begin{enumerate}
+\item Alice cold-calls Bob through the network; Bob accepts
+\item Alice cold-calls Carol through the network; Carol accepts
+\item Alice introduces Bob to Carol through her friend channels
+\end{enumerate}
+
+After phase 2, Alice has both Bob and Carol as friends. The introduction in phase 3 sends messages through Alice's friend channels---not the network---to Bob and Carol. Each receives an \verb|intro| message containing the other's identity and one half of a fresh channel pair.
+
+The actors must handle two protocol phases:
+
+\begin{verbatim}
+bob_actor([msg(agent, user, befriend(alice, Resp1))|Out1],
+          [msg(user, bob, decision(yes, alice, Resp1?))|In1?]) :-
+    bob_wait_intro(Out1?, In1).
+
+bob_wait_intro([msg(agent, user, befriend_intro(alice, carol, Ch))|_],
+               [msg(user, bob, accept_intro(carol, Ch?))|_]).
+\end{verbatim}
+
+Bob's actor first accepts Alice's cold-call, then waits for the introduction. The \verb|befriend_intro| message indicates a friend-mediated introduction (from Alice, introducing Carol). Upon acceptance, Bob and Carol establish a direct channel without network involvement.
+
+The final state shows all three agents as mutual friends: Alice connected to both Bob and Carol through cold-calls, and Bob connected to Carol through the introduction.
+
 \subsection{GLPSAM Adaptations}
 
 The GLPSAM versions of protocol predicates differ from the deployment versions in two ways:
