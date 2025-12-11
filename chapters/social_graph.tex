@@ -80,17 +80,13 @@ social_graph(Id, [msg(user, Id, decision(Dec, From, Resp))|In], Fs) :-
 The \verb|bind_response| predicate handles both acceptance and rejection:
 
 \begin{verbatim}
-bind_response(yes, From, Out?, Fs, Fs1?, In, In1?) :-
-    atom(From?),
-    new_channel(ch(FIn, FOut), FCh) |
-    wrap_accept(FCh?, Out),
-    handle_accept(From?, ch(FIn?, FOut?), Fs?, Fs1, In?, In1).
+bind_response(yes, From, accept(ch(FOut?, FIn)), Fs, Fs1?, In, In1?) :-
+    atom(From?) |
+    handle_accept(From?, ch(FIn?, FOut), Fs?, Fs1, In?, In1).
 bind_response(no, _, no, Fs, Fs?, In, In?).
-
-wrap_accept(Ch, accept(Ch?)).
 \end{verbatim}
 
-On acceptance, \verb|new_channel| creates a pair of connected channels. The \verb|wrap_accept| helper binds the output to \verb|accept(Ch?)| using a separate writer, ensuring SRSW compliance. The acceptor keeps one half of the channel pair and sends the other to the initiator via the response variable.
+On acceptance, the predicate constructs a channel pair directly in the head: \verb|ch(FOut?, FIn)| goes to the remote agent (via the response variable), while \verb|ch(FIn?, FOut)| is kept locally. The reader/writer annotations ensure each stream has exactly one writer.
 
 \subsection{Establishing the Connection}
 
@@ -169,14 +165,13 @@ The introducer creates channel pairs and sends invitations:
 
 \begin{verbatim}
 social_graph(Id, [msg(user, Id?, introduce(P, Q))|In], Fs) :-
-    ground(Id?), ground(P?), ground(Q?),
-    new_channel(ch(PQIn, PQOut), ch(QPIn, QPOut)) |
-    lookup_send(P?, msg(Id?, P?, intro(Q?, ch(QPIn?, PQOut?))), Fs?, Fs1),
-    lookup_send(Q?, msg(Id?, Q?, intro(P?, ch(PQIn?, QPOut?))), Fs1?, Fs2),
+    ground(Id?), ground(P?), ground(Q?) |
+    lookup_send(P?, msg(Id?, P?, intro(Q?, ch(QtoP?, PtoQ))), Fs?, Fs1),
+    lookup_send(Q?, msg(Id?, Q?, intro(P?, ch(PtoQ?, QtoP))), Fs1?, Fs2),
     social_graph(Id?, In?, Fs2?).
 \end{verbatim}
 
-Each party receives one half of the channel pair, enabling direct communication once both accept.
+The channel pair is constructed directly: \verb|PtoQ| and \verb|QtoP| are fresh variables that form the two halves. P receives \verb|ch(QtoP?, PtoQ)| (reads from Q, writes to Q), and Q receives \verb|ch(PtoQ?, QtoP)| (reads from P, writes to P).
 
 \subsection{Processing the Introduction}
 
@@ -227,18 +222,18 @@ social_graph(Id, [msg(_, _, _)|In], Fs) :-
 
 The \verb|otherwise| guard ensures this clause only matches when no other clause applies. Unrecognized messages are silently dropped, allowing the event loop to continue processing.
 
-\section{Channel Operations}
-\label{sec:channel-guards}
+\section{Channel Notation}
+\label{sec:channel-notation}
 
-Channel operations encapsulate stream manipulation for bidirectional communication:
+A \emph{channel} \verb|ch(In, Out)| pairs an input stream (which the holder reads) with an output stream (which the holder writes). The following notation describes channel operations semantically:
 
-\begin{verbatim}
-send(X, ch(In, [X?|Out?]), ch(In?, Out)).
-receive(X?, ch([X|In], Out?), ch(In?, Out)).
-new_channel(ch(Xs?, Ys), ch(Ys?, Xs)).
-\end{verbatim}
+\begin{itemize}
+\item \textbf{Send:} Adding message \verb|X| to channel \verb|ch(In, Out)| yields \verb|ch(In, [X|Out'])|, extending the output stream.
+\item \textbf{Receive:} Reading from channel \verb|ch([X|In'], Out)| yields message \verb|X| and continuation \verb|ch(In', Out)|.
+\item \textbf{New channel:} A fresh channel pair consists of \verb|ch(Xs, Ys)| and \verb|ch(Ys, Xs)|---each channel's input is the other's output.
+\end{itemize}
 
-The \verb|send| operation adds a message to the output stream. The \verb|receive| operation removes a message from the input stream. The \verb|new_channel| operation creates a pair of connected channels where each channel's input is the other's output.
+In code, these operations are expressed through direct stream manipulation in clause heads, as shown in the protocol clauses above.
 
 \section{Utility Predicates}
 \label{sec:social-graph-utilities}

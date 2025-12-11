@@ -15,7 +15,7 @@ The GLPSAM simulation models the essential aspects of multiagent communication:
 
 \paragraph{Stream-based messaging.} Agents communicate by producing and consuming stream elements. A message sent by Alice appears as a cons cell on a stream that Bob reads. The suspension and reactivation mechanics of \GLP---where a reader blocks until its paired writer provides a value---model the asynchrony of real network communication.
 
-\paragraph{Channel abstractions.} Bidirectional channels, represented as pairs of streams, provide the foundation for agent interaction. The defined guards \verb|send/3|, \verb|receive/3|, and \verb|new_channel/2| (Chapter~\ref{ch:social-graph}) establish channel-based communication patterns that transfer directly to distributed implementation.
+\paragraph{Channel abstractions.} Bidirectional channels, represented as pairs of streams, provide the foundation for agent interaction. The channel notation---\verb|send|, \verb|receive|, and \verb|new_channel| (Chapter~\ref{ch:social-graph})---describes communication patterns that transfer directly to distributed implementation. In code, these operations are expressed through direct stream construction in clause heads.
 
 \paragraph{Protocol sequencing.} The befriending protocols---cold-call introduction, friend-mediated introduction, response handling---execute with their full logical structure. Message ordering, response variables, and the inject pattern for deferred message insertion all function exactly as they would in a distributed setting.
 

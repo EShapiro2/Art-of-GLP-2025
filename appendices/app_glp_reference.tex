@@ -118,23 +118,6 @@ lookup(Key, [(K,V)|_], V?) :- Key? =?= K? | true.
 lookup(Key, [(K,_)|Rest], V?) :- ~(Key? =?= K?) | lookup(Key?, Rest?, V).
 \end{verbatim}
 
-\subsection{Defined Guard Predicates}
-
-Users may define guard predicates as unit clauses:
-\begin{verbatim}
-channel(ch(In?, Out)).
-empty_channel(ch([], Out)).
-\end{verbatim}
-
-When used in a guard, the call is unfolded to equality tests:
-\begin{verbatim}
-foo(X) :- channel(X?) | ...
-\end{verbatim}
-becomes effectively:
-\begin{verbatim}
-foo(ch(In?, Out)) :- ...
-\end{verbatim}
-
 \section{System Predicates}
 
 System predicates execute atomically with goal reduction, providing access to runtime services.
