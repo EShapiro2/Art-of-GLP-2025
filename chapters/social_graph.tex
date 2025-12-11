@@ -227,10 +227,10 @@ social_graph(Id, [msg(_, _, _)|In], Fs) :-
 
 The \verb|otherwise| guard ensures this clause only matches when no other clause applies. Unrecognized messages are silently dropped, allowing the event loop to continue processing.
 
-\section{Defined Guards for Channels}
+\section{Channel Operations}
 \label{sec:channel-guards}
 
-Channel operations are defined as unit clauses, serving as defined guards when used in guard position:
+Channel operations encapsulate stream manipulation for bidirectional communication:
 
 \begin{verbatim}
 send(X, ch(In, [X?|Out?]), ch(In?, Out)).
@@ -239,8 +239,6 @@ new_channel(ch(Xs?, Ys), ch(Ys?, Xs)).
 \end{verbatim}
 
 The \verb|send| operation adds a message to the output stream. The \verb|receive| operation removes a message from the input stream. The \verb|new_channel| operation creates a pair of connected channels where each channel's input is the other's output.
-
-These definitions follow the GLP mechanism for defined guards: when a unit clause appears in guard position, it unfolds to equality tests against its arguments.
 
 \section{Utility Predicates}
 \label{sec:social-graph-utilities}
@@ -267,25 +265,15 @@ The \verb|lookup| predicate finds a value in an association list. The \verb|look
 \section{Testing with Multiagent Plays}
 \label{sec:plays}
 
-The protocols presented above describe agent behavior in isolation. To verify that multiple agents interact correctly, we simulate multiagent systems within GLPSAM. This section presents the \emph{play} methodology: self-contained programs that spawn multiple agents, connect them through a network switch, and drive their behavior through scripted actors.
+The protocols presented above describe agent behavior in isolation. To verify that multiple agents interact correctly, we simulate multiagent systems. This section presents the \emph{play} methodology: self-contained programs that spawn multiple agents, connect them through a network switch, and drive their behavior through scripted actors.
 
 \subsection{The Network Switch}
 
 In deployment, agents communicate through a physical network. In simulation, a \verb|network| process routes messages between agents. Each agent maintains a single channel to the network; messages include a destination address, and the switch forwards them accordingly.
 
-The GLP paper specifies the switch behavior with defined guards:
+A channel \verb|ch(In?, Out)| pairs an input stream (which the holder reads) with an output stream (which the holder writes). The network holds the inverse of each agent's channel: where Alice has \verb|ch(NetIn?, NetOut)|, the network has \verb|ch(NetOut?, NetIn)|.
 
-\begin{verbatim}
-% Representative clause for forwarding from p to q:
-network(...,(p,Chp),...,(q,Chq),.... :-
-    receive(Chp?,msg(q,X),Chp1),
-    send(Chq?,X?,Chq1) |
-    network(...,(p,Chp1?),...,(q,Chq1?),....)
-\end{verbatim}
-
-For GLPSAM execution, we unfold the \verb|send| and \verb|receive| guards. A channel \verb|ch(In?, Out)| pairs an input stream (which the holder reads) with an output stream (which the holder writes). The network holds the inverse of each agent's channel: where Alice has \verb|ch(NetIn?, NetOut)|, the network has \verb|ch(NetOut?, NetIn)|.
-
-Unfolding the guards yields the GLPSAM form. For a two-agent network:
+For a two-agent network:
 
 \begin{verbatim}
 %% Alice sends to Bob
