@@ -264,6 +264,174 @@ tag_stream(_, [], []).
 
 The \verb|lookup| predicate finds a value in an association list. The \verb|lookup_send| predicate sends a message through the channel associated with a key and updates the friends list with the new stream tail. The \verb|tag_stream| predicate wraps each message with its source identifier, enabling merged streams to preserve source information.
 
+\section{Testing with Multiagent Plays}
+\label{sec:plays}
+
+The protocols presented above describe agent behavior in isolation. To verify that multiple agents interact correctly, we simulate multiagent systems within GLPSAM. This section presents the \emph{play} methodology: self-contained programs that spawn multiple agents, connect them through a network switch, and drive their behavior through scripted actors.
+
+\subsection{The Network Switch}
+
+In deployment, agents communicate through a physical network. In simulation, a \verb|network| process routes messages between agents. Each agent maintains a single channel to the network; messages include a destination address, and the switch forwards them accordingly.
+
+The GLP paper specifies the switch behavior with defined guards:
+
+\begin{verbatim}
+% Representative clause for forwarding from p to q:
+network(...,(p,Chp),...,(q,Chq),.... :-
+    receive(Chp?,msg(q,X),Chp1),
+    send(Chq?,X?,Chq1) |
+    network(...,(p,Chp1?),...,(q,Chq1?),....)
+\end{verbatim}
+
+For GLPSAM execution, we unfold the \verb|send| and \verb|receive| guards. A channel \verb|ch(In?, Out)| pairs an input stream (which the holder reads) with an output stream (which the holder writes). The network holds the inverse of each agent's channel: where Alice has \verb|ch(NetIn?, NetOut)|, the network has \verb|ch(NetOut?, NetIn)|.
+
+Unfolding the guards yields the GLPSAM form. For a two-agent network:
+
+\begin{verbatim}
+%% Alice sends to Bob
+network2((alice, ch([msg(alice, bob, X)|AliceIn], AliceOut?)),
+         (bob, ch(BobIn, [msg(alice, bob, X?)|BobOut?]))) :-
+    network2((alice, ch(AliceIn?, AliceOut)),
+             (bob, ch(BobIn?, BobOut))).
+
+%% Bob sends to Alice
+network2((alice, ch(AliceIn, [msg(bob, alice, X?)|AliceOut?])),
+         (bob, ch([msg(bob, alice, X)|BobIn], BobOut?))) :-
+    network2((alice, ch(AliceIn?, AliceOut)),
+             (bob, ch(BobIn?, BobOut))).
+\end{verbatim}
+
+The structure merits careful study. In the first clause:
+\begin{itemize}
+\item The head reads from Alice's output: \verb|[msg(alice, bob, X)|AliceIn]| extracts the message
+\item The head writes to Bob's input: \verb|[msg(alice, bob, X?)|BobOut?]| delivers the message
+\item The body preserves the stream tails as writers for subsequent messages
+\end{itemize}
+
+The reader/writer annotations ensure SRSW compliance: each stream variable appears exactly once as a writer in the body. This enables the switch to route multiple messages---after forwarding one message, the switch recurses with fresh stream tails ready for the next.
+
+For $n$ agents, the switch requires $n(n-1)$ clauses---one for each ordered pair of distinct agents. A four-agent switch has twelve clauses.
+
+\subsection{Actors and Scripts}
+
+A \emph{play} simulates a scenario by spawning agents and driving them with \emph{actors}. An actor represents a user following a deterministic script---responding to agent prompts with predetermined choices.
+
+The simplest actor initiates a single action:
+
+\begin{verbatim}
+alice_actor(Out?, [msg(user, alice, connect(bob))]).
+\end{verbatim}
+
+Alice's actor writes a \verb|connect(bob)| request to her agent's user input stream, then terminates.
+
+A responding actor waits for a prompt before acting:
+
+\begin{verbatim}
+bob_actor([msg(agent, user, befriend(From, Resp))|_],
+          [msg(user, bob, decision(yes, From?, Resp?))|_]).
+\end{verbatim}
+
+Bob's actor reads a \verb|befriend| request from his agent, then writes an acceptance decision.
+
+\subsection{The Play Structure}
+
+A complete play wires together the network, agents, and actors:
+
+\begin{verbatim}
+play_alice_bob :-
+    %% Network switch
+    network2((alice, ch(AliceNetOut?, AliceNetIn)),
+             (bob, ch(BobNetOut?, BobNetIn))),
+
+    %% Agents
+    agent(alice, ch(AliceUserIn?, AliceUserOut),
+                 ch(AliceNetIn?, AliceNetOut)),
+    agent(bob, ch(BobUserIn?, BobUserOut),
+               ch(BobNetIn?, BobNetOut)),
+
+    %% Actors
+    alice_actor(AliceUserOut?, AliceUserIn),
+    bob_actor(BobUserOut?, BobUserIn).
+\end{verbatim}
+
+The channel wiring requires attention. Each agent has two channels:
+\begin{itemize}
+\item User channel: \verb|ch(UserIn?, UserOut)| connects to the actor
+\item Network channel: \verb|ch(NetIn?, NetOut)| connects to the switch
+\end{itemize}
+
+The network holds inverse channels: \verb|ch(NetOut?, NetIn)|. This ensures that when Alice writes to her \verb|NetOut|, the network reads it; when the network writes to \verb|NetIn|, Alice reads it.
+
+\subsection{Execution Trace}
+
+Running \verb|play_alice_bob| produces a complete protocol execution:
+
+\begin{enumerate}
+\item Alice's actor sends \verb|connect(bob)| to her agent
+\item Alice's agent sends \verb|intro(alice, alice, Resp)| through the network
+\item The network routes the message to Bob
+\item Bob's agent sends \verb|befriend(alice, Resp)| to his actor
+\item Bob's actor sends \verb|decision(yes, alice, Resp)| to his agent
+\item Bob's agent binds \verb|Resp| to \verb|accept(ch(FOut?, FIn))|
+\item The \verb|inject_msg| predicate delivers the response to Alice
+\item Both agents add each other to their friends lists
+\end{enumerate}
+
+The final state shows successful befriending: Alice's friends list contains Bob, and Bob's contains Alice. The protocol terminates with agents suspended on empty friend channels, ready for application-level messaging.
+
+\subsection{Scaling to More Agents}
+
+The methodology scales to larger plays. A four-agent scenario tests cross-network befriending:
+
+\begin{verbatim}
+play_4agents :-
+    network4((alice, ch(AliceNetOut?, AliceNetIn)),
+             (bob, ch(BobNetOut?, BobNetIn)),
+             (carol, ch(CarolNetOut?, CarolNetIn)),
+             (dave, ch(DaveNetOut?, DaveNetIn))),
+
+    agent(alice, ch(AliceUserIn?, AliceUserOut),
+                 ch(AliceNetIn?, AliceNetOut)),
+    agent(bob, ch(BobUserIn?, BobUserOut),
+               ch(BobNetIn?, BobNetOut)),
+    agent(carol, ch(CarolUserIn?, CarolUserOut),
+                 ch(CarolNetIn?, CarolNetOut)),
+    agent(dave, ch(DaveUserIn?, DaveUserOut),
+                ch(DaveNetIn?, DaveNetOut)),
+
+    alice_actor(AliceUserOut?, AliceUserIn),
+    bob_actor(BobUserOut?, BobUserIn),
+    carol_actor(CarolUserOut?, CarolUserIn),
+    dave_actor(DaveUserOut?, DaveUserIn).
+\end{verbatim}
+
+With appropriate actor scripts, this play can test scenarios such as: Alice befriends Bob, Carol befriends Dave, then Bob befriends Carol---demonstrating independent befriending operations and graph connectivity growth.
+
+\subsection{GLPSAM Adaptations}
+
+The GLPSAM versions of protocol predicates differ from the deployment versions in two ways:
+
+\paragraph{Guard unfolding.} Defined guards like \verb|send|, \verb|receive|, and \verb|new_channel| are manually unfolded. For example, the deployment version:
+
+\begin{verbatim}
+bind_response(yes, From, accept(FCh), Fs, Fs1, In, In1) :-
+    new_channel(ch(FIn, FOut), FCh) |
+    handle_response(accept(FCh?), From, Fs, Fs1, In, In1).
+\end{verbatim}
+
+becomes in GLPSAM:
+
+\begin{verbatim}
+bind_response(yes, From, accept(ch(FOut?, FIn)), Fs, Fs1?, In, In1?) :-
+    handle_response(accept(ch(FIn?, FOut)), From?, Fs?, Fs1, In?, In1).
+\end{verbatim}
+
+The guard unfolds to direct construction of the channel pair with appropriate reader/writer annotations.
+
+\paragraph{Attestation omission.} The \verb|attestation/2| guard, which verifies cryptographic signatures in deployment, is simply removed. All agents are assumed correct, and all messages authentic.
+
+These adaptations are mechanical and preserve protocol logic. Code that works in GLPSAM simulation will work in deployment once the runtime implements guard evaluation and attestation verification.
+
 \section{Exercises}
 \label{sec:social-graph-exercises}
 
