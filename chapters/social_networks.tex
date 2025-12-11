@@ -19,14 +19,12 @@ This chapter presents grassroots social networking constructs, including securit
 
 \begin{verbatim}
 process_message(Msg, Result?) :-
-    attestation(Msg, att(Agent, Module)),
+    attestation(Msg?, att(Agent, Module)),
     trusted_module(Module?) |
     handle_verified(Msg?, Agent?, Result).
 
-process_message(Msg, rejected) :-
-    attestation(Msg, att(_, Module)),
-    \+ trusted_module(Module?) |
-    true.
+process_message(Msg, rejected?) :-
+    otherwise | true.
 \end{verbatim}
 
 The \verb|attestation(X, Info)| guard succeeds if term \verb|X| carries an attestation, binding \verb|Info| to \verb|att(Agent, Module)| containing the attesting agent's public key and module identifier. For locally-produced terms, \verb|Agent| binds to the distinguished constant \verb|self|.
@@ -75,7 +73,41 @@ The caller provides the head value \verb|H| and receives the new tail writer \ve
 \section{Feed Distribution}
 \label{sec:feed}
 
-[TO BE DEVELOPED]
+Social networks distribute content from producers to followers. A user posts content; that content must reach all current followers. This section presents the mechanisms for authenticated feed distribution.
+
+\subsection{Post Distribution}
+
+The \verb|post| predicate distributes content to all followers:
+
+\begin{verbatim}
+post(Content, Followers, Followers1?) :-
+    ground(Content?), current_time(Time) |
+    create_post(Content?, Time?, Post),
+    broadcast(Post?, Followers?, Followers1).
+
+create_post(Content, Time, post(Content?, Time?)).
+
+broadcast(_, [], []).
+broadcast(Post, [(Name, Out)|Fs], [(Name?, [Post?|Out1?])|Fs1?]) :-
+    ground(Post?) |
+    broadcast(Post?, Fs?, Fs1).
+\end{verbatim}
+
+The \verb|post| predicate timestamps content and broadcasts it. The \verb|broadcast| predicate traverses the followers list, prepending the post to each follower's output stream. The \verb|ground(Post?)| guard permits the post to be sent to multiple recipients---without it, the multiple occurrences of \verb|Post?| would violate SRSW.
+
+The followers list has type \verb|[(Name, Stream)]|: each entry pairs a follower's name with their output stream. After broadcasting, each stream has the new post prepended, and the updated list with new stream tails is returned.
+
+\subsection{Forwarding with Provenance}
+
+When forwarding content from others, the original authorship must be preserved:
+
+\begin{verbatim}
+forward(Post, Followers, Followers1?) :-
+    ground(Post?), attestation(Post?, att(Author, _)) |
+    broadcast(forward(Author?, Post?), Followers?, Followers1).
+\end{verbatim}
+
+The \verb|attestation| guard extracts the original author's identity. The forwarded message wraps the original post with the author's identity, creating a verifiable provenance chain. Recipients can verify both the original author (via the embedded attestation) and the forwarder (via the message's own attestation).
 
 \subsection{Non-Ground Replication}
 \label{sec:nonground-replication}
@@ -83,25 +115,86 @@ The caller provides the head value \verb|H| and receives the new tail writer \ve
 Distributing incrementally-constructed streams to multiple recipients requires replication. The replicator handles streams that may contain uninstantiated readers, suspending until values become available:
 
 \begin{verbatim}
-replicate2(X, X?, X?) :- ground(X) | true.
-replicate2(Xs, [Y1?|Ys1?], [Y2?|Ys2?]) :-
-    Xs? = [X|Xs1] |
+replicate2(X, X?, X?) :- ground(X?) | true.
+replicate2([X|Xs], [Y1?|Ys1?], [Y2?|Ys2?]) :-
     replicate2(X?, Y1, Y2),
-    replicate2(Xs1?, Ys1, Ys2).
+    replicate2(Xs?, Ys1, Ys2).
 \end{verbatim}
 
-The first clause handles ground terms: when \verb|X| is fully instantiated, it is copied directly to both outputs. The second clause handles list structures: it matches the input against \verb|[X|Xs1]|, recursively replicates the head \verb|X| to both output heads, and recurses on the tails.
-
-The guard \verb|Xs? = [X|Xs1]| suspends until the input stream's head is available. This allows replication of streams as they are incrementally produced, with each element replicated as soon as it appears.
+The first clause handles ground terms: when the input is fully instantiated, it is copied directly to both outputs. The \verb|ground| guard permits multiple reader occurrences of \verb|X|. The second clause handles list structures: matching a cons cell in the head, it recursively replicates the head element to both output heads, and recurses on the tails.
 
 \paragraph{Generalization.} The binary replicator extends naturally to $n$ outputs:
 
 \begin{verbatim}
-replicate3(X, X?, X?, X?) :- ground(X) | true.
-replicate3(Xs, [Y1?|Ys1?], [Y2?|Ys2?], [Y3?|Ys3?]) :-
-    Xs? = [X|Xs1] |
+replicate3(X, X?, X?, X?) :- ground(X?) | true.
+replicate3([X|Xs], [Y1?|Ys1?], [Y2?|Ys2?], [Y3?|Ys3?]) :-
     replicate3(X?, Y1, Y2, Y3),
-    replicate3(Xs1?, Ys1, Ys2, Ys3).
+    replicate3(Xs?, Ys1, Ys2, Ys3).
 \end{verbatim}
 
 This pattern is essential for feed distribution where a single producer's stream must reach multiple followers.
+
+\section{Follower Management}
+\label{sec:follower-management}
+
+Followers connect to producers through dedicated streams. Managing the follower set requires adding new followers and handling departures.
+
+\subsection{Adding Followers}
+
+When a new follower subscribes, they receive a fresh stream:
+
+\begin{verbatim}
+add_follower(Name, Followers, [(Name?, Stream?)|Followers?], Stream).
+\end{verbatim}
+
+The predicate returns the updated followers list and the new stream. The follower receives \verb|Stream?| (a reader) while the producer retains \verb|Stream| (a writer) in the followers list.
+
+\subsection{Removing Followers}
+
+Removing a follower closes their stream:
+
+\begin{verbatim}
+remove_follower(Name, [(Name?, _)|Fs], Fs?).
+remove_follower(Name, [(Other, Stream)|Fs], [(Other?, Stream?)|Fs1?]) :-
+    ~(Name? =?= Other?) |
+    remove_follower(Name?, Fs?, Fs1).
+\end{verbatim}
+
+The removed follower's stream is simply dropped; the follower will see it terminate (no further elements).
+
+\subsection{Feed Server}
+
+A complete feed server combines posting and follower management:
+
+\begin{verbatim}
+feed_server(Commands, Followers) :-
+    serve_feed(Commands?, Followers?, _).
+
+serve_feed([post(Content)|Cmds], Fs, Fs2?) :-
+    post(Content?, Fs?, Fs1),
+    serve_feed(Cmds?, Fs1?, Fs2).
+serve_feed([subscribe(Name, Stream)|Cmds], Fs, Fs2?) :-
+    add_follower(Name?, Fs?, Fs1, Stream),
+    serve_feed(Cmds?, Fs1?, Fs2).
+serve_feed([unsubscribe(Name)|Cmds], Fs, Fs2?) :-
+    remove_follower(Name?, Fs?, Fs1),
+    serve_feed(Cmds?, Fs1?, Fs2).
+serve_feed([], Fs, Fs?).
+\end{verbatim}
+
+The server processes a stream of commands: \verb|post(Content)| broadcasts to all followers, \verb|subscribe(Name, Stream)| adds a follower and returns their stream via the embedded writer, and \verb|unsubscribe(Name)| removes a follower.
+
+\section{Exercises}
+\label{sec:social-networks-exercises}
+
+\begin{enumerate}
+\item Implement \verb|replicate_n(X, N, Outputs)| that replicates input \verb|X| to a list of \verb|N| output streams.
+
+\item Extend the feed server to support \verb|forward(Post)| commands that preserve provenance.
+
+\item Implement a \verb|filtered_feed| that only forwards posts matching a predicate.
+
+\item Design a group messaging system where posts to a group are distributed to all group members.
+
+\item The current \verb|broadcast| is sequential. Design a tree-structured broadcast for $O(\log n)$ latency to $n$ followers.
+\end{enumerate}
