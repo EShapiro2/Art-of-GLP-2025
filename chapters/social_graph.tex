@@ -64,7 +64,7 @@ social_graph(Id, [msg(From, Id, intro(From, From, Resp))|In], Fs) :-
     social_graph(Id?, In?, Fs1?).
 \end{verbatim}
 
-In deployment, an \verb|attestation| guard would verify the introduction carries a valid signature from the claimed sender. In GLPSAM simulation, we assume all agents are correct, so attestation guards are omitted. Upon receiving the introduction, the agent consults the user about whether to accept.
+Upon receiving the introduction, the agent consults the user about whether to accept.
 
 \subsection{User Decision and Channel Establishment}
 
@@ -434,31 +434,6 @@ bob_wait_intro([msg(agent, user, befriend_intro(alice, carol, Ch))|_],
 Bob's actor first accepts Alice's cold-call, then waits for the introduction. The \verb|befriend_intro| message indicates a friend-mediated introduction (from Alice, introducing Carol). Upon acceptance, Bob and Carol establish a direct channel without network involvement.
 
 The final state shows all three agents as mutual friends: Alice connected to both Bob and Carol through cold-calls, and Bob connected to Carol through the introduction.
-
-\subsection{GLPSAM Adaptations}
-
-The GLPSAM versions of protocol predicates differ from the deployment versions in two ways:
-
-\paragraph{Guard unfolding.} Defined guards like \verb|send|, \verb|receive|, and \verb|new_channel| are manually unfolded. For example, the deployment version:
-
-\begin{verbatim}
-bind_response(yes, From, accept(FCh), Fs, Fs1, In, In1) :-
-    new_channel(ch(FIn, FOut), FCh) |
-    handle_response(accept(FCh?), From, Fs, Fs1, In, In1).
-\end{verbatim}
-
-becomes in GLPSAM:
-
-\begin{verbatim}
-bind_response(yes, From, accept(ch(FOut?, FIn)), Fs, Fs1?, In, In1?) :-
-    handle_response(accept(ch(FIn?, FOut)), From?, Fs?, Fs1, In?, In1).
-\end{verbatim}
-
-The guard unfolds to direct construction of the channel pair with appropriate reader/writer annotations.
-
-\paragraph{Attestation omission.} The \verb|attestation/2| guard, which verifies cryptographic signatures in deployment, is simply removed. All agents are assumed correct, and all messages authentic.
-
-These adaptations are mechanical and preserve protocol logic. Code that works in GLPSAM simulation will work in deployment once the runtime implements guard evaluation and attestation verification.
 
 \section{Exercises}
 \label{sec:social-graph-exercises}
