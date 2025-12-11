@@ -75,15 +75,11 @@ collect_tips([[Block|Bs]|Others], [Block?|Tips?], ...) :-
 
 \item[\texttt{otherwise}] Succeeds if all previous clauses for this predicate failed (not suspended). Enables default case handling.
 
-\item[\texttt{X = Y}] Succeeds if \verb|X| and \verb|Y| are identical (without unification).
-
-\item[\texttt{X =\textbackslash= Y}] Succeeds if unification of \verb|X| and \verb|Y| would fail.
-
-\item[\texttt{X == Y}] Succeeds if \verb|X| and \verb|Y| are structurally identical.
+\item[\texttt{X =?= Y}] Ground equality test. Succeeds if \verb|X| and \verb|Y| are both ground and structurally equal. Suspends if either contains unbound readers. Fails if both ground but different, or if either contains unbound writers.
 
 \item[\texttt{X =:= Y}] Succeeds if \verb|X| and \verb|Y| evaluate to equal numbers.
 
-\item[\texttt{X =\textbackslash= Y}] Succeeds if \verb|X| and \verb|Y| evaluate to different numbers.
+\item[\texttt{X =\textbackslash= Y}] Arithmetic inequality. Succeeds if \verb|X| and \verb|Y| evaluate to different numbers.
 
 \item[\texttt{X < Y}] Succeeds if \verb|X| evaluates to less than \verb|Y|.
 
@@ -97,6 +93,30 @@ collect_tips([[Block|Bs]|Others], [Block?|Tips?], ...) :-
 
 \item[\texttt{wait\_until(Timestamp)}] Succeeds if the current time (milliseconds since epoch) is greater than or equal to \verb|Timestamp|. \textbf{Note:} This is a test, not a blocking wait. If the time has not yet passed, it \emph{fails} (not suspends), allowing the next clause to be tried.
 \end{description}
+
+\subsection{Guard Negation}
+
+Any negatable guard \verb|G| can be negated using the syntax \verb|~G|. The negated guard succeeds when \verb|G| fails, fails when \verb|G| succeeds, and suspends when \verb|G| suspends.
+
+\mypara{Negatable guards}
+Type guards: \verb|ground|, \verb|known|, \verb|unknown|, \verb|integer|, \verb|number|, \verb|atom|, \verb|string|, \verb|constant|, \verb|compound|, \verb|tuple|, \verb|list|, \verb|is_list|, \verb|writer|, \verb|reader|. Equality guard: \verb|=?=|.
+
+\mypara{Non-negatable guards}
+Arithmetic comparisons (\verb|<|, \verb|>|, \verb|=<|, \verb|>=|, \verb|=:=|, \verb|=\=|) cannot be negated. Control guards (\verb|otherwise|) and time guards (\verb|wait|, \verb|wait_until|) also cannot be negated.
+
+\mypara{Restrictions}
+Only built-in guards can be negated. Defined guards (unit clauses) cannot be negated. Double negation \verb|~~G| is syntactically forbidden.
+
+\mypara{Examples}
+\begin{verbatim}
+% Handle non-integers
+process(X, Y) :- ~integer(X?) | handle_non_int(X?, Y).
+process(X, Y) :- integer(X?) | handle_int(X?, Y).
+
+% Structural inequality via negated equality
+lookup(Key, [(K,V)|_], V?) :- Key? =?= K? | true.
+lookup(Key, [(K,_)|Rest], V?) :- ~(Key? =?= K?) | lookup(Key?, Rest?, V).
+\end{verbatim}
 
 \subsection{Defined Guard Predicates}
 

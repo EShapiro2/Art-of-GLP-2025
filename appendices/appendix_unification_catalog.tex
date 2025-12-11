@@ -226,12 +226,12 @@ Guards use the same writer unification but with different operational intent: te
 \begin{tabular}{llll}
 \textbf{Guard} & \textbf{Outcome} & \textbf{Notes} & \textbf{First Use} \\
 \hline
-$X = c$ & succeeds, binds $X$ & Writer in guard & §\ref{??} \\
-$X? = c$ & suspends & Reader needs value first & §\ref{??} \\
-$X =?= Y$ & succeeds if equal & Equality test, no binding & §\ref{??} \\
-$X =\backslash= Y$ & succeeds if different & Disequality test & §\ref{sec:recursive-structures} \\
+$X =?= Y$ & succeeds if both ground and equal & No binding, pure test & §\ref{sec:recursive-structures} \\
+$\sim(X =?= Y)$ & succeeds if both ground and different & Negated equality & §\ref{sec:recursive-structures} \\
 \end{tabular}
 \end{center}
+
+Note: Unification \verb|X = Y| in guard position is not supported; use head unification instead.
 
 \subsection{Type-Testing Guards}
 
@@ -263,6 +263,20 @@ $X =\backslash= Y$ & succeeds if different & Disequality test & §\ref{sec:recur
 \end{center}
 
 Arithmetic comparison guards compare numeric values. When applied to readers, they suspend until the readers are bound to ground numeric values.
+
+\subsection{Guard Negation}
+
+\begin{center}
+\begin{tabular}{lll}
+\textbf{Guard} & \textbf{Negated Form} & \textbf{Behavior} \\
+\hline
+\texttt{integer(X?)} & \texttt{\~{}integer(X?)} & succeeds if X not an integer \\
+\texttt{ground(X?)} & \texttt{\~{}ground(X?)} & succeeds if X not ground \\
+\texttt{X? =?= Y?} & \texttt{\~{}(X? =?= Y?)} & succeeds if X and Y different \\
+\end{tabular}
+\end{center}
+
+Negation inverts success/fail while preserving suspension. Arithmetic guards cannot be negated.
 
 \subsection{Otherwise Guard}
 

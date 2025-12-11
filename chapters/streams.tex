@@ -177,13 +177,13 @@ dmerge([merge(Ws)|Xs], Ys, Zs?) :-
 dmerge(Xs, [merge(Ws)|Ys], Zs?) :-
     dmerger(Ws?, Ys?, Ys1), dmerge(Xs?, Ys1?, Zs).
 dmerge([X|Xs], Ys, [X?|Zs?]) :-
-    tuple(X?), X? =\= merge(_) | dmerge(Ys?, Xs?, Zs).
+    tuple(X?), ~(X? =?= merge(_)) | dmerge(Ys?, Xs?, Zs).
 dmerge([X|Xs], Ys, [X?|Zs?]) :-
     atom(X?) | dmerge(Ys?, Xs?, Zs).
 dmerge([X|Xs], Ys, [X?|Zs?]) :-
     number(X?) | dmerge(Ys?, Xs?, Zs).
 dmerge(Xs, [Y|Ys], [Y?|Zs?]) :-
-    tuple(Y?), Y? =\= merge(_) | dmerge(Xs?, Ys?, Zs).
+    tuple(Y?), ~(Y? =?= merge(_)) | dmerge(Xs?, Ys?, Zs).
 dmerge(Xs, [Y|Ys], [Y?|Zs?]) :-
     atom(Y?) | dmerge(Xs?, Ys?, Zs).
 dmerge(Xs, [Y|Ys], [Y?|Zs?]) :-
@@ -193,7 +193,7 @@ dmerge([], [], []).
 dmerger(Ws, Xs, Out?) :- dmerge(Ws?, Xs?, Out).
 \end{verbatim}
 
-The type guards (\verb|tuple|, \verb|atom|, \verb|number|) distinguish regular messages from \verb|merge| requests. For tuples, the additional guard \verb|X? =\= merge(_)| ensures we don't accidentally match a merge request. Splitting clauses by type is SRSW-compliant: type guards permit multiple reader occurrences (per Formal Box~\ref{formal:guards-multiple-reads}), so \verb|X?| can appear both in the output and in the type test.
+The type guards (\verb|tuple|, \verb|atom|, \verb|number|) distinguish regular messages from \verb|merge| requests. For tuples, the additional guard \verb|~(X? =?= merge(_))| ensures we don't accidentally match a merge request. Splitting clauses by type is SRSW-compliant: type guards permit multiple reader occurrences (per Formal Box~\ref{formal:guards-multiple-reads}), so \verb|X?| can appear both in the output and in the type test.
 
 \subsection{Static Balanced Merge Tree}
 

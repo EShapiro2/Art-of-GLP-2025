@@ -34,7 +34,7 @@ area([(X1,Y1), (X2,Y2) | XYs], Area) :-
 \paragraph{Delete.}
 \begin{verbatim}
 delete([X|Xs], X, Ys) :- delete(Xs?, X?, Ys).
-delete([X|Xs], Z, [X|Ys]) :- X? \== Z? | delete(Xs?, Z?, Ys).
+delete([X|Xs], Z, [X|Ys]) :- ~(X? =?= Z?) | delete(Xs?, Z?, Ys).
 delete([], X, []).
 \end{verbatim}
 

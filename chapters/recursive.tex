@@ -195,7 +195,7 @@ The two recursive calls spawn concurrently. For a balanced tree of $n$ nodes, th
 \begin{verbatim}
 list_to_bst([], empty).
 list_to_bst(Xs, node(Mid?, L?, R?)) :-
-    Xs =\= [] |
+    ~(Xs? =?= []) |
     length(Xs?, Len),
     Half := Len? // 2,
     split_at(Xs?, Half?, Left, Mid, Right),
@@ -203,7 +203,7 @@ list_to_bst(Xs, node(Mid?, L?, R?)) :-
     list_to_bst(Right?, R).
 \end{verbatim}
 
-The guard \verb|Xs =\= []| (Appendix~\ref{appendix:guard-unification}) is an inequality test that succeeds when \verb|Xs| is bound to a non-empty list, suspends when \verb|Xs| is unbound, and fails when \verb|Xs| is the empty list.
+The guard \verb|~(Xs? =?= [])| is a negated equality test that succeeds when \verb|Xs| is bound to something other than the empty list, suspends when \verb|Xs| is unbound, and fails when \verb|Xs| is the empty list.
 
 %% ============================================
 %% Section 2: Recursive List Processing
@@ -459,10 +459,10 @@ substitute(X, Y, tree(Leaf, Left, Right), tree(Leaf1, Left1, Right1)) :-
     substitute(X?, Y?, Right?, Right1).
 
 replace(X, Y, X, Y).
-replace(X, Y, Z, Z) :- X? \== Z? | true.
+replace(X, Y, Z, Z) :- ~(X? =?= Z?) | true.
 \end{verbatim}
 
-The \verb|substitute| predicate replaces all occurrences of \verb|X| with \verb|Y| in a tree. The \verb|replace| helper handles individual elements: if the element equals \verb|X|, replace with \verb|Y|; otherwise keep the original. The guard \verb|X? \== Z?| is an inequality test (Appendix~\ref{appendix:guard-unification}) that succeeds when the two values are different, suspends if either is unbound, and fails if they are equal.
+The \verb|substitute| predicate replaces all occurrences of \verb|X| with \verb|Y| in a tree. The \verb|replace| helper handles individual elements: if the element equals \verb|X|, replace with \verb|Y|; otherwise keep the original. The guard \verb|~(X? =?= Z?)| is a negated equality test that succeeds when the two values are different, suspends if either is unbound, and fails if they are equal.
 
 The three recursive calls in \verb|substitute| spawn concurrently, processing the leaf and both subtrees in parallel.
 
@@ -530,7 +530,7 @@ What happens if the lists have different lengths?
 
 \item \textbf{Natural Merge Sort.} Implement natural merge sort, which identifies already-sorted runs in the input.
 
-\item \textbf{Delete.} Implement \verb|delete(List,X,Result)| removing all occurrences of \verb|X| from \verb|List|. Use the inequality guard \verb|X? \== Z?|.
+\item \textbf{Delete.} Implement \verb|delete(List,X,Result)| removing all occurrences of \verb|X| from \verb|List|. Use the negated equality guard \verb|~(X? =?= Z?)|.
 
 \item \textbf{Maximum.} Implement \verb|maxlist(Xs,M)| finding the maximum element of a numeric list using an accumulator.
 
