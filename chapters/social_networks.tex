@@ -138,7 +138,143 @@ The trace shows the complete protocol:
 \section{Feeds and Followers}
 \label{sec:feeds-followers}
 
-[TO BE DEVELOPED]
+A \emph{feed} is a stream of posts produced by an author and distributed to \emph{followers}. This section develops the feed server---processing subscriptions and broadcasting posts to all subscribers.
+
+\subsection{Feed Structure}
+
+A feed is represented as \verb|feed(Posts)| where \verb|Posts| is a list of posts, newest first:
+
+\begin{verbatim}
+make_feed(feed([])).
+
+extend_feed(Post, feed(Xs), feed([Post?|Xs?])).
+\end{verbatim}
+
+The \verb|make_feed| predicate creates an empty feed. The \verb|extend_feed| predicate prepends a new post to an existing feed.
+
+\subsection{Broadcasting with Ground Guard}
+
+The \verb|ground| guard enables distributing a single post to multiple followers. Without this guard, sending a post to multiple output streams would violate SRSW---each follower's stream would need its own writer occurrence of the post.
+
+\begin{verbatim}
+broadcast(_, [], []).
+broadcast(Post, [(Name, Feed)|Fs], [(Name?, Feed1?)|Fs1?]) :-
+    ground(Post?) |
+    extend_feed(Post?, Feed?, Feed1),
+    broadcast(Post?, Fs?, Fs1).
+\end{verbatim}
+
+The \verb|ground(Post?)| guard suspends until the post is fully instantiated, then permits reading \verb|Post?| multiple times---once per follower. Each follower's feed is extended with the post.
+
+\subsection{Follower Management}
+
+Followers are stored as an association list mapping names to feeds:
+
+\begin{verbatim}
+get_feed(Name, [(Name?, Feed)|_], Feed?).
+get_feed(Name?, [_|Fs], Feed?) :- get_feed(Name, Fs?, Feed).
+\end{verbatim}
+
+The \verb|get_feed| predicate retrieves a follower's feed by name.
+
+\subsection{Feed Server}
+
+The feed server processes a command stream, maintaining the follower list:
+
+\begin{verbatim}
+serve_feed([post(Content)|Cmds], Fs, Fs2?) :-
+    ground(Content?) |
+    broadcast(Content?, Fs?, Fs1),
+    serve_feed(Cmds?, Fs1?, Fs2).
+serve_feed([subscribe(Name)|Cmds], Fs, Fs2?) :-
+    make_feed(Feed),
+    serve_feed(Cmds?, [(Name?, Feed?)|Fs?], Fs2).
+serve_feed([], Fs, Fs?).
+\end{verbatim}
+
+The server handles two commands:
+\begin{itemize}
+\item \verb|subscribe(Name)|: Creates a new feed for the subscriber and adds them to the follower list
+\item \verb|post(Content)|: Broadcasts content to all current followers
+\end{itemize}
+
+The \verb|ground(Content?)| guard ensures posts are fully formed before distribution.
+
+\subsection{The Play}
+
+The play demonstrates Alice running a feed with Bob and Carol as subscribers:
+
+\begin{verbatim}
+alice(Commands?, Followers, FinalFollowers?) :-
+    serve_feed(Commands, Followers?, FinalFollowers).
+
+bob_receive(feed([Post1, Post2|_]), result(Post1?, Post2?)).
+
+carol_receive(feed([Post1, Post2|_]), result(Post1?, Post2?)).
+
+verify(result(P1, P2), result(P3, P4)) :-
+    check(P1?, P2?, P3?, P4?).
+
+check(second_post, hello_world, second_post, hello_world).
+
+play_feed :-
+    alice([subscribe(bob), subscribe(carol),
+           post(hello_world), post(second_post)], [], Followers),
+    play_continue(Followers?).
+
+play_continue(Followers) :-
+    ground(Followers?) |
+    get_feed(bob, Followers?, BobFeed),
+    get_feed(carol, Followers?, CarolFeed),
+    bob_receive(BobFeed?, BobResult),
+    carol_receive(CarolFeed?, CarolResult),
+    verify(BobResult?, CarolResult?).
+\end{verbatim}
+
+The command stream subscribes Bob, then Carol, then posts two messages. The \verb|play_continue| predicate uses \verb|ground(Followers?)| to wait until all commands are processed before extracting feeds. Both Bob and Carol receive both posts.
+
+\subsection{Execution Trace}
+
+\begin{verbatim}
+?- play_feed.
+serve_feed([subscribe(bob), subscribe(carol),
+            post(hello_world), post(second_post)], [], Fs) :-
+    make_feed(Feed), serve_feed(...)
+make_feed(feed([])) :- true
+serve_feed([subscribe(carol), post(...), ...], [(bob, feed([]))|[]], Fs) :-
+    make_feed(Feed), serve_feed(...)
+make_feed(feed([])) :- true
+serve_feed([post(hello_world), post(second_post)],
+           [(carol, feed([]))|[(bob, feed([]))|[]]], Fs) :-
+    broadcast(hello_world, ...), serve_feed(...)
+broadcast(hello_world, ...) :- extend_feed(...), broadcast(...)
+extend_feed(hello_world, feed([]), feed([hello_world])) :- true
+...
+broadcast(second_post, ...) :- extend_feed(...), broadcast(...)
+extend_feed(second_post, feed([hello_world]),
+            feed([second_post, hello_world])) :- true
+...
+play_continue([(carol, feed([second_post, hello_world]))|
+              [(bob, feed([second_post, hello_world]))|[]]]) :- ...
+get_feed(bob, ..., feed([second_post, hello_world])) :- true
+get_feed(carol, ..., feed([second_post, hello_world])) :- true
+bob_receive(feed([second_post, hello_world]),
+            result(second_post, hello_world)) :- true
+carol_receive(feed([second_post, hello_world]),
+              result(second_post, hello_world)) :- true
+check(second_post, hello_world, second_post, hello_world) :- true
+-> succeeds
+\end{verbatim}
+
+The trace shows:
+\begin{enumerate}
+\item Bob subscribes, receiving an empty feed
+\item Carol subscribes, receiving an empty feed
+\item \verb|hello_world| is broadcast to both feeds
+\item \verb|second_post| is broadcast to both feeds
+\item Both receive \verb|feed([second_post, hello_world])|---newest first
+\item Verification confirms identical results
+\end{enumerate}
 
 %% ============================================
 %% Section 3: Groups
