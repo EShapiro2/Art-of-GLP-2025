@@ -640,4 +640,24 @@ The core protocol demonstrated here---embedded response variables for cross-agen
 \section{Exercises}
 \label{sec:social-networks-exercises}
 
-[TO BE DEVELOPED]
+\begin{enumerate}
+\item \textbf{DM Message History.} Extend the DM channel to maintain a history of exchanged messages. Each endpoint should accumulate received messages in a list accessible to the holder.
+
+\item \textbf{Unsubscribe.} Add an \verb|unsubscribe(Name)| command to the feed server that removes a follower from the distribution list. Ensure subsequent posts do not reach the unsubscribed follower.
+
+\item \textbf{Feed Filtering.} Implement a \verb|filtered_feed| predicate that takes a feed and a predicate, returning only posts satisfying the predicate. Use this to implement topic-based filtering.
+
+\item \textbf{Group Admin Delegation.} Extend the manager-based group to support multiple administrators. The founder can promote members to admin status; admins can invite new members.
+
+\item \textbf{Leave Group.} Add a \verb|leave| command to the manager-based group. When a member leaves, they should stop receiving new messages, and the manager should remove them from the distribution list.
+
+\item \textbf{Interlaced Stream Merge.} Implement a \verb|merge_blocklace| predicate that takes multiple interlaced streams and produces a single linearized stream respecting causal order (if block $A$ is in block $B$'s tips, $A$ appears before $B$).
+
+\item \textbf{Tip Validation.} Add validation to \verb|collect_tips| that verifies all referenced tips actually exist in the observed streams. Report an error if a tip reference is invalid.
+
+\item \textbf{Child Rejection.} Extend the child-safe protocol to handle rejection. When Parent-Jones declines, Parent-Smith should receive a \verb|rejected| response and report this to Child-Smith.
+
+\item \textbf{Mutual Approval.} The current child-safe protocol shows one-way approval. Extend it so that Parent-Smith must also explicitly approve after receiving Parent-Jones's approval, making the protocol symmetric.
+
+\item \textbf{Group Child-Safe.} Design a child-safe group protocol where a parent creates a group for children, and each child can join only with their parent's approval. The group founder's parent acts as group administrator.
+\end{enumerate}
