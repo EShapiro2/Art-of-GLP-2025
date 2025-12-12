@@ -503,7 +503,135 @@ Manager-based groups suit small, synchronous communication. Interlaced stream gr
 \section{Child-Safe Social Networking}
 \label{sec:child-safe}
 
-[TO BE DEVELOPED]
+Child-Safe Social Networking (CSSN) empowers parents to control their children's online connections. Children can befriend only with mutual parental approval. This section presents the core protocol.
+
+\subsection{Architecture}
+
+CSSN operates on two tiers:
+\begin{itemize}
+\item \textbf{Parent tier}: Parents form a social network among themselves using the standard social graph protocol.
+\item \textbf{Child tier}: Children's apps are subordinate to their parents' apps. A child can connect only to children whose parents have approved the connection.
+\end{itemize}
+
+The key invariant: two children can befriend only if their parents are friends and both parents approve.
+
+\subsection{Approval Protocol}
+
+When Child-Smith wants to befriend Child-Jones:
+
+\begin{enumerate}
+\item Child-Smith requests befriending through their parent app
+\item Parent-Smith sends an approval request to Parent-Jones (through their friend channel)
+\item Parent-Jones decides whether to approve
+\item If approved, the response flows back to Parent-Smith
+\item Both parents establish the child channel
+\end{enumerate}
+
+The approval request carries an embedded response variable, enabling the approving parent to communicate their decision directly.
+
+\subsection{Implementation}
+
+\subsubsection{Response Binding}
+
+\begin{verbatim}
+bind_resp(Resp?, Resp).
+\end{verbatim}
+
+The \verb|bind_resp| helper binds a reader (extracted from a received message) to a value. This enables the receiving parent to respond through the embedded variable.
+
+\subsubsection{Requesting Parent}
+
+\begin{verbatim}
+parent_smith([approval_request(smith, child_smith, Resp)|_], Result?) :-
+    smith_wait(Resp?, Result).
+
+smith_wait(Resp, Result?) :-
+    known(Resp?) |
+    smith_done(Resp?, Result).
+
+smith_done(approved, result(approved, channel_ready)).
+\end{verbatim}
+
+Parent-Smith sends an \verb|approval_request| containing their identity, the child's identity, and a fresh response variable \verb|Resp|. The \verb|known(Resp?)| guard suspends until Parent-Jones binds the response. On approval, the result indicates the channel is ready.
+
+\subsubsection{Approving Parent}
+
+\begin{verbatim}
+parent_jones([approval_request(FromParent, Child, Resp)|_], Decision?) :-
+    bind_resp(Resp?, approved),
+    jones_done(FromParent?, Child?, Decision).
+
+jones_done(FromParent, Child, approved(FromParent?, Child?)).
+\end{verbatim}
+
+Parent-Jones receives the request, extracts the embedded response variable, and binds it to \verb|approved|. In a complete system, this would involve consulting the user; here we auto-approve for demonstration.
+
+\subsection{The Play}
+
+\begin{verbatim}
+play_child_safe :-
+    parent_smith(StoJ, SmithResult),
+    parent_jones(StoJ?, JonesDecision),
+    verify_child_safe(SmithResult?, JonesDecision?).
+
+verify_child_safe(result(approved, channel_ready),
+                  approved(smith, child_smith)) :-
+    report_success.
+
+report_success.
+\end{verbatim}
+
+The play connects Parent-Smith's output to Parent-Jones's input. Parent-Smith sends the approval request; Parent-Jones approves by binding the embedded response variable; Parent-Smith's \verb|known| guard succeeds; verification confirms success.
+
+\subsection{Execution Trace}
+
+\begin{verbatim}
+?- play_child_safe.
+parent_smith([approval_request(smith, child_smith, Resp)|_], Result) :-
+    smith_wait(Resp?, Result)
+parent_jones([approval_request(smith, child_smith, Resp)|_], Decision) :-
+    bind_resp(Resp?, approved), jones_done(smith, child_smith, Decision)
+smith_wait(Resp?, Result) -> suspended
+bind_resp(Resp?, approved) :- true
+jones_done(smith, child_smith, Decision) :- true
+smith_wait(approved, Result) :- smith_done(approved, Result)
+smith_done(approved, result(approved, channel_ready)) :- true
+verify_child_safe(result(approved, channel_ready),
+                  approved(smith, child_smith)) :- report_success
+report_success :- true
+-> succeeds
+\end{verbatim}
+
+The trace shows:
+\begin{enumerate}
+\item Parent-Smith sends the request with embedded \verb|Resp|
+\item \verb|smith_wait| suspends on \verb|known(Resp?)|
+\item Parent-Jones binds \verb|Resp| to \verb|approved| via \verb|bind_resp|
+\item \verb|smith_wait| resumes, producing the success result
+\item Verification confirms both sides agree
+\end{enumerate}
+
+\subsection{Security Properties}
+
+\begin{description}
+\item[Parental Control] Children cannot connect without parental approval---the parent app mediates all connection requests.
+\item[Mutual Consent] Both parents must approve; a single parent cannot force a connection.
+\item[No Third Party] Communication occurs directly between parent apps over their friend channel; no platform intermediary.
+\item[Verifiable Identity] Parents know each other through the social graph; they can verify children's identities through trusted means.
+\end{description}
+
+\subsection{Extensions}
+
+A complete CSSN implementation would include:
+\begin{itemize}
+\item User consultation before approval (not auto-approve)
+\item Rejection handling with reason messages
+\item Child channel establishment after mutual approval
+\item Parental monitoring capabilities
+\item Age-appropriate content filtering
+\end{itemize}
+
+The core protocol demonstrated here---embedded response variables for cross-agent communication with parental gatekeeping---forms the foundation for these extensions.
 
 %% ============================================
 %% Section 5: Exercises
