@@ -379,6 +379,170 @@ The monotonicity property (Proposition~\ref{proposition:GLP-monotonicity}) ensur
 The GLP fairness requirement is simply: a goal that can be reduced is eventually reduced.
 \end{remark}
 
+\section{Guards}
+\label{sec:guards}
+
+Guards are predicates that test conditions without side effects. A clause is applicable only if its guard succeeds. Guards appear between the clause head and the body, separated by \verb$|$:
+
+\begin{verbatim}
+Head :- Guard | Body.
+\end{verbatim}
+
+If the guard suspends (e.g., tests an unbound variable), the clause is not yet applicable. If the guard fails, the next clause is tried. If the guard succeeds, the clause commits and executes its body.
+
+\subsection{Built-in Guards}
+\label{sec:builtin-guards}
+
+\mypara{Type Guards}
+Type guards test the structure of a value:
+\begin{itemize}
+\item \verb|ground(X)| --- succeeds if \verb|X| contains no unbound variables
+\item \verb|known(X)| --- succeeds if \verb|X| is bound (may contain unbound subterms)
+\item \verb|unknown(X)| --- succeeds if \verb|X| is an unbound variable
+\item \verb|integer(X)|, \verb|number(X)|, \verb|atom(X)| --- test for specific types
+\item \verb|compound(X)|, \verb|tuple(X)| --- test for compound terms
+\item \verb|is_list(X)| --- tests for proper list structure
+\end{itemize}
+
+The \verb|ground(X)| guard is special: it relaxes the single-reader constraint for \verb|X?| within the clause, permitting multiple reader occurrences since a ground term contains no writers.
+
+\mypara{Arithmetic Guards}
+Arithmetic guards compare numeric values:
+\begin{itemize}
+\item \verb|X =:= Y| --- numeric equality
+\item \verb|X < Y|, \verb|X > Y|, \verb|X =< Y|, \verb|X >= Y| --- comparisons
+\end{itemize}
+
+These suspend if either operand is unbound.
+
+\mypara{Equality Guard}
+The guard \verb|X =?= Y| tests ground equality: succeeds if both are ground and equal, fails if both are ground and different, suspends if either contains unbound readers.
+
+\mypara{Control Guards}
+The \verb|otherwise| guard succeeds when all previous clauses for the predicate failed (not suspended). This enables default case handling.
+
+\subsection{Guard Negation}
+\label{sec:guard-negation}
+
+Any negatable guard \verb|G| can be negated using \verb|~G|. The negated guard succeeds when \verb|G| fails, fails when \verb|G| succeeds, and suspends when \verb|G| suspends.
+
+\begin{verbatim}
+lookup(Key, [(K,V)|_], V?) :- Key? =?= K? | true.
+lookup(Key, [(K,_)|Rest], V?) :- ~(Key? =?= K?) | lookup(Key?, Rest?, V).
+\end{verbatim}
+
+Type guards and \verb|=?=| are negatable. Arithmetic comparisons and \verb|otherwise| are not.
+
+\subsection{Defined Guards}
+\label{sec:defined-guards}
+
+A \emph{defined guard} is a user-defined predicate that can be called in guard position. It must be a \emph{unit clause}---a clause with no guards and no body (or body \verb|true|).
+
+\mypara{Type Tests}
+A unit clause can define a type test:
+
+\begin{verbatim}
+channel(ch(_, _)).
+\end{verbatim}
+
+When called in guard position, the pattern is matched against the argument:
+
+\begin{verbatim}
+process(X, ok) :- channel(X?) | handle(X?).
+process(_, error) :- otherwise | true.
+\end{verbatim}
+
+The compiler transforms this by \emph{partial evaluation}---unfolding the unit clause at compile time:
+
+\begin{verbatim}
+process(ch(_, _), ok) :- handle(ch(_, _)?).
+process(_, error) :- otherwise | true.
+\end{verbatim}
+
+\mypara{Channel Operations}
+Channel operations are defined as unit clauses:
+
+\begin{verbatim}
+send(X, ch(In, [X?|Out?]), ch(In?, Out)).
+receive(X?, ch([X|In], Out?), ch(In?, Out)).
+new_channel(ch(Xs?, Ys), ch(Ys?, Xs)).
+\end{verbatim}
+
+These enable abstract channel manipulation in guards. Consider a relay that forwards messages from a stream to a channel:
+
+\begin{verbatim}
+relay([X|In], Out?, Ch) :- send(X?, Ch?, Ch1) | relay(In?, Out, Ch1?).
+relay(In?, [X?|Out?], Ch) :- receive(X, Ch?, Ch1) | relay(In, Out, Ch1?).
+relay([], [], ch([], [])).
+\end{verbatim}
+
+The first clause sends stream element \verb|X| to the channel. The second receives from the channel to the output stream. The compiler unfolds the defined guards:
+
+\begin{verbatim}
+relay([X|In], Out?, ch(ChIn, [X?|ChOut?])) :- relay(In?, Out, ch(ChIn?, ChOut)).
+relay(In?, [X?|Out?], ch([X|ChIn], ChOut?)) :- relay(In, Out, ch(ChIn?, ChOut)).
+relay([], [], ch([], [])).
+\end{verbatim}
+
+The abstract form is clearer; the expanded form shows what actually executes.
+
+\mypara{Channel Allocation}
+The \verb|new_channel| guard allocates a cross-linked channel pair:
+
+\begin{verbatim}
+make_pair(C1?, C2?) :- new_channel(C1, C2) | true.
+\end{verbatim}
+
+Variables \verb|C1| and \verb|C2| are writers in the guard (allocated there) and readers in the head (returned to caller). After partial evaluation:
+
+\begin{verbatim}
+make_pair(ch(X1?, X2), ch(X2?, X1)).
+\end{verbatim}
+
+The channels are cross-linked: what is written to one is read from the other.
+
+\mypara{Response Binding}
+The cold-call protocol uses \verb|new_channel| to create a response:
+
+\begin{verbatim}
+bind_response(yes, accept(RemoteCh?), LocalCh?) :-
+    new_channel(LocalCh, RemoteCh) | true.
+bind_response(no, reject, none).
+\end{verbatim}
+
+When accepting, cross-linked channels are allocated. \verb|RemoteCh| is sent to the caller; \verb|LocalCh| is kept locally. After partial evaluation:
+
+\begin{verbatim}
+bind_response(yes, accept(ch(X2?, X1)), ch(X1?, X2)).
+bind_response(no, reject, none).
+\end{verbatim}
+
+\subsection{SRSW Rules for Defined Guards}
+\label{sec:srsw-defined-guards}
+
+When a guard allocates variables (like \verb|new_channel|), those variables are writers in the guard and may be readers elsewhere:
+
+\begin{center}
+\begin{tabular}{lll}
+\textbf{Position} & \textbf{Form} & \textbf{Meaning} \\
+\hline
+Head & \verb|X| (writer) & Receives value from caller \\
+Head & \verb|X?| (reader) & Returns value to caller \\
+Guard & \verb|X| (writer) & Guard provides this value \\
+Guard & \verb|X?| (reader) & Reads from head or earlier guard \\
+Body & \verb|X| (writer) & Body provides this value \\
+Body & \verb|X?| (reader) & Reads from head or guard \\
+\end{tabular}
+\end{center}
+
+For allocation guards like \verb|new_channel(C1, C2)|:
+\begin{itemize}
+\item \verb|C1| and \verb|C2| are writers in the guard (allocated there)
+\item They appear as readers in the head (\verb|C1?|, \verb|C2?|) to return to caller
+\end{itemize}
+
+The complete reference for guards appears in Appendix~\ref{app:glp-reference}.
+
 \section{Exercises}
 
 \begin{enumerate}
