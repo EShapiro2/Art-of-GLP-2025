@@ -3,4 +3,144 @@
 \chapter{Interlaced Streams}
 \label{ch:interlaced-streams}
 
-[TO BE DEVELOPED]
+This chapter presents interlaced streams, a distributed data structure that generalizes blockchains to directed acyclic graphs (DAGs). Multiple agents maintain individual streams while observing and referencing each other's progress, forming a blocklace---a structure employed by modern consensus protocols.
+
+\section{Blocklace Structure}
+\label{sec:blocklace-structure}
+
+A blockchain is a sequence of blocks where each block references its predecessor. A \emph{blocklace} generalizes this: each block may reference multiple predecessors from different agents, forming a DAG rather than a chain. This enables concurrent block creation without requiring consensus on ordering.
+
+In \GLP, each agent maintains its own stream of blocks. Each block contains:
+\begin{itemize}
+\item A \emph{payload}: application-specific data
+\item \emph{Tips}: references to the most recent blocks observed from other agents
+\end{itemize}
+
+The tips create cross-references between streams, weaving them into a unified DAG structure.
+
+\section{The Interlaced Streams Program}
+\label{sec:interlaced-program}
+
+\subsection{Entry Point}
+
+\begin{verbatim}
+streams(stream(S?), Others) :-
+    produce_payloads(Payloads),
+    interlace(Payloads?, S, Others?).
+\end{verbatim}
+
+The \verb|streams| predicate takes a list of other agents' stream readers in \verb|Others|. It generates payloads and produces a stream of blocks in \verb|S|. The output is wrapped in \verb|stream(S?)| to distinguish the result structure.
+
+\subsection{Block Production}
+
+\begin{verbatim}
+interlace([Payload|Payloads], [block(Payload?, Tips?)|Stream?], Others) :-
+    collect_tips(Others?, Tips, Others1),
+    interlace(Payloads?, Stream, Others1?).
+interlace([], [], _).
+\end{verbatim}
+
+For each payload, \verb|interlace| collects the current tips from other streams, constructs a block containing the payload and tips, and recurses with the remaining payloads. The \verb|Others1| variable carries the updated stream positions after tip collection. The base case terminates with an empty stream.
+
+\subsection{Tip Collection}
+
+\begin{verbatim}
+collect_tips([[Block|Bs]|Others], [Block?|Tips?], [Bs?|Others1?]) :-
+    unknown(Bs?) |
+    collect_tips(Others?, Tips, Others1).
+collect_tips([[_|Bs]|Others], Tips?, [Bs?|Others1?]) :-
+    otherwise |
+    collect_tips(Others?, Tips, Others1).
+collect_tips([], [], []).
+\end{verbatim}
+
+The \verb|collect_tips| predicate traverses the list of other agents' streams. For each stream \verb|[Block|Bs]|:
+\begin{itemize}
+\item If \verb|Bs| is unbound (\verb|unknown(Bs?)| succeeds), then \verb|Block| is the current tip---the most recent block not yet extended. Include it in the tips list.
+\item Otherwise (\verb|Bs| is bound), \verb|Block| has already been extended by its owner. Skip it and continue with the tail.
+\end{itemize}
+
+The \verb|unknown(X?)| guard succeeds when \verb|X| is an unbound variable. This detects stream positions that have not yet been extended---the frontier where new elements will be added.
+
+\section{Execution Trace}
+\label{sec:interlaced-trace}
+
+\subsection{Single Agent}
+
+With no other streams to observe:
+
+\begin{verbatim}
+?- streams(S, []).
+S = stream([block(r1, []), block(r2, [])])
+\end{verbatim}
+
+Each block has empty tips since there are no other streams.
+
+\subsection{Multiple Agents with Incomplete Streams}
+
+Testing with incomplete streams from agents P and Q:
+
+\begin{verbatim}
+?- streams(Result, [[block(p1, [])|Ptail], [block(q1, [])|Qtail]]).
+Result = stream([block(r1, [block(p1, []), block(q1, [])]),
+                 block(r2, X)])
+Ptail = <unbound>
+Qtail = <unbound>
+-> suspended
+\end{verbatim}
+
+The first block \verb|r1| collects tips from both P and Q: \verb|block(p1, [])| and \verb|block(q1, [])|. The \verb|unknown(Bs?)| guard detects that \verb|Ptail| and \verb|Qtail| are unbound, indicating these are the current tips.
+
+The computation suspends on the second block because after consuming the first blocks, the streams need more blocks from P and Q (which haven't been produced yet). This is correct behavior---the interlacing naturally synchronizes with the progress of other agents.
+
+\section{Multiagent Deployment}
+\label{sec:multiagent-interlaced}
+
+For three agents $p$, $q$, $r$ maintaining interlaced streams:
+
+\begin{verbatim}
+p(streams(stream(Ps?), [Qs?, Rs?])),
+q(streams(stream(Qs?), [Ps?, Rs?])),
+r(streams(stream(Rs?), [Ps?, Qs?]))
+\end{verbatim}
+
+Each agent receives readers for the other agents' streams. As agents produce blocks concurrently, the tip collection mechanism captures cross-references at the moment each block is created, forming the DAG structure.
+
+\section{Security Properties}
+\label{sec:blocklace-security}
+
+Interlaced streams inherit the security properties of \GLP streams (Section~\ref{sec:stream-security}):
+
+\begin{description}
+\item[Immutability] Once a block is created, its contents cannot be changed.
+\item[Unforkability] Each agent's stream has a single writer; forks are impossible.
+\item[Non-repudiation] In authenticated \GLP, each block carries attestation proving authorship.
+\item[Causal Ordering] The tips in each block commit to observed state from other agents.
+\end{description}
+
+The blocklace structure provides eventual consistency: all agents eventually observe all blocks, though they may observe them in different orders. The DAG structure captures the causal relationships between blocks.
+
+\section{Applications}
+\label{sec:blocklace-applications}
+
+Interlaced streams form the foundation for:
+\begin{itemize}
+\item \textbf{Consensus protocols}: Cordial Miners, Morpheus, and Constitutional Consensus use blocklace structures for Byzantine fault-tolerant agreement.
+\item \textbf{Collaborative editing}: Multiple editors' changes form a DAG that can be merged.
+\item \textbf{Distributed ledgers}: Each participant maintains their transaction history while referencing others.
+\end{itemize}
+
+\section{Exercises}
+\label{sec:interlaced-exercises}
+
+\begin{enumerate}
+\item Modify \verb|interlaced_streams| to include a timestamp in each block.
+
+\item Implement a \verb|blocklace_merge| predicate that takes multiple agents' streams and produces a linearized view respecting causal order.
+
+\item Add a \verb|validate_tips| predicate that verifies all referenced tips exist in the observed streams.
+
+\item Extend the program to detect when an agent has observed all blocks up to a certain point.
+
+\item Implement a payload filter that only includes blocks matching a predicate in the tips.
+\end{enumerate}
