@@ -7,6 +7,15 @@ This chapter presents grassroots social networking applications built upon the s
 
 Throughout this chapter, we assume agents are already connected via the social graph protocol---they have established bidirectional friend channels through cold-call or friend-mediated introduction. The applications here use these existing channels to build higher-level communication structures.
 
+\mypara{Channel Operations}
+Channel operations introduced in Section~\ref{sec:defined-guards} are used throughout:
+\begin{verbatim}
+send(X, ch(In, [X?|Out?]), ch(In?, Out)).
+receive(X?, ch([X|In], Out?), ch(In?, Out)).
+new_channel(ch(Xs?, Ys), ch(Ys?, Xs)).
+\end{verbatim}
+These unit clauses can be used as defined guards for pattern matching and channel allocation. Complete play code for the examples in this chapter appears in Appendix~\ref{app:social-networks-code}.
+
 %% ============================================
 %% Section 1: Direct Messaging
 %% ============================================
