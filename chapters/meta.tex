@@ -5,6 +5,9 @@
 
 This chapter presents metaprogramming in \GLP: programs that manipulate, interpret, and transform other programs. In logic programming, programs are data: clauses are terms, goals are terms. This fundamental property enables powerful metaprogramming techniques.
 
+\mypara{Module Awareness}
+Meta-interpreters need to know which module's clauses to interpret. Each meta-interpreter takes a module parameter \verb|M| and accesses clauses via \verb|M # reduce(Goal, Body)|. Cross-module calls \verb|M1 # G| are handled by switching to module \verb|M1| for the goal \verb|G|.
+
 %% ============================================
 %% Section 1: Plain Meta-Interpreter
 %% ============================================
@@ -44,9 +47,10 @@ solve(A) :- clause(A, B), solve(B).
 The \GLP version uses \verb|reduce/2| encoding and adds concurrency:
 
 \begin{verbatim}
-run(true).                              % halt
-run((A,B)) :- run(A?), run(B?).         % fork
-run(A) :- tuple(A?) | reduce(A?, B), run(B?).  % reduce
+run(M, true).                                    % halt
+run(M, (A,B)) :- run(M?, A?), run(M?, B?).       % fork
+run(M, M1 # G) :- run(M1?, G?).                  % cross-module RPC
+run(M, A) :- tuple(A?) | M # reduce(A?, B), run(M?, B?).  % reduce
 \end{verbatim}
 
 The \verb|tuple(A?)| guard (Appendix~\ref{appendix:guard-unification}) tests whether \verb|A?| is bound to a compound term---that is, whether we can determine which predicate is being called. Unlike \verb|ground|, which requires all subterms to be bound, \verb|tuple| succeeds as soon as the outer structure is determined. For example, \verb|tuple(merge([X|Xs], Ys, Zs))| succeeds even if \verb|X|, \verb|Xs|, \verb|Ys|, and \verb|Zs| are unbound, because the functor \verb|merge/3| is known. The guard suspends if \verb|A?| is unbound, since clause selection cannot proceed until we know which predicate to reduce. As a type guard, \verb|tuple| also permits multiple occurrences of \verb|A?| in the body (per Formal Box~\ref{formal:guards-multiple-reads}).
@@ -68,12 +72,14 @@ reduce(merge([],[],[]), true).
 The plain meta-interpreter aborts on failure. The \emph{fail-safe} meta-interpreter reports failures instead:
 
 \begin{verbatim}
-run(true, []).                              % halt
-run((A,B), Zs?) :-                          % fork
-    run(A?, Xs), run(B?, Ys),
+run(M, true, []).                                % halt
+run(M, (A,B), Zs?) :-                            % fork
+    run(M?, A?, Xs), run(M?, B?, Ys),
     merge(Xs?, Ys?, Zs).
-run(fail(A), [fail(A?)]).                   % report failure
-run(A, Xs?) :- tuple(A?) | reduce(A?,B), run(B?,Xs).  % reduce
+run(M, M1 # G, Xs?) :- run(M1?, G?, Xs).         % cross-module RPC
+run(M, fail(A), [fail(A?)]).                     % report failure
+run(M, A, Xs?) :- tuple(A?) |                    % reduce
+    M # reduce(A?, B), run(M?, B?, Xs).
 \end{verbatim}
 
 The program encoding must include a catch-all clause:
@@ -133,12 +139,13 @@ Each \verb|true| (termination) closes part of the circuit. When all parallel pat
 
 \paragraph{Adding Instrumentation.}
 \begin{verbatim}
-run_counted(true, 0).
-run_counted((A,B), N?) :-
-    run_counted(A?, NA), run_counted(B?, NB),
+run_counted(M, true, 0).
+run_counted(M, (A,B), N?) :-
+    run_counted(M?, A?, NA), run_counted(M?, B?, NB),
     N := NA? + NB?.
-run_counted(A, N?) :- tuple(A?) |
-    reduce(A?,B), run_counted(B?, NB), N := NB? + 1.
+run_counted(M, M1 # G, N?) :- run_counted(M1?, G?, N).
+run_counted(M, A, N?) :- tuple(A?) |
+    M # reduce(A?, B), run_counted(M?, B?, NB), N := NB? + 1.
 \end{verbatim}
 
 \paragraph{Partial Evaluation.} A meta-interpreter can partially evaluate a program:
@@ -164,10 +171,11 @@ The \verb|otherwise| guard succeeds when no other clause matches---here, when \v
 A \emph{tracing} meta-interpreter records the execution history:
 
 \begin{verbatim}
-run(true, true).                               % halt
-run((A,B), (TA?,TB?)) :- run(A?,TA), run(B?,TB).   % fork
-run(A, ((I?:Time?):-TB?)) :- tuple(A?) |
-    time(Time), reduce(A?,B,I), run(B?, TB).
+run(M, true, true).                                    % halt
+run(M, (A,B), (TA?,TB?)) :- run(M?,A?,TA), run(M?,B?,TB).  % fork
+run(M, M1 # G, T?) :- run(M1?, G?, T).                 % cross-module RPC
+run(M, A, ((I?:Time?):-TB?)) :- tuple(A?) |
+    time(Time), M # reduce(A?, B, I), run(M?, B?, TB).
 \end{verbatim}
 
 The trace records which clause was used at each step with timestamps, enabling performance profiling and debugging race conditions.
