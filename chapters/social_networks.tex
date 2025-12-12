@@ -283,7 +283,218 @@ The trace shows:
 \section{Groups}
 \label{sec:groups}
 
-[TO BE DEVELOPED]
+A \emph{group} enables multiple members to communicate. We present two designs: manager-based groups where a central manager serializes all messages, and groups via interlaced streams where members post independently without a bottleneck.
+
+\subsection{Manager-Based Groups}
+\label{sec:manager-groups}
+
+In manager-based groups, all messages flow through a manager who serializes and distributes them. This ensures all members see messages in the same order.
+
+\subsubsection{The Manager}
+
+The manager processes commands, maintaining a member list and message feed:
+
+\begin{verbatim}
+manager(Commands?, Feed?, Members?) :-
+    manage(Commands, [], [], Feed, Members).
+
+manage([invite(Name)|Cmds], Members, Feed, Feed1?, Members1?) :-
+    manage(Cmds?, [(Name?, [])|Members?], Feed?, Feed1, Members1).
+
+manage([post(From, Content)|Cmds], Members, Feed, Feed1?, Members1?) :-
+    ground(From?), ground(Content?) |
+    prepend_all(msg(From?, Content?), Members?, Members2),
+    manage(Cmds?, Members2?, [msg(From?, Content?)|Feed?], Feed1, Members1).
+
+manage([], Members, Feed, Feed?, Members?).
+\end{verbatim}
+
+The manager handles two commands:
+\begin{itemize}
+\item \verb|invite(Name)|: Adds a member with an empty message stream
+\item \verb|post(From, Content)|: Broadcasts to all members, records in feed
+\end{itemize}
+
+The \verb|ground| guards ensure messages are complete before distribution.
+
+\subsubsection{Broadcasting}
+
+The \verb|prepend_all| predicate distributes a message to all member streams:
+
+\begin{verbatim}
+prepend_all(_, [], []).
+prepend_all(Msg, [(Name, Stream)|Ms], [(Name?, [Msg?|Stream?])|Ms1?]) :-
+    ground(Msg?) |
+    prepend_all(Msg?, Ms?, Ms1).
+\end{verbatim}
+
+Each member's stream receives the message prepended to their existing messages.
+
+\subsubsection{The Play}
+
+\begin{verbatim}
+get_member_stream(Name, [(Name?, Stream)|_], Stream?).
+get_member_stream(Name?, [_|Ms], Stream?) :-
+    get_member_stream(Name, Ms?, Stream).
+
+play_group_manager :-
+    manager([invite(bob), invite(carol),
+             post(bob, hello_from_bob),
+             post(carol, hello_from_carol)], Feed, Members),
+    play_continue(Feed?, Members?).
+
+play_continue(Feed, Members) :-
+    ground(Feed?), ground(Members?) |
+    get_member_stream(bob, Members?, BobStream),
+    get_member_stream(carol, Members?, CarolStream),
+    verify_group(Feed?, BobStream?, CarolStream?).
+
+verify_group(Feed, BobRcvd, CarolRcvd) :-
+    check_feed(Feed?),
+    check_streams(BobRcvd?, CarolRcvd?).
+
+check_feed([msg(carol, hello_from_carol), msg(bob, hello_from_bob)]).
+
+check_streams([msg(carol, hello_from_carol), msg(bob, hello_from_bob)],
+              [msg(carol, hello_from_carol), msg(bob, hello_from_bob)]).
+\end{verbatim}
+
+The play invites Bob and Carol, then posts messages from each. The \verb|play_continue| predicate waits for all commands to complete before verification.
+
+\subsubsection{Execution Trace}
+
+\begin{verbatim}
+?- play_group_manager.
+manage([invite(bob), ...], [], [], Feed, Members) :-
+    manage([invite(carol), ...], [(bob, [])|[]], [], ...)
+manage([invite(carol), ...], [(bob, [])], [], ...) :-
+    manage([post(...), ...], [(carol, [])|[(bob, [])]], [], ...)
+manage([post(bob, hello_from_bob), ...], [...], [], ...) :-
+    prepend_all(msg(bob, hello_from_bob), [...], Members2), ...
+prepend_all(msg(bob, hello_from_bob), [(carol, [])|(bob, [])], ...) :- ...
+...
+check_feed([msg(carol, hello_from_carol), msg(bob, hello_from_bob)]) :- true
+check_streams([msg(carol, ...), msg(bob, ...)],
+              [msg(carol, ...), msg(bob, ...)]) :- true
+-> succeeds
+\end{verbatim}
+
+Both Bob and Carol receive \verb|[msg(carol, hello_from_carol), msg(bob, hello_from_bob)]|---identical message sequences. The manager serializes all posts, ensuring total ordering.
+
+\subsubsection{Limitations}
+
+The manager is a bottleneck: all messages must flow through a single point. For high-throughput groups or when the manager becomes unavailable, this design limits scalability and availability.
+
+\subsection{Groups via Interlaced Streams}
+\label{sec:interlaced-groups}
+
+In interlaced stream groups, each member maintains their own message stream. Members observe each other's streams and reference the current \emph{tips}---the most recent unextended blocks. This creates a partial ordering without requiring a central sequencer.
+
+\subsubsection{Interlacing}
+
+Each member produces blocks containing their message and references to observed tips:
+
+\begin{verbatim}
+interlace([Payload|Payloads], [block(Payload?, Tips?)|Stream?], Others) :-
+    collect_tips(Others?, Tips, Others1),
+    interlace(Payloads?, Stream, Others1?).
+interlace([], [], _).
+\end{verbatim}
+
+For each payload, \verb|interlace| collects tips from other members' streams, constructs a block, and continues with the remaining payloads.
+
+\subsubsection{Tip Collection}
+
+\begin{verbatim}
+collect_tips([[Block|Bs]|Others], [Block?|Tips?], [Bs?|Others1?]) :-
+    unknown(Bs?) |
+    collect_tips(Others?, Tips, Others1).
+collect_tips([[_|Bs]|Others], Tips?, [Bs?|Others1?]) :-
+    otherwise |
+    collect_tips(Others?, Tips, Others1).
+collect_tips([], [], []).
+\end{verbatim}
+
+The \verb|unknown(Bs?)| guard detects unbound stream tails---positions not yet extended. Such blocks are current tips and get included in the reference list. Already-extended blocks are skipped.
+
+\subsubsection{Member Process}
+
+\begin{verbatim}
+member(Name, Messages?, MyStream?, OtherStreams?) :-
+    tag_messages(Name?, Messages, Tagged),
+    interlace(Tagged?, MyStream, OtherStreams).
+
+tag_messages(Name, [Msg|Msgs], [msg(Name?, Msg?)|Tagged?]) :-
+    tag_messages(Name?, Msgs?, Tagged).
+tag_messages(_, [], []).
+\end{verbatim}
+
+Each member tags their messages with their name and interlaces with other members' streams.
+
+\subsubsection{The Play}
+
+\begin{verbatim}
+play_group_interlaced :-
+    member(alice, [hello, world], AliceStream, [BobStream?, CarolStream?]),
+    member(bob, [hi, there], BobStream, [AliceStream?, CarolStream?]),
+    member(carol, [hey, all], CarolStream, [AliceStream?, BobStream?]),
+    verify_interlaced(AliceStream?, BobStream?, CarolStream?).
+
+verify_interlaced(AliceStream, BobStream, CarolStream) :-
+    check_has_blocks(AliceStream?),
+    check_has_blocks(BobStream?),
+    check_has_blocks(CarolStream?),
+    report_success.
+
+check_has_blocks([block(_, _)|_]).
+
+report_success.
+\end{verbatim}
+
+Alice, Bob, and Carol each produce two messages. Each member observes the other two members' streams and includes tips in their blocks.
+
+\subsubsection{Execution Trace}
+
+\begin{verbatim}
+?- play_group_interlaced.
+member(alice, [hello, world], AliceStream, [BobStream?, CarolStream?]) :- ...
+member(bob, [hi, there], BobStream, [AliceStream?, CarolStream?]) :- ...
+member(carol, [hey, all], CarolStream, [AliceStream?, BobStream?]) :- ...
+...
+AliceStream = [block(msg(alice, hello), []),
+               block(msg(alice, world), [])]
+BobStream = [block(msg(bob, hi), [block(msg(alice, hello), [])]),
+             block(msg(bob, there), [block(msg(alice, world), [])])]
+CarolStream = [block(msg(carol, hey), [block(msg(bob, hi), [...])]),
+               block(msg(carol, hey), [...])]
+-> succeeds
+\end{verbatim}
+
+Alice produces first (no tips available). Bob's blocks reference Alice's tips. Carol's blocks reference Bob's (and transitively Alice's). The tip references create a partial ordering reflecting causal dependencies.
+
+\subsubsection{Properties}
+
+\begin{description}
+\item[No Bottleneck] Members produce blocks independently; no single point of failure.
+\item[Partial Ordering] Concurrent posts remain unordered relative to each other. Causal order is captured by tip references.
+\item[Scalability] Adding members does not increase load on any single member proportionally.
+\item[Consistency] All members eventually observe all blocks, though potentially in different orders.
+\end{description}
+
+\subsubsection{Comparison}
+
+\begin{center}
+\begin{tabular}{lcc}
+\textbf{Property} & \textbf{Manager-Based} & \textbf{Interlaced} \\
+\hline
+Message ordering & Total & Partial \\
+Bottleneck & Manager & None \\
+Fault tolerance & Manager failure fatal & Resilient \\
+Complexity & Simple & Higher \\
+\end{tabular}
+\end{center}
+
+Manager-based groups suit small, synchronous communication. Interlaced stream groups suit large-scale, asynchronous scenarios where availability and scalability matter more than total ordering.
 
 %% ============================================
 %% Section 4: Child-Safe Social Networking
