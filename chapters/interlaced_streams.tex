@@ -3,4 +3,146 @@
 \chapter{Interlaced Streams}
 \label{ch:interlaced-streams}
 
-[TO BE DEVELOPED]
+This chapter presents interlaced streams, a distributed data structure that generalizes blockchains to directed acyclic graphs (DAGs). Multiple agents maintain individual streams while observing and referencing each other's progress, forming a blocklace---a structure employed by modern consensus protocols.
+
+\section{Blocklace Structure}
+\label{sec:blocklace-structure}
+
+A blockchain is a sequence of blocks where each block references its predecessor. A \emph{blocklace} generalizes this: each block may reference multiple predecessors from different agents, forming a DAG rather than a chain. This enables concurrent block creation without requiring consensus on ordering.
+
+In \GLP, each agent maintains its own stream of blocks. Each block contains:
+\begin{itemize}
+\item A \emph{payload}: application-specific data
+\item \emph{Tips}: references to the most recent blocks observed from other agents
+\end{itemize}
+
+The tips create cross-references between streams, weaving them into a unified DAG structure.
+
+\section{The Interlaced Streams Program}
+\label{sec:interlaced-program}
+
+\subsection{Entry Point}
+
+\begin{verbatim}
+streams(stream(S?), Others) :-
+    produce_payloads(Payloads),
+    interlace(Payloads?, S, [], Others?).
+\end{verbatim}
+
+The \verb|streams| predicate takes a list of other agents' stream readers in \verb|Others|. It generates payloads and produces a stream of blocks in \verb|S|. The output is wrapped in \verb|stream(S?)| to satisfy SRSW---the writer \verb|S| appears once in \verb|interlace|, and the reader \verb|S?| appears once in the wrapper.
+
+\subsection{Block Production}
+
+\begin{verbatim}
+interlace([Payload|Payloads], Output?, _, Others) :-
+    collect_tips(Others?, Tips, Others1),
+    build_and_continue(Payload?, Tips?, Output, Payloads?, Others1?).
+interlace([], [], _, _).
+\end{verbatim}
+
+For each payload, \verb|interlace| collects the current tips from other streams, then calls \verb|build_and_continue| to construct the block and recurse. The base case terminates with an empty stream.
+
+\subsection{Block Construction}
+
+\begin{verbatim}
+build_and_continue(Payload, Tips, [block(Payload?, Tips?)|Stream?], Payloads, Others) :-
+    ground(Tips?) |
+    interlace(Payloads?, Stream, Tips?, Others?).
+\end{verbatim}
+
+The \verb|build_and_continue| predicate constructs a block containing the payload and tips, then continues interlacing. The \verb|ground(Tips?)| guard is necessary because \verb|Tips?| appears twice: once in the block and once passed to the recursive call. Without this guard, the multiple occurrences would violate SRSW.
+
+\subsection{Tip Collection}
+
+\begin{verbatim}
+collect_tips([[Block|Bs]|Others], [Block?|Tips?], [Bs?|Others1?]) :-
+    reader(Bs?) |
+    collect_tips(Others?, Tips, Others1).
+collect_tips([[_|Bs]|Others], Tips?, [Bs?|Others1?]) :-
+    otherwise |
+    collect_tips(Others?, Tips, Others1).
+collect_tips([], [], []).
+\end{verbatim}
+
+The \verb|collect_tips| predicate traverses the list of other agents' streams. For each stream \verb|[Block|Bs]|:
+\begin{itemize}
+\item If \verb|Bs| is an unbound reader (\verb|reader(Bs?)| succeeds), then \verb|Block| is the current tip---the most recent block not yet extended. Include it in the tips list.
+\item Otherwise (\verb|Bs| is bound), \verb|Block| has already been extended. Skip it and continue with the tail.
+\end{itemize}
+
+The \verb|reader(X?)| guard is the key mechanism: it succeeds when \verb|X| is an unbound variable (a reader waiting for a value). This detects stream positions that have not yet been extended by their owner.
+
+\section{The reader Guard}
+\label{sec:reader-guard}
+
+The \verb|reader(X?)| guard tests whether a variable is an unbound reader:
+\begin{itemize}
+\item \textbf{Succeeds} if \verb|X?| is unbound (the paired writer has not been assigned)
+\item \textbf{Fails} if \verb|X?| is bound (the writer has been assigned a value)
+\end{itemize}
+
+This guard enables detecting the ``frontier'' of an incrementally-constructed stream---the point where new elements will be added. In the blocklace context, it identifies which blocks are current tips versus which have been superseded.
+
+\section{Multiagent Execution}
+\label{sec:multiagent-interlaced}
+
+For three agents $p$, $q$, $r$ maintaining interlaced streams, the initial goal would be:
+
+\begin{verbatim}
+p(streams(stream(Ps?), [Qs?, Rs?])),
+q(streams(stream(Qs?), [Ps?, Rs?])),
+r(streams(stream(Rs?), [Ps?, Qs?]))
+\end{verbatim}
+
+Each agent receives readers for the other agents' streams. As agents produce blocks concurrently, the tip collection mechanism captures cross-references at the moment each block is created, forming the DAG structure.
+
+\section{Single-Agent Trace}
+\label{sec:interlaced-trace}
+
+Testing with a single agent (no other streams to observe):
+
+\begin{verbatim}
+?- streams(S, []).
+S = stream([block(p1, []), block(p2, []), block(p3, [])])
+\end{verbatim}
+
+With no other streams, \verb|collect_tips| returns empty lists, so each block has empty tips. The three payloads produce three sequential blocks.
+
+\section{Security Properties}
+\label{sec:blocklace-security}
+
+Interlaced streams inherit the security properties of \GLP streams (Section~\ref{sec:stream-security}):
+
+\begin{description}
+\item[Immutability] Once a block is created, its contents cannot be changed.
+\item[Unforkability] Each agent's stream has a single writer; forks are impossible.
+\item[Non-repudiation] In authenticated \GLP, each block carries attestation proving authorship.
+\item[Causal Ordering] The tips in each block cryptographically commit to observed state from other agents.
+\end{description}
+
+The blocklace structure provides eventual consistency: all agents eventually observe all blocks, though they may observe them in different orders. The DAG structure captures the causal relationships between blocks.
+
+\section{Applications}
+\label{sec:blocklace-applications}
+
+Interlaced streams form the foundation for:
+\begin{itemize}
+\item \textbf{Consensus protocols}: Cordial Miners, Morpheus, and Constitutional Consensus use blocklace structures for Byzantine fault-tolerant agreement.
+\item \textbf{Collaborative editing}: Multiple editors' changes form a DAG that can be merged.
+\item \textbf{Distributed ledgers}: Each participant maintains their transaction history while referencing others.
+\end{itemize}
+
+\section{Exercises}
+\label{sec:interlaced-exercises}
+
+\begin{enumerate}
+\item Modify \verb|interlaced_streams| to include a timestamp in each block.
+
+\item Implement a \verb|blocklace_merge| predicate that takes multiple agents' streams and produces a linearized view respecting causal order.
+
+\item Add a \verb|validate_tips| predicate that verifies all referenced tips exist in the observed streams.
+
+\item Extend the program to detect when an agent has ``seen'' all blocks up to a certain point (useful for consensus).
+
+\item Implement a payload filter that only includes blocks matching a predicate in the tips.
+\end{enumerate}
