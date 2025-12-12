@@ -259,6 +259,23 @@ tag_stream(Name, [M|In], [msg(Name?, M?)|Out]) :-
 tag_stream(_, [], []).
 \end{verbatim}
 
+\section{Stream Security Properties}
+\label{sec:stream-security-appendix}
+
+Authenticated \GLP streams achieve blockchain-like security through language-level guarantees:
+
+\begin{description}
+\item[Immutability] Once stream element \verb|[X|Xs]| is created with \verb|X| bound to value $T$, single-assignment semantics prevents any subsequent assignment to \verb|X|.
+
+\item[Unforkability] The SRSW invariant ensures each writer \verb|Xs| has exactly one occurrence. Attempting two continuations \verb|Xs=[Y|Ys]| and \verb|Xs=[Z|Zs]| would require two occurrences of writer \verb|Xs|, violating SRSW.
+
+\item[Non-repudiation] In authenticated \GLP, stream extensions carry attestations $(Xs\!:=\![Y|Ys])_{M,p,q}$. The signature by agent $p$ provides cryptographic proof of authorship.
+
+\item[Acyclicity] The occurs check prevents a writer from being bound to a term containing its paired reader, ensuring strict temporal ordering.
+\end{description}
+
+These properties emerge from \GLP's core semantics rather than requiring additional cryptographic protocols.
+
 \section{Execution Model Summary}
 
 \begin{enumerate}
