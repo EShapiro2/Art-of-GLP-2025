@@ -1,0 +1,253 @@
+\chapter{Social Networks Code}
+\label{app:social-networks-code}
+
+This appendix contains the complete play code for the social networks examples in Chapter~\ref{ch:social-networks}.
+
+\section{Direct Messaging Play}
+\label{app:play-dm}
+
+\begin{verbatim}
+%% play_dm.glp - Direct Messaging Play
+
+%% Channel primitives
+new_channel(ch(Xs?, Ys), ch(Ys?, Xs)).
+
+dm_send(Msg, ch(In, [Msg?|Out?]), ch(In?, Out)).
+
+dm_receive(Msg?, ch([Msg|In], Out?), ch(In?, Out)).
+
+bind_resp(Resp?, Resp).
+
+%% Alice: initiates DM request
+alice(FriendOut, FriendIn?, AliceResult?) :-
+    FriendOut = [dm_request(Resp)|_],
+    alice_continue(Resp?, FriendIn, AliceResult).
+
+alice_continue(DMCh, _, result(sent, Reply?)) :-
+    known(DMCh?) |
+    dm_send(hello_bob, DMCh?, DMCh1),
+    dm_receive(Reply, DMCh1?, _).
+
+%% Bob: receives request, creates channel
+bob([dm_request(Resp)|_], _, BobResult?) :-
+    new_channel(BobDM, AliceDM),
+    bind_resp(Resp?, AliceDM?),
+    bob_continue(BobDM?, BobResult).
+
+bob_continue(DMCh, result(Msg?, replied)) :-
+    dm_receive(Msg, DMCh?, DMCh1),
+    dm_send(hello_alice, DMCh1?, _).
+
+%% Verification
+verify(result(sent, Reply), result(Msg, replied)) :-
+    report(Msg?, Reply?).
+
+report(hello_bob, hello_alice).
+
+%% The play
+play_dm :-
+    alice(FriendOut, FriendIn?, AliceResult),
+    bob(FriendOut?, FriendIn, BobResult),
+    verify(AliceResult?, BobResult?).
+\end{verbatim}
+
+\section{Feeds and Followers Play}
+\label{app:play-feed}
+
+\begin{verbatim}
+%% play_feed.glp - Feed and Followers Play
+
+%% Broadcast with ground guard
+broadcast(_, [], []).
+broadcast(Post, [(Name, Feed)|Fs], [(Name?, Feed1?)|Fs1?]) :-
+    ground(Post?) |
+    extend_feed(Post?, Feed?, Feed1),
+    broadcast(Post?, Fs?, Fs1).
+
+%% Feed operations
+make_feed(feed([])).
+extend_feed(Post, feed(Xs), feed([Post?|Xs?])).
+get_feed(Name, [(Name?, Feed)|_], Feed?).
+get_feed(Name?, [_|Fs], Feed?) :- get_feed(Name, Fs?, Feed).
+
+%% Feed server
+serve_feed([post(Content)|Cmds], Fs, Fs2?) :-
+    ground(Content?) |
+    broadcast(Content?, Fs?, Fs1),
+    serve_feed(Cmds?, Fs1?, Fs2).
+serve_feed([subscribe(Name)|Cmds], Fs, Fs2?) :-
+    make_feed(Feed),
+    serve_feed(Cmds?, [(Name?, Feed?)|Fs?], Fs2).
+serve_feed([], Fs, Fs?).
+
+%% Alice: Feed author
+alice(Commands?, Followers, FinalFollowers?) :-
+    serve_feed(Commands, Followers?, FinalFollowers).
+
+bob_receive(feed([Post1, Post2|_]), result(Post1?, Post2?)).
+
+carol_receive(feed([Post1, Post2|_]), result(Post1?, Post2?)).
+
+verify(result(P1, P2), result(P3, P4)) :-
+    check(P1?, P2?, P3?, P4?).
+
+check(second_post, hello_world, second_post, hello_world).
+
+%% The play
+play_feed :-
+    alice([subscribe(bob), subscribe(carol),
+           post(hello_world), post(second_post)], [], Followers),
+    play_continue(Followers?).
+
+play_continue(Followers) :-
+    ground(Followers?) |
+    get_feed(bob, Followers?, BobFeed),
+    get_feed(carol, Followers?, CarolFeed),
+    bob_receive(BobFeed?, BobResult),
+    carol_receive(CarolFeed?, CarolResult),
+    verify(BobResult?, CarolResult?).
+\end{verbatim}
+
+\section{Manager-Based Group Play}
+\label{app:play-group-manager}
+
+\begin{verbatim}
+%% play_group_manager.glp - Manager-Based Group Play
+
+%% Manager: processes commands
+manager(Commands?, Feed?, Members?) :-
+    manage(Commands, [], [], Feed, Members).
+
+manage([invite(Name)|Cmds], Members, Feed, Feed1?, Members1?) :-
+    manage(Cmds?, [(Name?, [])|Members?], Feed?, Feed1, Members1).
+
+manage([post(From, Content)|Cmds], Members, Feed, Feed1?, Members1?) :-
+    ground(From?), ground(Content?) |
+    prepend_all(msg(From?, Content?), Members?, Members2),
+    manage(Cmds?, Members2?, [msg(From?, Content?)|Feed?], Feed1, Members1).
+
+manage([], Members, Feed, Feed?, Members?).
+
+%% Prepend message to all member streams
+prepend_all(_, [], []).
+prepend_all(Msg, [(Name, Stream)|Ms], [(Name?, [Msg?|Stream?])|Ms1?]) :-
+    ground(Msg?) |
+    prepend_all(Msg?, Ms?, Ms1).
+
+%% Get member stream
+get_member_stream(Name, [(Name?, Stream)|_], Stream?).
+get_member_stream(Name?, [_|Ms], Stream?) :-
+    get_member_stream(Name, Ms?, Stream).
+
+%% Verification
+verify_group(Feed, BobRcvd, CarolRcvd) :-
+    check_feed(Feed?),
+    check_streams(BobRcvd?, CarolRcvd?).
+
+check_feed([msg(carol, hello_from_carol), msg(bob, hello_from_bob)]).
+
+check_streams([msg(carol, hello_from_carol), msg(bob, hello_from_bob)],
+              [msg(carol, hello_from_carol), msg(bob, hello_from_bob)]).
+
+%% The play
+play_group_manager :-
+    manager([invite(bob), invite(carol),
+             post(bob, hello_from_bob),
+             post(carol, hello_from_carol)], Feed, Members),
+    play_continue(Feed?, Members?).
+
+play_continue(Feed, Members) :-
+    ground(Feed?), ground(Members?) |
+    get_member_stream(bob, Members?, BobStream),
+    get_member_stream(carol, Members?, CarolStream),
+    verify_group(Feed?, BobStream?, CarolStream?).
+\end{verbatim}
+
+\section{Interlaced Streams Group Play}
+\label{app:play-group-interlaced}
+
+\begin{verbatim}
+%% play_group_interlaced.glp - Groups via Interlaced Streams
+
+%% Interlacing: each member produces blocks referencing others' tips
+interlace([Payload|Payloads], [block(Payload?, Tips?)|Stream?], Others) :-
+    collect_tips(Others?, Tips, Others1),
+    interlace(Payloads?, Stream, Others1?).
+interlace([], [], _).
+
+%% Collect current tips from other streams
+collect_tips([[Block|Bs]|Others], [Block?|Tips?], [Bs?|Others1?]) :-
+    unknown(Bs?) |
+    collect_tips(Others?, Tips, Others1).
+collect_tips([[_|Bs]|Others], Tips?, [Bs?|Others1?]) :-
+    otherwise |
+    collect_tips(Others?, Tips, Others1).
+collect_tips([], [], []).
+
+%% Member: produces stream of messages interlaced with others
+member(Name, Messages?, MyStream?, OtherStreams?) :-
+    tag_messages(Name?, Messages, Tagged),
+    interlace(Tagged?, MyStream, OtherStreams).
+
+tag_messages(Name, [Msg|Msgs], [msg(Name?, Msg?)|Tagged?]) :-
+    tag_messages(Name?, Msgs?, Tagged).
+tag_messages(_, [], []).
+
+%% Verification
+verify_interlaced(AliceStream, BobStream, CarolStream) :-
+    check_has_blocks(AliceStream?),
+    check_has_blocks(BobStream?),
+    check_has_blocks(CarolStream?),
+    report_success.
+
+check_has_blocks([block(_, _)|_]).
+
+report_success.
+
+%% The play
+play_group_interlaced :-
+    member(alice, [hello, world], AliceStream, [BobStream?, CarolStream?]),
+    member(bob, [hi, there], BobStream, [AliceStream?, CarolStream?]),
+    member(carol, [hey, all], CarolStream, [AliceStream?, BobStream?]),
+    verify_interlaced(AliceStream?, BobStream?, CarolStream?).
+\end{verbatim}
+
+\section{Child-Safe Social Networking Play}
+\label{app:play-child-safe}
+
+\begin{verbatim}
+%% play_child_safe.glp - Child-Safe Social Networking
+
+%% Response binding
+bind_resp(Resp?, Resp).
+
+%% Parent-Smith: sends approval request
+parent_smith([approval_request(smith, child_smith, Resp)|_], Result?) :-
+    smith_wait(Resp?, Result).
+
+smith_wait(Resp, Result?) :-
+    known(Resp?) |
+    smith_done(Resp?, Result).
+
+smith_done(approved, result(approved, channel_ready)).
+
+%% Parent-Jones: receives and approves
+parent_jones([approval_request(FromParent, Child, Resp)|_], Decision?) :-
+    bind_resp(Resp?, approved),
+    jones_done(FromParent?, Child?, Decision).
+
+jones_done(FromParent, Child, approved(FromParent?, Child?)).
+
+%% Verification
+verify_child_safe(result(approved, channel_ready),
+                  approved(smith, child_smith)) :-
+    report_success.
+
+report_success.
+
+%% The play
+play_child_safe :-
+    parent_smith(StoJ, SmithResult),
+    parent_jones(StoJ?, JonesDecision),
+    verify_child_safe(SmithResult?, JonesDecision?).
+\end{verbatim}
