@@ -3,105 +3,166 @@
 \chapter{Social Networks}
 \label{ch:social-networks}
 
-This chapter presents grassroots social networking constructs, including security mechanisms, stream replication for feed distribution, and follower management.
+This chapter presents grassroots social networking applications built upon the social graph foundation (Chapter~\ref{ch:social-graph}). We develop direct messaging between friends, feed distribution with followers, group messaging, and child-safe social networking.
+
+Throughout this chapter, we assume agents are already connected via the social graph protocol---they have established bidirectional friend channels through cold-call or friend-mediated introduction. The applications here use these existing channels to build higher-level communication structures.
 
 %% ============================================
-%% Section 1: Security Mechanisms
+%% Section 1: Direct Messaging
 %% ============================================
 
-\section{Security Mechanisms}
-\label{sec:security-mechanisms}
+\section{Direct Messaging}
+\label{sec:direct-messaging}
 
-\GLP provides guard predicates for inspecting attestations on received messages, enabling agents to verify the provenance and authenticity of data.
+Friends connected via the social graph share a \emph{control channel} for protocol messages. For ongoing conversations, they establish a separate \emph{direct messaging (DM) channel}---dedicated to private communication, independent of protocol traffic.
 
-\subsection{Attestation Guards}
-\label{sec:attestation-guards}
+\subsection{Channel Primitives}
 
-\begin{verbatim}
-process_message(Msg, Result?) :-
-    attestation(Msg, att(Agent, Module)),
-    trusted_module(Module?) |
-    handle_verified(Msg?, Agent?, Result).
-
-process_message(Msg, rejected) :-
-    attestation(Msg, att(_, Module)),
-    \+ trusted_module(Module?) |
-    true.
-\end{verbatim}
-
-The \verb|attestation(X, Info)| guard succeeds if term \verb|X| carries an attestation, binding \verb|Info| to \verb|att(Agent, Module)| containing the attesting agent's public key and module identifier. For locally-produced terms, \verb|Agent| binds to the distinguished constant \verb|self|.
-
-The \verb|module(M)| guard binds \verb|M| to the identifier of the currently executing module. Agents use this to determine their own module identity when evaluating compatibility:
+A DM channel is a bidirectional channel created with \verb|new_channel|:
 
 \begin{verbatim}
-negotiate_protocol(Other, Result?) :-
-    module(MyModule),
-    attestation(Other, att(_, OtherModule)),
-    compatible(MyModule?, OtherModule?) |
-    Result = accept.
+new_channel(ch(Xs?, Ys), ch(Ys?, Xs)).
 \end{verbatim}
 
-These guards enable security decisions to be made at the language level, within committed-choice clause selection, rather than requiring external verification mechanisms.
+This creates two channel endpoints with cross-connected streams. If Alice holds \verb|ch(Xs?, Ys)| and Bob holds \verb|ch(Ys?, Xs)|, then Alice writes to \verb|Ys| and reads from \verb|Xs|, while Bob writes to \verb|Xs| and reads from \verb|Ys|.
 
-\subsection{Stream Security Properties}
-\label{sec:stream-security}
+Sending and receiving on a channel:
 
-Authenticated \GLP streams achieve blockchain-like security through language-level guarantees:
+\begin{verbatim}
+dm_send(Msg, ch(In, [Msg?|Out?]), ch(In?, Out)).
 
+dm_receive(Msg?, ch([Msg|In], Out?), ch(In?, Out)).
+\end{verbatim}
+
+The \verb|dm_send| predicate appends a message to the output stream, returning the updated channel. The \verb|dm_receive| predicate extracts a message from the input stream.
+
+\subsection{Response Binding}
+
+When establishing a channel, one party creates both endpoints and sends one to the other through a response variable. Since the response variable extracted from an incoming message becomes a reader, we use explicit unification:
+
+\begin{verbatim}
+bind_resp(Resp, Ch) :- Resp = Ch?.
+\end{verbatim}
+
+This binds the reader \verb|Resp| to the channel \verb|Ch|.
+
+\subsection{The DM Protocol}
+
+Alice initiates by sending a request containing a fresh response variable through her friend channel. Bob receives the request, creates the channel pair, binds one endpoint to the response variable, and keeps the other:
+
+\begin{verbatim}
+alice(FriendOut, FriendIn?, AliceResult?) :-
+    FriendOut = [dm_request(Resp)|_],
+    alice_continue(Resp?, FriendIn, AliceResult).
+
+alice_continue(DMCh, _, result(sent, Reply?)) :-
+    known(DMCh?) |
+    dm_send(hello_bob, DMCh?, DMCh1),
+    dm_receive(Reply, DMCh1?, _).
+\end{verbatim}
+
+Alice sends \verb|dm_request(Resp)| on the friend channel, then waits for \verb|Resp| to become bound. The \verb|known(DMCh?)| guard suspends until Bob responds. Once the DM channel arrives, Alice sends a greeting and waits for a reply.
+
+\begin{verbatim}
+bob([dm_request(Resp)|_], _, BobResult?) :-
+    new_channel(BobDM, AliceDM),
+    bind_resp(Resp?, AliceDM?),
+    bob_continue(BobDM?, BobResult).
+
+bob_continue(DMCh, result(Msg?, replied)) :-
+    dm_receive(Msg, DMCh?, DMCh1),
+    dm_send(hello_alice, DMCh1?, _).
+\end{verbatim}
+
+Bob pattern-matches the request in his clause head, creates a channel pair, binds Alice's endpoint to her response variable, then continues with his own endpoint. He receives Alice's message and sends a reply.
+
+\subsection{The Play}
+
+The complete play connects Alice and Bob through a shared friend channel:
+
+\begin{verbatim}
+verify(result(sent, Reply), result(Msg, replied)) :-
+    report(Msg?, Reply?).
+
+report(hello_bob, hello_alice).
+
+play_dm :-
+    alice(FriendOut, FriendIn?, AliceResult),
+    bob(FriendOut?, FriendIn, BobResult),
+    verify(AliceResult?, BobResult?).
+\end{verbatim}
+
+The friend channel connects Alice's output (\verb|FriendOut|) to Bob's input (\verb|FriendOut?|), and Bob's output (\verb|FriendIn|) to Alice's input (\verb|FriendIn?|). The \verb|verify| predicate confirms successful message exchange.
+
+\subsection{Execution Trace}
+
+\begin{verbatim}
+?- play_dm.
+alice(FriendOut, FriendIn?, AliceResult) :-
+    alice_continue(Resp?, FriendIn, AliceResult)
+bob([dm_request(Resp)|_], FriendIn, BobResult) :-
+    new_channel(BobDM, AliceDM),
+    bind_resp(Resp?, AliceDM?),
+    bob_continue(BobDM?, BobResult)
+new_channel(BobDM, AliceDM) :- true
+bind_resp(Resp?, ch(X1?, X2)) :- true
+bob_continue(ch(X2?, X1), BobResult) :-
+    dm_receive(Msg, ch(X2?, X1), DMCh1),
+    dm_send(hello_alice, DMCh1?, _)
+alice_continue(ch(X1?, X2), FriendIn, AliceResult) :-
+    dm_send(hello_bob, ch(X1?, X2), AliceCh1),
+    dm_receive(Reply, AliceCh1?, _)
+dm_send(hello_bob, ch(X1?, X2), AliceCh1) :- true
+dm_receive(Msg, ch([hello_bob|X3?], X1), DMCh1) :- true
+dm_send(hello_alice, ch(X3?, X4), _) :- true
+dm_receive(Reply, ch([hello_alice|X5?], X3), _) :- true
+report(hello_bob, hello_alice) :- true
+-> succeeds
+\end{verbatim}
+
+The trace shows the complete protocol:
 \begin{enumerate}
-\item \textbf{Immutability}: Once stream element \verb|[X|Xs]| is created with \verb|X| bound to value $T$, single-assignment semantics prevents any subsequent assignment to \verb|X|.
-
-\item \textbf{Unforkability}: The SRSW invariant ensures each writer \verb|Xs| has exactly one occurrence. Attempting two continuations \verb|Xs=[Y|Ys]| and \verb|Xs=[Z|Zs]| would require two occurrences of writer \verb|Xs|, violating SRSW.
-
-\item \textbf{Non-repudiation}: Stream extensions carry attestations $(Xs\!:=\![Y|Ys])_{M,p,q}$. The signature by agent $p$ provides cryptographic proof of authorship.
-
-\item \textbf{Acyclicity}: The occurs check prevents a writer from being bound to a term containing its paired reader, ensuring strict temporal ordering.
+\item Alice sends \verb|dm_request(Resp)| on the friend channel
+\item Bob receives the request, creates a channel pair with \verb|new_channel|
+\item Bob binds Alice's endpoint to her response variable via \verb|bind_resp|
+\item Alice's \verb|known| guard succeeds; she sends \verb|hello_bob|
+\item Bob receives \verb|hello_bob| and replies with \verb|hello_alice|
+\item Alice receives the reply
+\item \verb|report(hello_bob, hello_alice)| confirms the exchange
 \end{enumerate}
 
-These properties emerge from \GLP's core semantics rather than requiring additional cryptographic protocols.
-
-\paragraph{Cooperative Extension.} Only the holder of a stream's tail writer can extend it:
-
-\begin{verbatim}
-extend_stream([H?|T], H, T).
-\end{verbatim}
-
-The caller provides the head value \verb|H| and receives the new tail writer \verb|T| for subsequent extension. This enables cooperative stream production through explicit handover (Section~\ref{sec:cooperative-producers}).
-
 %% ============================================
-%% Section 2: Feed Distribution
+%% Section 2: Feeds and Followers
 %% ============================================
 
-\section{Feed Distribution}
-\label{sec:feed}
+\section{Feeds and Followers}
+\label{sec:feeds-followers}
 
 [TO BE DEVELOPED]
 
-\subsection{Non-Ground Replication}
-\label{sec:nonground-replication}
+%% ============================================
+%% Section 3: Groups
+%% ============================================
 
-Distributing incrementally-constructed streams to multiple recipients requires replication. The replicator handles streams that may contain uninstantiated readers, suspending until values become available:
+\section{Groups}
+\label{sec:groups}
 
-\begin{verbatim}
-replicate2(X, X?, X?) :- ground(X) | true.
-replicate2(Xs, [Y1?|Ys1?], [Y2?|Ys2?]) :-
-    Xs? = [X|Xs1] |
-    replicate2(X?, Y1, Y2),
-    replicate2(Xs1?, Ys1, Ys2).
-\end{verbatim}
+[TO BE DEVELOPED]
 
-The first clause handles ground terms: when \verb|X| is fully instantiated, it is copied directly to both outputs. The second clause handles list structures: it matches the input against \verb|[X|Xs1]|, recursively replicates the head \verb|X| to both output heads, and recurses on the tails.
+%% ============================================
+%% Section 4: Child-Safe Social Networking
+%% ============================================
 
-The guard \verb|Xs? = [X|Xs1]| suspends until the input stream's head is available. This allows replication of streams as they are incrementally produced, with each element replicated as soon as it appears.
+\section{Child-Safe Social Networking}
+\label{sec:child-safe}
 
-\paragraph{Generalization.} The binary replicator extends naturally to $n$ outputs:
+[TO BE DEVELOPED]
 
-\begin{verbatim}
-replicate3(X, X?, X?, X?) :- ground(X) | true.
-replicate3(Xs, [Y1?|Ys1?], [Y2?|Ys2?], [Y3?|Ys3?]) :-
-    Xs? = [X|Xs1] |
-    replicate3(X?, Y1, Y2, Y3),
-    replicate3(Xs1?, Ys1, Ys2, Ys3).
-\end{verbatim}
+%% ============================================
+%% Section 5: Exercises
+%% ============================================
 
-This pattern is essential for feed distribution where a single producer's stream must reach multiple followers.
+\section{Exercises}
+\label{sec:social-networks-exercises}
+
+[TO BE DEVELOPED]
