@@ -53,7 +53,7 @@ Guards appear between the head and \verb$|$, testing conditions without side eff
 \begin{description}
 \item[\texttt{ground(X)}] Succeeds if \verb|X| contains no unbound variables. With this guard, the clause body may contain multiple occurrences of \verb|X?| without violating SRSW, enabling safe replication of ground terms.
 
-\item[\texttt{known(X)}] Succeeds if \verb|X| is not an unbound variable (though it may contain unbound variables in subterms).
+\item[\texttt{known(X)}] Succeeds if \verb|X| is bound to a value (though that value may contain unbound variables in subterms). Fails if \verb|X| is unbound.
 
 \item[\texttt{integer(X)}] Succeeds if \verb|X| is bound to an integer.
 
@@ -65,13 +65,7 @@ Guards appear between the head and \verb$|$, testing conditions without side eff
 
 \item[\texttt{is\_list(X)}] Succeeds if \verb|X| is bound to a proper list.
 
-\item[\texttt{unknown(X)}] Succeeds if \verb|X| is bound to an unbound variable. \textbf{Warning: This guard is non-monotonic}---its result can change from true to false as computation proceeds. Use only when testing whether a stream has been extended, as in the interlaced streams pattern. Example:
-\begin{verbatim}
-% Test if stream tail Bs is still unextended
-collect_tips([[Block|Bs]|Others], [Block?|Tips?], ...) :-
-    unknown(Bs?) |  % Bs unbound means Block is the current tip
-    ...
-\end{verbatim}
+\item[\texttt{unknown(X)}] Succeeds if \verb|X| is an unbound variable. Fails if \verb|X| is bound to any value.
 
 \item[\texttt{otherwise}] Succeeds if all previous clauses for this predicate failed (not suspended). Enables default case handling.
 
@@ -99,7 +93,7 @@ collect_tips([[Block|Bs]|Others], [Block?|Tips?], ...) :-
 Any negatable guard \verb|G| can be negated using the syntax \verb|~G|. The negated guard succeeds when \verb|G| fails, fails when \verb|G| succeeds, and suspends when \verb|G| suspends.
 
 \mypara{Negatable guards}
-Type guards: \verb|ground|, \verb|known|, \verb|unknown|, \verb|integer|, \verb|number|, \verb|atom|, \verb|string|, \verb|constant|, \verb|compound|, \verb|tuple|, \verb|list|, \verb|is_list|, \verb|writer|, \verb|reader|. Equality guard: \verb|=?=|.
+Type guards: \verb|ground|, \verb|known|, \verb|unknown|, \verb|integer|, \verb|number|, \verb|atom|, \verb|string|, \verb|constant|, \verb|compound|, \verb|tuple|, \verb|list|, \verb|is_list|. Equality guard: \verb|=?=|.
 
 \mypara{Non-negatable guards}
 Arithmetic comparisons (\verb|<|, \verb|>|, \verb|=<|, \verb|>=|, \verb|=:=|, \verb|=\=|) cannot be negated. Control guards (\verb|otherwise|) and time guards (\verb|wait|, \verb|wait_until|) also cannot be negated.

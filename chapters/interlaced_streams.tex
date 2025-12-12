@@ -56,7 +56,7 @@ The \verb|build_and_continue| predicate constructs a block containing the payloa
 
 \begin{verbatim}
 collect_tips([[Block|Bs]|Others], [Block?|Tips?], [Bs?|Others1?]) :-
-    reader(Bs?) |
+    unknown(Bs?) |
     collect_tips(Others?, Tips, Others1).
 collect_tips([[_|Bs]|Others], Tips?, [Bs?|Others1?]) :-
     otherwise |
@@ -66,19 +66,19 @@ collect_tips([], [], []).
 
 The \verb|collect_tips| predicate traverses the list of other agents' streams. For each stream \verb|[Block|Bs]|:
 \begin{itemize}
-\item If \verb|Bs| is an unbound reader (\verb|reader(Bs?)| succeeds), then \verb|Block| is the current tip---the most recent block not yet extended. Include it in the tips list.
+\item If \verb|Bs| is an unbound variable (\verb|unknown(Bs?)| succeeds), then \verb|Block| is the current tip---the most recent block not yet extended. Include it in the tips list.
 \item Otherwise (\verb|Bs| is bound), \verb|Block| has already been extended. Skip it and continue with the tail.
 \end{itemize}
 
-The \verb|reader(X?)| guard is the key mechanism: it succeeds when \verb|X| is an unbound variable (a reader waiting for a value). This detects stream positions that have not yet been extended by their owner.
+The \verb|unknown(X?)| guard is the key mechanism: it succeeds when \verb|X| is an unbound variable. This detects stream positions that have not yet been extended by their owner.
 
-\section{The reader Guard}
-\label{sec:reader-guard}
+\section{The unknown Guard}
+\label{sec:unknown-guard}
 
-The \verb|reader(X?)| guard tests whether a variable is an unbound reader:
+The \verb|unknown(X?)| guard tests whether a variable is unbound:
 \begin{itemize}
-\item \textbf{Succeeds} if \verb|X?| is unbound (the paired writer has not been assigned)
-\item \textbf{Fails} if \verb|X?| is bound (the writer has been assigned a value)
+\item \textbf{Succeeds} if \verb|X?| is an unbound variable
+\item \textbf{Fails} if \verb|X?| is bound to any value
 \end{itemize}
 
 This guard enables detecting the ``frontier'' of an incrementally-constructed stream---the point where new elements will be added. In the blocklace context, it identifies which blocks are current tips versus which have been superseded.
