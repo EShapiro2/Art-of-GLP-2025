@@ -302,7 +302,120 @@ When any process pulls the brake, \verb|Handle?| becomes bound to \verb|stop|. T
 \end{itemize}
 
 %% ============================================
-%% Section 6: Debugging
+%% Section 6: Tracing Meta-Interpreter
+%% ============================================
+
+\section{Tracing Meta-Interpreter}
+\label{sec:tracing-meta}
+
+The meta-interpreters presented so far manage execution but do not record it. The \emph{tracing} meta-interpreter builds an execution tree that captures each reduction: what goal was reduced, which clause was used, and the resulting subtree.
+
+\subsection{Execution Tree Structure}
+
+The trace tree has three forms:
+\begin{itemize}
+\item \verb|true| --- computation halted
+\item \verb|fork(T1, T2)| --- conjunction split into two branches
+\item \verb|reduction(Goal, ClauseId, SubTree)| --- goal reduced using clause \verb|ClauseId|
+\end{itemize}
+
+The tree records both \emph{what} happened (the goal snapshots) and \emph{how} it happened (the clause indices), enabling both inspection and replay.
+
+\subsection{Goal Snapshots}
+
+A naive implementation that stores the goal directly fails: as execution proceeds, variables in the goal become bound, and the stored reference mutates along with them. We need to \emph{snapshot} the goal at reduction time.
+
+The \verb|observe/3| predicate from Chapter~\ref{ch:recursive} creates two copies of a term: one for execution, one for observation. When the observer encounters an unbound subterm, it suspends until bound, then copies the value to both outputs.
+
+\subsection{The Tracing Meta-Interpreter}
+
+\begin{verbatim}
+run(M, true, true).                              % halt
+run(M, (A,B), fork(TA?, TB?)) :-                 % fork
+    run(M?, A?, TA),
+    run(M?, B?, TB).
+run(M, A, reduction(A_obs?, I?, TB?)) :-         % reduce
+    tuple(A?) |
+    observe(A?, A_exec, A_obs),
+    reduce(A_exec?, B, I),
+    run(M?, B?, TB).
+\end{verbatim}
+
+The reduce clause:
+\begin{enumerate}
+\item Waits for the goal to be a compound term (\verb|tuple(A?)|)
+\item Snapshots the goal: \verb|A_exec| drives execution, \verb|A_obs| is frozen for the trace
+\item Looks up the clause via \verb|reduce/3|, which returns the body and clause index
+\item Recursively runs the body, building the subtree
+\end{enumerate}
+
+\subsection{Indexed Program Encoding}
+
+The object program must provide clause indices in \verb|reduce/3|:
+
+\begin{verbatim}
+reduce(merge([X|Xs], Ys, [X?|Zs?]), merge(Xs?, Ys?, Zs), 1).
+reduce(merge(Xs, [Y|Ys], [Y?|Zs?]), merge(Xs?, Ys?, Zs), 2).
+reduce(merge([], [], []), true, 3).
+\end{verbatim}
+
+Each clause has a unique index. These indices enable deterministic replay: given a trace, a replaying interpreter can select the exact same clauses in the exact same order.
+
+\subsection{Example Trace}
+
+Running \verb|merge([1,2], [3,4], Zs)| produces:
+
+\begin{verbatim}
+Zs = [1, 2, 3, 4]
+Tree = reduction(merge([1,2], [3,4], [1,2,3,4]), 1,
+         reduction(merge([2], [3,4], [2,3,4]), 1,
+           reduction(merge([], [3,4], [3,4]), 2,
+             reduction(merge([], [4], [4]), 2,
+               reduction(merge([], [], []), 3, true)))))
+\end{verbatim}
+
+The trace shows:
+\begin{itemize}
+\item Clause 1 selected twice (first list non-empty)
+\item Clause 2 selected twice (first list empty, second non-empty)
+\item Clause 3 selected once (both lists empty)
+\end{itemize}
+
+The output variable in each snapshot shows the result at that point---structural sharing with the final result.
+
+\subsection{Adding Timestamps}
+
+For debugging concurrent programs, timestamps reveal execution order:
+
+\begin{verbatim}
+run(M, A, reduction(A_obs?, I?, Time?, TB?)) :-
+    tuple(A?) |
+    observe(A?, A_exec, A_obs),
+    now(Time),
+    reduce(A_exec?, B, I),
+    run(M?, B?, TB).
+\end{verbatim}
+
+The \verb|now/1| system predicate binds \verb|Time| to the current timestamp in milliseconds. With timestamps, you can reconstruct the temporal order of reductions across concurrent branches.
+
+\subsection{Replay}
+
+Given a trace, replay executes the same computation deterministically:
+
+\begin{verbatim}
+replay(M, true, true).
+replay(M, fork(T1, T2), (A?, B?)) :-
+    replay(M?, T1?, A),
+    replay(M?, T2?, B).
+replay(M, reduction(_, I, SubTree), Goal?) :-
+    reduce_by_index(I?, Goal, Body),
+    replay(M?, SubTree?, Body?).
+\end{verbatim}
+
+The replayer ignores the stored goals and uses only the clause indices. This guarantees identical execution regardless of scheduling nondeterminism.
+
+%% ============================================
+%% Section 7: Debugging
 %% ============================================
 
 \section{Debugging}
