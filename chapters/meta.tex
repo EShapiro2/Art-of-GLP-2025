@@ -415,130 +415,60 @@ replay(M, reduction(_, I, SubTree), Goal?) :-
 The replayer ignores the stored goals and uses only the clause indices. This guarantees identical execution regardless of scheduling nondeterminism.
 
 %% ============================================
-%% Section 7: Debugging
-%% ============================================
-
-\section{Debugging}
-\label{sec:debugging}
-
-\subsection{Algorithmic Debugging}
-
-Algorithmic debugging locates bugs by asking questions about the correctness of intermediate results. The debugger traverses the computation tree, asking the user whether each result is correct:
-
-\begin{verbatim}
-algo_debug(true, _, correct).
-algo_debug((A,B), Oracle, Result?) :-
-    algo_debug(A?, Oracle?, RA),
-    algo_debug(B?, Oracle?, RB),
-    combine_results(RA?, RB?, Result).
-algo_debug(Goal, Oracle, Result?) :- known(Goal) |
-    reduce(Goal?, Body),
-    algo_debug(Body?, Oracle?, BodyResult),
-    ask_oracle(Oracle?, Goal?, BodyResult?, Result).
-
-ask_oracle(Oracle, Goal, correct, correct) :-
-    query(Oracle?, is_correct(Goal?), yes) | true.
-ask_oracle(Oracle, Goal, correct, buggy(Goal?)) :-
-    query(Oracle?, is_correct(Goal?), no) | true.
-ask_oracle(_, Goal, buggy(X), buggy(X?)).
-\end{verbatim}
-
-When the body is correct but the goal is wrong, the bug is in the clause used to reduce that goal.
-
-\subsection{Trace-Based Debugging}
-
-Trace-based debugging records the execution history and provides replay capabilities. The trace can be analyzed post-mortem or used for deterministic replay:
-
-\begin{verbatim}
-trace_debug(Goal, Trace?) :-
-    run_traced(Goal?, [], Trace).
-
-run_traced(true, Acc, Acc?).
-run_traced((A,B), Acc, Trace?) :-
-    run_traced(A?, Acc?, Acc1),
-    run_traced(B?, Acc1?, Trace).
-run_traced(Goal, Acc, Trace?) :- known(Goal) |
-    reduce(Goal?, Body, ClauseId),
-    time(T),
-    run_traced(Body?, [step(T?,Goal?,ClauseId?)|Acc?], Trace).
-
-%% Replay from trace
-replay([], true).
-replay([step(_,Goal,ClauseId)|Steps?], (Goal?,Rest?)) :-
-    reduce_by_id(Goal?, ClauseId?, Body),
-    replay(Steps?, Rest).
-\end{verbatim}
-
-The trace records timestamps, enabling analysis of timing-dependent bugs in concurrent executions.
-
-\subsection{Declarative Debugging}
-
-Declarative debugging focuses on \emph{what} is wrong rather than \emph{how} the computation proceeded. It collects failed goals and their contexts:
-
-\begin{verbatim}
-decl_debug(Goal, Diagnosis?) :-
-    run_checked(Goal?, [], Diagnosis).
-
-run_checked(true, Ctx, ok).
-run_checked((A,B), Ctx, Diag?) :-
-    run_checked(A?, Ctx?, DA),
-    run_checked(B?, Ctx?, DB),
-    merge_diag(DA?, DB?, Diag).
-run_checked(Goal, Ctx, Diag?) :- known(Goal) |
-    try_reduce(Goal?, Result),
-    handle_result(Result?, Goal?, Ctx?, Diag).
-
-try_reduce(Goal, success(Body?)) :- reduce(Goal?, Body) | true.
-try_reduce(Goal, failure) :- otherwise | true.
-
-handle_result(success(Body), Goal, Ctx, Diag?) :-
-    run_checked(Body?, [Goal?|Ctx?], Diag).
-handle_result(failure, Goal, Ctx, failed(Goal?, Ctx?)).
-\end{verbatim}
-
-The diagnosis reports which goal failed and the calling context, helping locate the source of the failure.
-
-%% ============================================
 %% Exercises
 %% ============================================
 
 \section{Exercises}
 \label{sec:meta-exercises}
 
-\subsection{Plain Meta-Interpreter}
+\subsection{Trust Mode}
 
 \begin{enumerate}
-\item \textbf{Step Counter.} Modify the plain meta-interpreter to count the number of reduction steps taken.
+\item \textbf{Step Counter.} Extend the trust mode meta-interpreter to count the number of reduction steps. The signature is \verb|run(M, Goal, Count)|.
 
-\item \textbf{Depth Limiter.} Add a depth limit to prevent infinite recursion.
-
-\item \textbf{Choice Point Collector.} Modify the fail-safe meta-interpreter to collect choice points---goals where multiple \verb|reduce| clauses match.
+\item \textbf{Depth Limiter.} Add a depth limit to prevent infinite recursion. When the limit is reached, fail gracefully.
 
 \item \textbf{Call Graph.} Write a meta-interpreter that builds a call graph showing which predicates call which others.
-
-\item \textbf{Time-Bounded Execution.} Combine termination detection with a timeout mechanism.
 \end{enumerate}
 
-\subsection{Enhanced Meta-Interpreters}
+\subsection{Failsafe Mode}
 
 \begin{enumerate}
-\item \textbf{Replay.} Given a trace from the tracing meta-interpreter, write a replaying meta-interpreter that executes the same computation deterministically.
+\item \textbf{Failure Context.} Extend the failsafe meta-interpreter to record not just the failed goal, but also its calling context (the goal that spawned it).
 
-\item \textbf{Breakpoints.} Add breakpoint support to the debugger: suspend when a specific predicate is called.
-
-\item \textbf{Watch Variables.} Extend the debugger to notify when a specific variable is bound.
-
-\item \textbf{Undo.} Design a mechanism to ``undo'' reductions. What challenges arise with concurrent execution?
-
-\item \textbf{Coverage Analysis.} Write a meta-interpreter that tracks which \verb|reduce| clauses are used.
+\item \textbf{Timeout.} Combine failsafe mode with a timeout: if execution exceeds a time limit, report all currently active goals as ``timed out.''
 \end{enumerate}
 
-\subsection{Debugging}
+\subsection{Control Mode}
 
 \begin{enumerate}
-\item \textbf{Termination Detection.} Using the short-circuit technique from Section~\ref{sec:termination-detection}, write a meta-interpreter that signals when all concurrent processes have terminated. The circuit should close only when every branch reaches \verb|true|.
+\item \textbf{Step Command.} Add a \verb|step| command that advances exactly one reduction, then suspends.
 
-\item \textbf{Snapshot Collection.} Extend the snapshot meta-interpreter to collect the full resolvent (all pending goals) when execution is aborted. The result should be a list of goals that were in progress at the time of abort.
+\item \textbf{Breakpoints.} Add breakpoint support: \verb|break(Pred/Arity)| causes suspension when a goal matching that predicate is about to reduce.
 
-\item \textbf{Timestamped Execution Tree.} Write a meta-interpreter that builds a timestamped execution tree. Each node should record: the goal, the clause used, the timestamp, and its children. This enables visualization of concurrent execution.
+\item \textbf{Watch Variables.} Extend the controller to notify when a specific variable becomes bound.
+\end{enumerate}
+
+\subsection{Equators}
+
+\begin{enumerate}
+\item \textbf{Resource Monitor.} Write a meta-interpreter where each process has a resource budget. When any process exhausts its budget, it pulls the emergency brake.
+
+\item \textbf{First Solution.} In a search problem, the first process to find a solution pulls the brake. The controller collects the solution and aborts remaining search branches.
+\end{enumerate}
+
+\subsection{Tracing}
+
+\begin{enumerate}
+\item \textbf{Selective Tracing.} Extend the tracing meta-interpreter to only record reductions for specified predicates, ignoring others.
+
+\item \textbf{Trace Diff.} Given two traces of the same program with different inputs, write a predicate that finds where they diverge.
+
+\item \textbf{Abstract Interpretation.} Write a meta-interpreter that executes programs over an abstract domain. For example, use the sign domain \verb|{neg, zero, pos, unknown}| and define abstract arithmetic:
+\begin{verbatim}
+abstract_add(pos, pos, pos).
+abstract_add(pos, neg, unknown).
+abstract_add(zero, X, X?).
+\end{verbatim}
+This enables static analysis: determine properties of programs without running them on concrete inputs.
 \end{enumerate}
