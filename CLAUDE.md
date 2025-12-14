@@ -99,6 +99,7 @@ When a conversation is compacted and continued:
 ### After Completing Changes
 When you commit and push changes to a `claude/...` branch, provide the user with merge instructions:
 ```bash
+cd ~/Art-of-GLP-2025
 git fetch origin claude/<branch-name>
 git merge -m "Merge claude branch" origin/claude/<branch-name>
 git push origin main
