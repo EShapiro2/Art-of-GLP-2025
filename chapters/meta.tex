@@ -99,6 +99,8 @@ The short-circuit threads a pair of variables \verb|L--R| (left endpoint, right 
 
 When all processes terminate, the circuit closes and the accumulated reports flow to the result.
 
+\paragraph{Termination detection.} The short-circuit provides termination detection as a side effect. When called with \verb|run(M, Goal, done, Result)|, the circuit closes only when all processes reach \verb|true|. At that point, \verb|Result?| unifies with \verb|done| (or the accumulated failure list ending in \verb|done|). A controller can detect termination by testing \verb|known(Result?)|---it succeeds precisely when all processes have terminated.
+
 \subsection{The Fail-safe Meta-Interpreter}
 \label{sec:failsafe-impl}
 
