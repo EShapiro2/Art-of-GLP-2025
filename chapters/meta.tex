@@ -5,15 +5,20 @@
 
 This chapter presents metaprogramming in \GLP: programs that manipulate, interpret, and transform other programs. In logic programming, programs are data: clauses are terms, goals are terms. This fundamental property enables powerful metaprogramming techniques.
 
-\mypara{Module Awareness}
-Meta-interpreters need to know which module's clauses to interpret. Each meta-interpreter takes a module parameter \verb|M| and accesses clauses via \verb|M # reduce(Goal, Body)|. Cross-module calls \verb|M1 # G| are handled by switching to module \verb|M1| for the goal \verb|G|.
+We present meta-interpreters in a progression, each adding capabilities:
+\begin{enumerate}
+\item \textbf{Trust mode}: Basic execution, assumes programs are correct.
+\item \textbf{Fail-safe mode}: Reports failures via short-circuit rather than aborting.
+\item \textbf{Control mode}: Adds control stream for suspend/resume/abort, with state dump.
+\item \textbf{Equator extension}: Adds emergency brake for process-to-controller signaling.
+\end{enumerate}
 
 %% ============================================
-%% Section 1: Plain Meta-Interpreter
+%% Section 1: Trust Mode Meta-Interpreter
 %% ============================================
 
-\section{Plain Meta-Interpreter}
-\label{sec:plain-meta}
+\section{Trust Mode Meta-Interpreter}
+\label{sec:trust-meta}
 
 \subsection{Programs as Data}
 \label{sec:programs-as-data}
@@ -30,232 +35,164 @@ reduce(merge([X|Xs], Ys, [X?|Zs?]), merge(Xs?, Ys?, Zs)).
 
 This representation allows programs to examine, modify, and execute other programs.
 
-\subsection{The Vanilla Meta-Interpreter}
-\label{sec:vanilla-meta}
+\subsection{Program Encoding}
+\label{sec:program-encoding}
 
-The simplest meta-interpreter for logic programming:
+The object program is encoded as \verb|reduce/2| facts within a module:
 
 \begin{verbatim}
-solve(true).
-solve((A, B)) :- solve(A), solve(B).
-solve(A) :- clause(A, B), solve(B).
+%% merge.glp - merge encoded for meta-interpreter
+reduce(merge([X|Xs], Ys, [X?|Zs?]), merge(Xs?, Ys?, Zs)).
+reduce(merge(Xs, [Y|Ys], [Y?|Zs?]), merge(Xs?, Ys?, Zs)).
+reduce(merge([], [], []), true).
 \end{verbatim}
 
-\subsection{The GLP Plain Meta-Interpreter}
-\label{sec:glp-plain-meta}
+The meta-interpreter accesses these clauses via remote procedure call: \verb|M # reduce(Goal, Body)|.
 
-The \GLP version uses \verb|reduce/2| encoding and adds concurrency:
+\subsection{The Plain Meta-Interpreter}
+\label{sec:plain-meta}
+
+The simplest \GLP meta-interpreter:
 
 \begin{verbatim}
 run(M, true).                                    % halt
 run(M, (A,B)) :- run(M?, A?), run(M?, B?).       % fork
-run(M, M1 # G) :- run(M1?, G?).                  % cross-module RPC
+run(M, M1 # G) :- run(M1?, G?).                  % cross-module
 run(M, A) :- tuple(A?) | M # reduce(A?, B), run(M?, B?).  % reduce
 \end{verbatim}
 
-The \verb|tuple(A?)| guard (Appendix~\ref{appendix:guard-unification}) tests whether \verb|A?| is bound to a compound term---that is, whether we can determine which predicate is being called. Unlike \verb|ground|, which requires all subterms to be bound, \verb|tuple| succeeds as soon as the outer structure is determined. For example, \verb|tuple(merge([X|Xs], Ys, Zs))| succeeds even if \verb|X|, \verb|Xs|, \verb|Ys|, and \verb|Zs| are unbound, because the functor \verb|merge/3| is known. The guard suspends if \verb|A?| is unbound, since clause selection cannot proceed until we know which predicate to reduce. As a type guard, \verb|tuple| also permits multiple occurrences of \verb|A?| in the body (per Formal Box~\ref{formal:guards-multiple-reads}).
+The first argument \verb|M| is the module containing the \verb|reduce/2| encoding of the object program.
 
-\paragraph{The Fork Rule.} When running a conjunction \verb|(A,B)|, we spawn two concurrent processes: \verb|run(A?)| and \verb|run(B?)|.
+\paragraph{Halt.} When the goal is \verb|true|, execution terminates successfully.
 
-\paragraph{Program Encoding.} The object program is encoded as \verb|reduce/2| facts:
+\paragraph{Fork.} When running a conjunction \verb|(A,B)|, we spawn two concurrent processes.
 
+\paragraph{Cross-module.} When the goal is a remote call \verb|M1 # G|, we switch to module \verb|M1|.
+
+\paragraph{Reduce.} The \verb|tuple(A?)| guard tests whether \verb|A?| is bound to a compound term. Unlike \verb|ground|, which requires all subterms to be bound, \verb|tuple| succeeds as soon as the outer structure is known. The guard suspends if \verb|A?| is unbound, since clause selection cannot proceed until we know which predicate to reduce.
+
+\paragraph{Usage.}
 \begin{verbatim}
-%% merge encoded for meta-interpreter
-reduce(merge([X|Xs],Ys,[X?|Zs?]), merge(Xs?,Ys?,Zs)).
-reduce(merge(Xs,[Y|Ys],[Y?|Zs?]), merge(Xs?,Ys?,Zs)).
-reduce(merge([],[],[]), true).
+?- run(merge, merge([1,2], [3,4], Zs)).
+Zs = [1, 3, 2, 4]  % or other fair interleaving
 \end{verbatim}
 
-\subsection{Fail-Safe Meta-Interpreter}
+%% ============================================
+%% Section 2: Fail-safe Meta-Interpreter
+%% ============================================
+
+\section{Fail-safe Meta-Interpreter}
 \label{sec:failsafe-meta}
 
-The plain meta-interpreter aborts on failure. The \emph{fail-safe} meta-interpreter reports failures instead:
+The plain meta-interpreter aborts when a goal has no matching clause. The \emph{fail-safe} meta-interpreter reports failures instead, using the short-circuit technique.
 
-\begin{verbatim}
-run(M, true, []).                                % halt
-run(M, (A,B), Zs?) :-                            % fork
-    run(M?, A?, Xs), run(M?, B?, Ys),
-    merge(Xs?, Ys?, Zs).
-run(M, M1 # G, Xs?) :- run(M1?, G?, Xs).         % cross-module RPC
-run(M, fail(A), [fail(A?)]).                     % report failure
-run(M, A, Xs?) :- tuple(A?) |                    % reduce
-    M # reduce(A?, B), run(M?, B?, Xs).
-\end{verbatim}
+\subsection{Short-Circuit Technique}
+\label{sec:short-circuit}
 
-The program encoding must include a catch-all clause:
-\begin{verbatim}
-reduce(A, failed(A)) :- otherwise | true.
-\end{verbatim}
-
-\subsection{Certainty Factors}
-
-A metainterpreter that computes certainty factors for derived results. Each clause in the object program has an associated certainty; the result certainty is computed by combining clause certainties.
-
-\begin{verbatim}
-reduce(Program, true, 1).
-reduce(Program, (A, B), C) :-
-    reduce(Program?, A?, C_of_a),
-    reduce(Program?, B?, C_of_b),
-    min(C_of_a?, C_of_b?, C).
-reduce(Program, Goal, C) :-
-    clause(Goal?, Program?, Body, Cr),
-    reduce(Program?, Body?, C_of_body),
-    C := Cr? * C_of_body?.
-
-min(X, Y, X) :- X =< Y | true.
-min(X, Y, Y) :- Y < X | true.
-\end{verbatim}
-
-The three clauses implement distinct certainty combination rules:
+The short-circuit threads a pair of variables \verb|L--R| (left endpoint, right endpoint) through the computation. Each process receives a segment of the chain:
 
 \begin{itemize}
-\item \textbf{Halt}: The base case \verb|true| has certainty 1 (complete confidence).
-\item \textbf{Fork}: For conjunctions, certainty is the minimum of the two branch certainties. The concurrent execution of both branches yields the more uncertain result.
-\item \textbf{Reduce}: When reducing a goal using a clause, the result certainty is the product of the clause's intrinsic certainty \verb|Cr| and the body's computed certainty.
+\item \textbf{Halt}: Close the circuit by unifying \verb|L| with \verb|R|.
+\item \textbf{Fork}: Split the chain---first branch gets \verb|L--M|, second gets \verb|M--R|.
+\item \textbf{Report}: Prepend to the chain: \verb|L| becomes \verb|[Item|L?]|.
 \end{itemize}
 
-The \verb|clause/4| predicate extends the standard \verb|clause/3| with a fourth argument returning the clause's certainty factor. This enables expert system applications where rules have associated confidence levels.
+When all processes terminate, the circuit closes and the accumulated reports flow to the result.
 
-\subsection{Termination Detection}
-\label{sec:termination-detection}
-
-The \emph{short-circuit} technique detects when all processes have terminated:
+\subsection{The Fail-safe Meta-Interpreter}
+\label{sec:failsafe-impl}
 
 \begin{verbatim}
-reduce(P, true, Chain--Chain?).              % halt - close circuit
-reduce(P, (A, B), Left--Right) :-            % fork - split chain
-    reduce(P?, A?, Left?--Middle),
-    reduce(P?, B?, Middle?--Right).
-reduce(P, Goal, Left--Right) :-              % reduce - pass chain
-    Goal =\= true, Goal =\= (_, _),
-    clause(Goal?, P?, Body) |
-    reduce(P?, Body?, Left?--Right).
+run(M, true, L, L?).                             % halt - close circuit
+run(M, (A,B), L, R?) :-                          % fork - split chain
+    run(M?, A?, L?, Mid),
+    run(M?, B?, Mid?, R).
+run(M, M1 # G, L, R?) :- run(M1?, G?, L?, R).    % cross-module
+run(M, failed(A), L, [failed(A?)|L?]).           % report failure
+run(M, A, L, R?) :-                              % reduce
+    tuple(A?) |
+    M # reduce(A?, B),
+    run(M?, B?, L?, R).
 \end{verbatim}
 
-Each \verb|true| (termination) closes part of the circuit. When all parallel paths terminate, the circuit closes completely.
-
-\subsection{Program Transformation}
-\label{sec:program-transformation}
-
-\paragraph{Adding Instrumentation.}
+\paragraph{Program encoding.} The object program must include a catch-all clause:
 \begin{verbatim}
-run_counted(M, true, 0).
-run_counted(M, (A,B), N?) :-
-    run_counted(M?, A?, NA), run_counted(M?, B?, NB),
-    N := NA? + NB?.
-run_counted(M, M1 # G, N?) :- run_counted(M1?, G?, N).
-run_counted(M, A, N?) :- tuple(A?) |
-    M # reduce(A?, B), run_counted(M?, B?, NB), N := NB? + 1.
+reduce(A, failed(A?)) :- otherwise | true.
 \end{verbatim}
 
-\paragraph{Partial Evaluation.} A meta-interpreter can partially evaluate a program:
+When no clause matches goal \verb|A|, the \verb|otherwise| guard succeeds and \verb|A| is wrapped as \verb|failed(A)|. The meta-interpreter then reports it via the short-circuit.
+
+\paragraph{Usage.}
 \begin{verbatim}
-pe(true, true).
-pe((A,B), (PA?, PB?)) :- pe(A?, PA), pe(B?, PB).
-pe(A, PA?) :- tuple(A?), reduce(A?,B) | pe(B?, PA).
-pe(A, A?) :- otherwise | true.  % leave unresolved
-\end{verbatim}
+?- run(merge, merge([1,2], [3], Zs), done, Failures).
+Zs = [1, 3, 2]
+Failures = done  % no failures
 
-The \verb|otherwise| guard succeeds when no other clause matches---here, when \verb|A?| is not a compound term (either unbound or atomic). This allows the partial evaluator to preserve goals that cannot yet be reduced, leaving them for later instantiation.
+?- run(buggy, some_goal(X), done, Failures).
+Failures = [failed(undefined_pred(...))|done]
+\end{verbatim}
 
 %% ============================================
-%% Section 2: Enhanced Meta-Interpreters
+%% Section 3: Control Meta-Interpreter
 %% ============================================
 
-\section{Enhanced Meta-Interpreters}
-\label{sec:enhanced-meta}
-
-\subsection{Tracing Meta-Interpreter}
-\label{sec:tracing-meta}
-
-A \emph{tracing} meta-interpreter records the execution history:
-
-\begin{verbatim}
-run(M, true, true).                                    % halt
-run(M, (A,B), (TA?,TB?)) :- run(M?,A?,TA), run(M?,B?,TB).  % fork
-run(M, M1 # G, T?) :- run(M1?, G?, T).                 % cross-module RPC
-run(M, A, ((I?:Time?):-TB?)) :- tuple(A?) |
-    time(Time), M # reduce(A?, B, I), run(M?, B?, TB).
-\end{verbatim}
-
-The trace records which clause was used at each step with timestamps, enabling performance profiling and debugging race conditions.
-
-\subsection{Control Meta-Interpreter}
+\section{Control Meta-Interpreter}
 \label{sec:control-meta}
 
-The \emph{control} meta-interpreter supports runtime control: suspend, resume, and abort:
+The \emph{control} meta-interpreter adds a control stream for runtime control: suspend, resume, and abort. It also uses short-circuit to collect a state dump on abort.
+
+\subsection{Control Stream}
+\label{sec:control-stream}
+
+The controller sends commands via a ground stream:
+\begin{itemize}
+\item \verb|suspend|: Pause all processes.
+\item \verb|resume|: Continue paused processes.
+\item \verb|abort|: Terminate and collect state dump.
+\end{itemize}
+
+Because the control stream is ground, the \verb|ground(Cs?)| guard allows it to be shared among all forked processes.
+
+\subsection{The Control Meta-Interpreter}
+\label{sec:control-impl}
 
 \begin{verbatim}
-run(true, _).                                       % halt
-run((A,B), Cs) :-                                   % fork
-    distribute(Cs?,Cs1,Cs2),
-    run(A?,Cs1?), run(B?,Cs2?).
-run(A, [suspend|Cs]) :- suspended_run(A,Cs?).       % suspend
-run(A, Cs) :- tuple(A?) |                            % reduce
-    distribute(Cs?,Cs1,Cs2),
-    reduce(A?,B,Cs1?), run(B?,Cs2?).
+run(M, true, _, L, L?).                          % halt
+run(M, (A,B), Cs, L, R?) :-                      % fork
+    ground(Cs?) |
+    run(M?, A?, Cs?, L?, Mid),
+    run(M?, B?, Cs?, Mid?, R).
+run(M, M1 # G, Cs, L, R?) :-                     % cross-module
+    run(M1?, G?, Cs?, L?, R).
+run(M, A, [suspend|Cs], L, R?) :-                % suspend
+    suspended_run(M?, A?, Cs?, L?, R).
+run(M, A, Cs, L, R?) :-                          % reduce
+    tuple(A?) |
+    M # reduce(A?, B),
+    run(M?, B?, Cs?, L?, R).
 
-suspended_run(A, [resume|Cs]) :- run(A,Cs?).        % resume
-suspended_run(A, [abort|_]).                        % abort
+suspended_run(M, A, [resume|Cs], L, R?) :-       % resume
+    run(M?, A?, Cs?, L?, R).
+suspended_run(_, A, [abort|_], L, [A?|L?]).      % abort + dump
 \end{verbatim}
 
-The control stream \verb|Cs| carries commands: \verb|suspend|, \verb|resume|, \verb|abort|.
+\paragraph{Suspend.} When the control stream head is \verb|suspend|, the process transitions to \verb|suspended_run|, waiting for further commands.
 
-\subsection{Snapshot Collection}
-\label{sec:snapshot-meta}
+\paragraph{Resume.} The \verb|resume| command returns to normal execution.
 
-The \emph{snapshot} meta-interpreter collects the current resolvent when aborted:
+\paragraph{Abort.} The \verb|abort| command terminates the process and adds its current goal to the dump via short-circuit.
 
+\paragraph{Usage.}
 \begin{verbatim}
-suspended_run(A, [resume|Cs], L, R?) :- run(A,Cs?,L?,R).
-suspended_run(A, [abort|_], L, [A?|L?]).
+%% Controller sends commands, receives dump
+controller(Commands, Dump?) :-
+    Commands = [suspend, resume, suspend, abort|_],
+    % Dump? will contain goals that were active at abort
+    ...
 \end{verbatim}
-
-When aborted, each \verb|suspended_run| adds its goal \verb|A| to the resolvent list. This enables checkpointing: save the state of a computation for later inspection.
-
-\subsection{Debugger Meta-Interpreter}
-\label{sec:debugger-meta}
-
-Combining tracing and control yields an interactive debugger:
-
-\begin{verbatim}
-debug(true, _, _, true).
-debug((A,B), Cs, Budget, (TA?,TB?)) :-
-    distribute(Cs?, Cs1, Cs2),
-    split_budget(Budget?, B1, B2),
-    debug(A?, Cs1?, B1?, TA),
-    debug(B?, Cs2?, B2?, TB).
-debug(A, [step|Cs], Budget, ((I?:A?):-TB?)) :-
-    Budget? > 0, tuple(A?) |
-    B1 := Budget? - 1,
-    reduce(A?,B,I),
-    debug(B?, Cs?, B1?, TB).
-\end{verbatim}
-
-The \verb|[step|Cs]| command advances one reduction. The budget limits total reductions.
-
-\subsection{Abstract Interpretation}
-\label{sec:abstract-interpretation}
-
-Meta-interpreters can perform abstract interpretation---executing programs over abstract domains:
-
-\begin{verbatim}
-%% Abstract domain: pos, neg, zero, unknown
-abstract_add(pos, pos, pos).
-abstract_add(pos, neg, unknown).
-abstract_add(zero, X, X?).
-%% ... etc
-
-abstract_run(true, _).
-abstract_run((A,B), Env) :-
-    abstract_run(A?, Env?),
-    abstract_run(B?, Env?).
-\end{verbatim}
-
-This enables static analysis: determine properties of programs without running them on concrete inputs.
 
 %% ============================================
-%% Section: Equators
+%% Section 4: Equators: Emergency Brake
 %% ============================================
 
 \section{Equators: Emergency Brake}
@@ -292,45 +229,78 @@ The \verb|equator(X?)| guard succeeds when \verb|X| has the form \verb|'_equator
 
 The kernel \verb|'_equator'(X)| triggers the brake: if \verb|X = '_equator'(E, C)| and \verb|E| is a writer, it binds \verb|E = C|. Otherwise it is a no-op.
 
-\subsection{Usage}
-
-A controller creates an equator, keeps the handle (sole reader), and passes the structure to the meta-interpreter:
-
-\begin{verbatim}
-main :-
-    create_equator(stop, Eq, Handle),
-    controller(Handle?, Commands),
-    run(m, goal, Eq?, Commands?).
-\end{verbatim}
-
-The meta-interpreter distributes the equator when forking:
-
-\begin{verbatim}
-run(M, (A,B), Commands, Eq) :-
-    equator(Eq?) |
-    distribute(Commands?, Commands1, Commands2),
-    run(M?, A?, Commands1?, Eq?),
-    run(M?, B?, Commands2?, Eq?).
-\end{verbatim}
-
-Any process can pull the brake:
-\begin{verbatim}
-run(M, A, [abort|_], Eq) :- '_equator'(Eq?).
-\end{verbatim}
-
-The controller detects the signal via the sole reader:
-\begin{verbatim}
-controller(Handle, Commands) :-
-    known(Handle?) |
-    issue_stop(Commands?).
-\end{verbatim}
-
 \subsection{Many-to-One Communication}
 
 The equator enables many-to-one communication: any of the many processes holding the equator structure can bind the writer, signaling the single controller that holds the reader. The controller then decides what action to take---perhaps issuing stop commands through the distributed command stream, or collecting state snapshots before shutdown.
 
 %% ============================================
-%% Section 3: Debugging
+%% Section 5: Control with Equator
+%% ============================================
+
+\section{Control with Equator}
+\label{sec:control-equator}
+
+Combining control streams with equators yields a meta-interpreter where:
+\begin{itemize}
+\item The controller sends commands to processes (control stream).
+\item Any process can signal the controller (equator).
+\end{itemize}
+
+\subsection{The Control+Equator Meta-Interpreter}
+\label{sec:control-equator-impl}
+
+\begin{verbatim}
+run(M, true, _, _, L, L?).                       % halt
+run(M, (A,B), Cs, Eq, L, R?) :-                  % fork
+    equator(Eq?) |
+    run(M?, A?, Cs?, Eq?, L?, Mid),
+    run(M?, B?, Cs?, Eq?, Mid?, R).
+run(M, M1 # G, Cs, Eq, L, R?) :-                 % cross-module
+    run(M1?, G?, Cs?, Eq?, L?, R).
+run(M, A, [suspend|Cs], Eq, L, R?) :-            % suspend
+    suspended_run(M?, A?, Cs?, Eq?, L?, R).
+run(M, A, Cs, Eq, L, R?) :-                      % reduce
+    tuple(A?) |
+    M # reduce(A?, B),
+    run(M?, B?, Cs?, Eq?, L?, R).
+
+suspended_run(M, A, [resume|Cs], Eq, L, R?) :-   % resume
+    run(M?, A?, Cs?, Eq?, L?, R).
+suspended_run(_, A, [abort|_], _, L, [A?|L?]).   % abort + dump
+suspended_run(_, _, [brake|_], Eq, L, L?) :-     % pull brake
+    '_equator'(Eq?).
+\end{verbatim}
+
+\paragraph{The brake command.} When a process receives \verb|[brake|_]| on its control stream, it calls \verb|'_equator'(Eq?)| to trigger the equator. This binds the internal writer, which the controller detects.
+
+\paragraph{Controller setup.}
+\begin{verbatim}
+main :-
+    create_equator(stop, Eq, Handle),
+    controller(Handle?, Commands),
+    run(mymodule, goal, Commands?, Eq?, done, Dump).
+
+controller(Handle, Commands) :-
+    known(Handle?) |                             % brake was pulled
+    Commands = [abort|_].                        % respond by aborting
+controller(Handle, Commands) :-
+    unknown(Handle?) |
+    % ... normal command generation ...
+\end{verbatim}
+
+When any process pulls the brake, \verb|Handle?| becomes bound to \verb|stop|. The controller detects this via \verb|known(Handle?)| and can respond appropriately---here, by issuing an abort command.
+
+\subsection{Use Cases}
+
+\begin{itemize}
+\item \textbf{Error detection}: A process encounters an unrecoverable error and pulls the brake.
+\item \textbf{Resource exhaustion}: A process detects memory or time limits exceeded.
+\item \textbf{Goal achieved}: In search problems, a process finds a solution and signals others to stop.
+\item \textbf{Watchdog}: A monitoring process pulls the brake on timeout.
+\end{itemize}
+
+%% ============================================
+%% Section 6: Debugging
 %% ============================================
 
 \section{Debugging}
