@@ -255,6 +255,81 @@ abstract_run((A,B), Env) :-
 This enables static analysis: determine properties of programs without running them on concrete inputs.
 
 %% ============================================
+%% Section: Equators
+%% ============================================
+
+\section{Equators: Emergency Brake}
+\label{sec:equators}
+
+A meta-interpreter spawns many processes. How can any process signal that computation should stop? The \emph{equator} provides this capability---like an emergency brake on a train, where any passenger can signal the driver, but only the driver decides what to do next.
+
+\subsection{The Problem}
+
+The SRSW requirement ensures each writer has exactly one occurrence. But for emergency signaling, we need many processes to share access to a single trigger. The equator solves this by wrapping a writer in a structure that can be safely distributed.
+
+\subsection{Structure}
+
+An equator is a term \verb|'_equator'(E, C)| where \verb|E| is a writer and \verb|C| is a constant. The structure can be created explicitly or via a unit clause:
+
+\begin{verbatim}
+create_equator(C, '_equator'(E, C?), E?).
+\end{verbatim}
+
+For the call \verb|create_equator(stop, Eq, Handle)|:
+\begin{itemize}
+\item \verb|Eq| binds to \verb|'_equator'(E, stop)| with fresh writer \verb|E|
+\item \verb|Handle| binds to \verb|E?|---the sole reader, kept by the controller
+\end{itemize}
+
+Alternatively, construct explicitly in the body:
+\begin{verbatim}
+... :- controller(E?, Commands), run(m, goal, '_equator'(E, stop), Commands?).
+\end{verbatim}
+
+\subsection{Guard and Kernel}
+
+The \verb|equator(X?)| guard succeeds when \verb|X| has the form \verb|'_equator'(_, C)| where \verb|C| is a constant. Like \verb|ground|, this guard relaxes SRSW: \verb|X?| may occur multiple times in the clause body.
+
+The kernel \verb|'_equator'(X)| triggers the brake: if \verb|X = '_equator'(E, C)| and \verb|E| is a writer, it binds \verb|E = C|. Otherwise it is a no-op.
+
+\subsection{Usage}
+
+A controller creates an equator, keeps the handle (sole reader), and passes the structure to the meta-interpreter:
+
+\begin{verbatim}
+main :-
+    create_equator(stop, Eq, Handle),
+    controller(Handle?, Commands),
+    run(m, goal, Eq?, Commands?).
+\end{verbatim}
+
+The meta-interpreter distributes the equator when forking:
+
+\begin{verbatim}
+run(M, (A,B), Commands, Eq) :-
+    equator(Eq?) |
+    distribute(Commands?, Commands1, Commands2),
+    run(M?, A?, Commands1?, Eq?),
+    run(M?, B?, Commands2?, Eq?).
+\end{verbatim}
+
+Any process can pull the brake:
+\begin{verbatim}
+run(M, A, [abort|_], Eq) :- '_equator'(Eq?).
+\end{verbatim}
+
+The controller detects the signal via the sole reader:
+\begin{verbatim}
+controller(Handle, Commands) :-
+    known(Handle?) |
+    issue_stop(Commands?).
+\end{verbatim}
+
+\subsection{Many-to-One Communication}
+
+The equator enables many-to-one communication: any of the many processes holding the equator structure can bind the writer, signaling the single controller that holds the reader. The controller then decides what action to take---perhaps issuing stop commands through the distributed command stream, or collecting state snapshots before shutdown.
+
+%% ============================================
 %% Section 3: Debugging
 %% ============================================
 
