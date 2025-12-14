@@ -268,10 +268,10 @@ suspended_run(M, A, [resume|Cs], Eq, L, R?) :-   % resume
     run(M?, A?, Cs?, Eq?, L?, R).
 suspended_run(_, A, [abort|_], _, L, [A?|L?]).   % abort + dump
 suspended_run(_, _, [brake|_], Eq, L, L?) :-     % pull brake
-    '_equator'(Eq?).
+    equate(Eq?).
 \end{verbatim}
 
-\paragraph{The brake command.} When a process receives \verb|[brake|_]| on its control stream, it calls \verb|'_equator'(Eq?)| to trigger the equator. This binds the internal writer, which the controller detects.
+\paragraph{The brake command.} When a process receives \verb|[brake|_]| on its control stream, it calls \verb|equate(Eq?)| to trigger the equator. This binds the internal writer, which the controller detects.
 
 \paragraph{Controller setup.}
 \begin{verbatim}
