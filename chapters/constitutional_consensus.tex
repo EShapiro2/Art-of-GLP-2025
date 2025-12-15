@@ -3,4 +3,551 @@
 \chapter{Constitutional Consensus}
 \label{ch:constitutional-consensus}
 
-[TO BE DEVELOPED]
+This chapter presents Constitutional Consensus and its implementation in \GLP. We show how interlaced streams (Chapter~\ref{ch:interlaced-streams}) provide the blocklace structure for consensus, enabling communities to reach agreement on transaction ordering while maintaining complete self-governance.
+
+\section{Introduction}
+\label{sec:consensus-intro}
+
+Some grassroots applications require no consensus. Grassroots social networks (Chapter~\ref{ch:social-networking}) and grassroots cryptocurrencies (Chapter~\ref{ch:cryptocurrencies}) operate without global agreement on transaction ordering---their safety depends only on agents following the protocol, which can be ensured through attestation mechanisms.
+
+However, applications requiring collective agreement---community banks with multiple signatories, democratic governance with voting, digital cooperatives---need consensus to ensure all participants agree on the order of transactions and decisions.
+
+\subsection{Digital Social Contracts}
+
+Constitutional Consensus enables \emph{digital social contracts}~\cite{cardelli2020digital}---deterministic state machines encoding agreements among people who know each other. Unlike smart contracts that operate among anonymous accounts and run on third-party servers, social contracts are among identified people and run on the participants' own devices.
+
+\begin{center}
+\begin{tabular}{lll}
+& \textbf{Smart Contract} & \textbf{Digital Social Contract} \\
+\hline
+Among & Accounts & People \\
+Executed by & Third-party servers & Participants' smartphones \\
+Governance & Token-weighted (plutocracy) & One person, one vote (democracy) \\
+Amendments & External tokens/DAOs & Participants via supermajority \\
+\end{tabular}
+\end{center}
+
+\subsection{Technical Requirements}
+
+Communities implementing digital social contracts face unique technical challenges:
+
+\begin{description}
+\item[Quiescent operation] No activity when idle. Small communities may have transaction rates much lower than network latency.
+\item[Dual-mode efficiency] Seamless transition between low-throughput (isolated transactions) and high-throughput (many concurrent transactions) modes.
+\item[Responsiveness] Network-speed operation, achieving finality in $3\delta$ where $\delta$ is the message delay.
+\item[Self-governance] Participants control membership and protocol parameters through the consensus protocol itself.
+\end{description}
+
+\subsection{Attestation and Simplification}
+
+Throughout this chapter, we assume agents are \emph{attested}---running verified code, possibly within Trusted Execution Environments (TEEs), or mutually attesting correct behaviour. This assumption eliminates Byzantine faults, allowing significant simplification.
+
+With no Byzantine agents:
+\begin{itemize}
+\item Simple majority ($> n/2$) suffices instead of supermajority ($> 2n/3$)
+\item Equivocation is impossible---the single-writer property of \GLP streams prevents any agent from creating conflicting blocks
+\item Reliable dissemination can be assumed---no need for complex protocol mechanisms to handle partial Byzantine dissemination
+\end{itemize}
+
+What remains unchanged is the fundamental structure needed for consensus in asynchronous networks. The three-round wave structure addresses agreement despite message delays---a problem that exists even among perfectly correct agents.
+
+\section{The Consensus Problem}
+\label{sec:consensus-problem}
+
+\subsection{Agreement in Asynchronous Networks}
+
+The consensus problem requires a set of agents to agree on a sequence of values (transactions), satisfying:
+
+\begin{description}
+\item[Safety] No two correct agents finalize different transactions at the same sequence position.
+\item[Liveness] Every transaction submitted by a correct agent is eventually finalized.
+\item[Totality] All correct agents eventually output the same sequence.
+\end{description}
+
+The FLP impossibility result~\cite{fischer1985impossibility} proves that deterministic consensus is impossible in purely asynchronous systems, even with just one crash failure. Any consensus protocol must therefore make timing assumptions.
+
+\subsection{Eventual Synchrony}
+
+Constitutional Consensus assumes \emph{eventual synchrony}: message latency is unbounded, but after some unknown \emph{Global Stabilization Time (GST)}, all messages arrive within a bound $\delta$.
+
+This model captures real networks: they may experience arbitrary delays (network partitions, congestion), but eventually stabilize. The protocol guarantees safety always (even before GST) and liveness after GST.
+
+\subsection{Constitution}
+
+A \emph{constitution} defines the protocol's parameters:
+
+\begin{definition}[Constitution]
+A constitution is a triple $(P, \sigma, \Delta)$ where:
+\begin{itemize}
+\item $P \subset \Pi$ is the set of \emph{participants}
+\item $\sigma$ is the supermajority threshold (fraction required for decisions)
+\item $\Delta$ is the presumed message delay bound after GST
+\end{itemize}
+\end{definition}
+
+With attestation (no Byzantine agents), we set $\sigma = \frac{1}{2}$, requiring simple majority. A \emph{majority} among participants is any subset $Q \subseteq P$ with $|Q| > |P|/2$.
+
+\subsection{Why Majority Suffices}
+
+With Byzantine agents, the protocol requires $\sigma > \frac{2}{3}$ to ensure that:
+\begin{enumerate}
+\item Any two supermajorities overlap in at least one correct agent
+\item A supermajority contains a majority of correct agents
+\end{enumerate}
+
+With no Byzantine agents, simple majority ($\sigma = \frac{1}{2}$) suffices: any two majorities overlap in at least one agent (by pigeonhole), and that agent is necessarily correct.
+
+\section{The Blocklace for Consensus}
+\label{sec:consensus-blocklace}
+
+Constitutional Consensus uses the blocklace structure introduced in Chapter~\ref{ch:cryptocurrencies}, but for a different purpose: ordering transactions rather than tracking payments.
+
+\subsection{Mapping to Interlaced Streams}
+
+Each participant maintains a personal blockchain---their stream of blocks. Cross-references between blocks create a DAG (the blocklace). In \GLP:
+
+\begin{center}
+\begin{tabular}{ll}
+\textbf{Consensus Concept} & \textbf{GLP Implementation} \\
+\hline
+Personal blockchain & Agent's stream \\
+Block & Stream element \\
+Cross-reference & Block field pointing to other blocks \\
+Blocklace & Interlaced streams \\
+\end{tabular}
+\end{center}
+
+\subsection{Block Structure}
+
+A consensus block contains:
+
+\begin{verbatim}
+block(Round, Payload, Pointers)
+\end{verbatim}
+
+Where:
+\begin{itemize}
+\item \verb|Round| is the block's round number (determines its role in the wave)
+\item \verb|Payload| is the transaction (or empty for endorsement/ratification blocks)
+\item \verb|Pointers| contains references to observed blocks from other participants
+\end{itemize}
+
+\subsection{Constitutional Genesis Block}
+
+Each consensus instance begins with a \emph{constitutional genesis block} specifying the initial constitution $(P, \sigma, \Delta)$. All participants must observe this block before participating.
+
+\begin{verbatim}
+genesis(P, Sigma, Delta)
+\end{verbatim}
+
+\subsection{Depth and Rounds}
+
+The \emph{depth} of a block is its distance from the genesis block along any path. Blocks at the same depth are in the same \emph{round}. Rounds are grouped into \emph{waves} of three rounds each.
+
+\section{Wave Structure}
+\label{sec:consensus-waves}
+
+The protocol operates in waves of three rounds. Each wave attempts to finalize one block.
+
+\subsection{The Three Rounds}
+
+\begin{description}
+\item[Round 1 (Candidates)] Participants with transactions create blocks containing their payload. These are candidates for finality.
+
+\item[Round 2 (Endorsements)] Participants observe round 1 and create endorsement blocks. An endorsement points to the round 1 blocks the participant has seen.
+
+\item[Round 3 (Ratifications)] Participants observe round 2 and create ratification blocks. A ratification confirms that a majority endorsed the same candidate.
+\end{description}
+
+\subsection{Finality}
+
+A round 1 block $b$ is \emph{finalized} when:
+\begin{enumerate}
+\item A majority of participants created round 2 blocks endorsing $b$ (and only $b$)
+\item A majority of participants created round 3 blocks ratifying those endorsements
+\end{enumerate}
+
+Once finalized, the block's payload is added to the consensus output sequence.
+
+\subsection{Why Three Rounds?}
+
+The three-round structure solves agreement despite asynchrony---not Byzantine behaviour. Consider:
+
+When Alice sees a single round 1 block from Bob, she cannot know if:
+\begin{itemize}
+\item Bob's block is truly the only candidate (low-throughput case)
+\item Carol also sent a round 1 block that Alice hasn't received yet
+\end{itemize}
+
+The endorsement round creates \emph{evidence} that a majority saw the same candidates. The ratification round creates \emph{evidence} that a majority saw the same endorsements. This evidence is what enables agreement despite arbitrary message delays.
+
+\subsection{Quiescent Waves}
+
+A wave is \emph{quiescent} if all its blocks (rounds 1, 2, and 3) are empty---no participant had a transaction to propose. During quiescence, the protocol is idle, consuming no resources.
+
+\section{Dual-Mode Operation}
+\label{sec:consensus-modes}
+
+Constitutional Consensus seamlessly handles both low and high transaction rates.
+
+\subsection{Low-Throughput Mode}
+
+When transactions arrive infrequently:
+\begin{enumerate}
+\item The network is quiescent (no activity)
+\item A participant with a transaction creates a round 1 block
+\item If no conflicts arise, others immediately endorse and ratify
+\item The transaction is finalized in one wave ($3\delta$)
+\end{enumerate}
+
+Any participant can initiate a wave---there is no designated leader. This is called \emph{spontaneous leadership}.
+
+\subsection{High-Throughput Mode}
+
+When multiple participants have transactions simultaneously:
+\begin{enumerate}
+\item Multiple round 1 blocks appear (conflict)
+\item A \emph{formal leader} is selected (round-robin by round number)
+\item Participants endorse the leader's block
+\item The leader's transaction is finalized; others retry in subsequent waves
+\end{enumerate}
+
+\subsection{Mode Transitions}
+
+The protocol transitions automatically based on observed activity:
+
+\begin{description}
+\item[Low $\to$ High] When a participant observes conflicting round 1 blocks, they switch to high-throughput mode and follow formal leadership.
+
+\item[High $\to$ Low] When a wave completes with only empty blocks (quiescent), participants return to low-throughput mode.
+\end{description}
+
+\subsection{Timeout Handling}
+
+During high-throughput mode, if the formal leader fails to produce a block, participants timeout after $\Delta$ and proceed to the next round. This ensures liveness even if some participants are slow or offline.
+
+In \GLP, timeouts use the \verb|wait| primitive:
+
+\begin{verbatim}
+wait_for_leader(Timeout, Block) :-
+    wait(Timeout?),
+    Block = timeout.
+wait_for_leader(_, Block) :-
+    known(Block?) | .
+\end{verbatim}
+
+The first clause suspends for the timeout duration; the second succeeds immediately if a block arrives. Whichever happens first proceeds.
+
+\section{The Ordering Function}
+\label{sec:consensus-tau}
+
+Each participant computes the same finalized sequence from their local blocklace view using the ordering function $\tau$.
+
+\subsection{Definition of $\tau$}
+
+Given a blocklace $B$, $\tau(B)$ returns the sequence of finalized payloads:
+
+\begin{enumerate}
+\item Identify all finalized blocks (those with majority endorsement and ratification)
+\item Order them by wave number
+\item Within a wave, order deterministically (e.g., by block hash)
+\item Output non-empty payloads in this order
+\end{enumerate}
+
+\subsection{Consistency}
+
+With reliable dissemination and no Byzantine agents, all correct participants eventually observe the same blocklace and compute the same $\tau(B)$. This is the consensus output.
+
+\subsection{Incremental Computation}
+
+Participants compute $\tau$ incrementally as new blocks arrive:
+
+\begin{verbatim}
+compute_tau(Blocklace, FinalizedSoFar, NewFinalized) :-
+    find_new_finalized(Blocklace?, FinalizedSoFar?, Candidates),
+    order_candidates(Candidates?, Ordered),
+    append(FinalizedSoFar?, Ordered?, NewFinalized).
+\end{verbatim}
+
+\section{Implementation in GLP}
+\label{sec:consensus-implementation}
+
+We implement Constitutional Consensus using the agent-and-stream pattern. Each participant runs an agent process that maintains state, processes incoming blocks, and produces outgoing blocks.
+
+\subsection{Agent State}
+
+Each participant maintains:
+
+\begin{verbatim}
+state(Blocklace, Mode, CurrentRound, Finalized, Pending)
+\end{verbatim}
+
+Where:
+\begin{itemize}
+\item \verb|Blocklace| is the local view of all observed blocks
+\item \verb|Mode| is \verb|low| or \verb|high|
+\item \verb|CurrentRound| is the latest advanced round
+\item \verb|Finalized| is the $\tau$ output so far
+\item \verb|Pending| is the queue of transactions awaiting proposal
+\end{itemize}
+
+\subsection{Agent Process}
+
+The main agent loop processes events (incoming blocks or timeouts):
+
+\begin{verbatim}
+agent([], State, _, Finalized) :-
+    State = state(_, _, _, Finalized?, _) | .
+agent([Event|Events], State, OutStream, Finalized) :-
+    handle_event(Event?, State?, State1, OutStream?, OutStream1),
+    update_finalized(State1?, Finalized?, Finalized1),
+    agent(Events?, State1?, OutStream1?, Finalized1?).
+\end{verbatim}
+
+\subsection{Handling Incoming Blocks}
+
+When a block arrives, add it to the blocklace and check for mode transitions:
+
+\begin{verbatim}
+handle_event(block(R, Payload, Ptrs), State, State1, Out, Out1) :-
+    State = state(B, Mode, Round, Fin, Pend),
+    add_block(block(R?, Payload?, Ptrs?), B?, B1),
+    check_mode(B1?, Mode?, Mode1),
+    advance_round(B1?, Round?, Round1),
+    maybe_issue(Mode1?, Round1?, Pend?, B1?, Out?, Out1, Pend1),
+    State1 = state(B1?, Mode1?, Round1?, Fin?, Pend1?).
+\end{verbatim}
+
+\subsection{Issuing Blocks}
+
+Block issuance depends on mode and round:
+
+\begin{verbatim}
+%% Low-throughput: issue if we have payload and round is first of wave
+maybe_issue(low, Round, [Tx|Pend], B, Out, Out1, Pend?) :-
+    Round? mod 3 =:= 1 |
+    tips(B?, Tips),
+    Out = [block(Round?, Tx?, Tips?) | Out1?].
+
+%% Low-throughput: endorse single candidate
+maybe_issue(low, Round, Pend, B, Out, Out1, Pend?) :-
+    Round? mod 3 =:= 2,
+    single_candidate(B?, Round?, Candidate?) |
+    tips(B?, Tips),
+    Out = [block(Round?, empty, Tips?) | Out1?].
+
+%% Low-throughput: ratify if majority endorsed same candidate
+maybe_issue(low, Round, Pend, B, Out, Out1, Pend?) :-
+    Round? mod 3 =:= 0,
+    majority_endorsed(B?, Round?, _) |
+    tips(B?, Tips),
+    Out = [block(Round?, empty, Tips?) | Out1?].
+
+%% High-throughput: issue if leader or timeout
+maybe_issue(high, Round, Pend, B, Out, Out1, Pend1) :-
+    Round? mod 3 =:= 1 |
+    issue_high_throughput(Round?, Pend?, B?, Out?, Out1, Pend1).
+
+%% No action needed
+maybe_issue(_, _, Pend, _, Out, Out?, Pend?).
+\end{verbatim}
+
+\subsection{Leader Selection}
+
+In high-throughput mode, the formal leader for round $r$ is determined by:
+
+\begin{verbatim}
+leader(Round, Participants, Leader) :-
+    length(Participants?, N),
+    WaveNum := Round? // 3,
+    Index := WaveNum? mod N?,
+    nth(Index?, Participants?, Leader).
+\end{verbatim}
+
+The leader rotates round-robin through participants by wave number.
+
+\subsection{Finality Detection}
+
+A block is finalized when it has majority endorsement and ratification:
+
+\begin{verbatim}
+is_finalized(Block, Blocklace, Participants) :-
+    endorsements_for(Block?, Blocklace?, Endorsers),
+    is_majority(Endorsers?, Participants?),
+    ratifications_for(Endorsers?, Blocklace?, Ratifiers),
+    is_majority(Ratifiers?, Participants?).
+
+is_majority(Set, Participants) :-
+    length(Set?, M),
+    length(Participants?, N),
+    M? > N? // 2 | .
+\end{verbatim}
+
+\subsection{Computing the Finalized Stream}
+
+Each participant maintains their finalized output stream:
+
+\begin{verbatim}
+update_finalized(State, OldFin, NewFin) :-
+    State = state(B?, _, _, _, _),
+    find_newly_finalized(B?, OldFin?, New),
+    append(OldFin?, New?, NewFin).
+
+find_newly_finalized(Blocklace, AlreadyFin, New) :-
+    all_finalized(Blocklace?, AllFin),
+    subtract(AllFin?, AlreadyFin?, New).
+\end{verbatim}
+
+\section{A Complete Example}
+\label{sec:consensus-example}
+
+Three participants---Alice, Bob, and Carol---form a consensus instance. We trace through both low and high-throughput scenarios.
+
+\subsection{Setup}
+
+The genesis block establishes:
+\begin{verbatim}
+genesis([alice, bob, carol], 0.5, 1000)
+\end{verbatim}
+
+Three participants, majority threshold, 1000ms timeout.
+
+\subsection{Low-Throughput Scenario}
+
+Alice has a transaction \verb|tx_a| to propose. The network is quiescent.
+
+\paragraph{Wave 1, Round 1.} Alice creates:
+\begin{verbatim}
+block(1, tx_a, [genesis])
+\end{verbatim}
+
+Bob and Carol receive Alice's block. No conflicts---the wave is non-contentious.
+
+\paragraph{Wave 1, Round 2.} Bob and Carol each endorse:
+\begin{verbatim}
+block(2, empty, [alice_block_1])  % Bob's endorsement
+block(2, empty, [alice_block_1])  % Carol's endorsement
+\end{verbatim}
+
+Alice also endorses her own block (participants endorse what they see).
+
+\paragraph{Wave 1, Round 3.} All three ratify:
+\begin{verbatim}
+block(3, empty, [bob_endorse, carol_endorse, alice_endorse])
+\end{verbatim}
+
+\paragraph{Finality.} Each participant observes majority endorsement (3/3) and majority ratification (3/3). Alice's block is finalized. All three output:
+\begin{verbatim}
+Finalized = [tx_a]
+\end{verbatim}
+
+\subsection{High-Throughput Scenario}
+
+Now Alice and Bob both have transactions simultaneously.
+
+\paragraph{Wave 2, Round 4.} Alice creates:
+\begin{verbatim}
+block(4, tx_a2, [ratify_blocks...])
+\end{verbatim}
+
+Bob creates:
+\begin{verbatim}
+block(4, tx_b, [ratify_blocks...])
+\end{verbatim}
+
+Carol observes both---conflict detected. All switch to high-throughput mode.
+
+\paragraph{Formal Leader.} Wave 2 has leader index $2 \mod 3 = 2$, so Carol is the formal leader. But Carol has no transaction, so Alice's and Bob's blocks compete.
+
+The protocol specifies: endorse the \emph{leader block} if present, otherwise the \emph{first block received} (deterministic tie-breaker needed). Suppose all endorse Alice's block (she was leader for wave 2 by the round-robin).
+
+\paragraph{Rounds 5 and 6.} Endorsements and ratifications proceed. Alice's \verb|tx_a2| is finalized.
+
+\paragraph{Wave 3.} Bob retries with \verb|tx_b|. If no conflicts, it finalizes. If Carol also has a transaction now, they compete again under formal leadership.
+
+\subsection{Execution Trace}
+
+\begin{verbatim}
+Wave 1 (low-throughput):
+  R1: Alice proposes tx_a
+  R2: All endorse Alice
+  R3: All ratify
+  Finalized: [tx_a]
+
+Wave 2 (high-throughput, conflict):
+  R4: Alice proposes tx_a2, Bob proposes tx_b (conflict!)
+  R5: All endorse Alice (formal leader)
+  R6: All ratify
+  Finalized: [tx_a, tx_a2]
+
+Wave 3 (back to low if Bob alone):
+  R7: Bob proposes tx_b
+  R8: All endorse
+  R9: All ratify
+  Finalized: [tx_a, tx_a2, tx_b]
+\end{verbatim}
+
+\section{Correctness Properties}
+\label{sec:consensus-correctness}
+
+The implementation satisfies the required consensus properties.
+
+\subsection{Safety}
+
+\begin{description}
+\item[Claim] No two correct participants finalize different transactions at the same sequence position.
+
+\item[Argument] A transaction is finalized only when it has majority endorsement and majority ratification. Any two majorities overlap. If two different transactions were both finalized at position $k$, both would need majority endorsement in the same wave---but a participant endorses at most one candidate per wave. Contradiction.
+\end{description}
+
+\subsection{Liveness}
+
+\begin{description}
+\item[Claim] After GST, every transaction submitted by a correct participant is eventually finalized.
+
+\item[Argument] After GST, messages arrive within $\Delta$. In low-throughput mode, a transaction with no conflicts finalizes in one wave ($3\Delta$). In high-throughput mode, the round-robin leader selection ensures every participant eventually becomes leader. A correct leader's transaction is endorsed and ratified within one wave. Timeouts ensure progress even if some participants are slow.
+\end{description}
+
+\subsection{Totality}
+
+\begin{description}
+\item[Claim] All correct participants eventually output the same finalized sequence.
+
+\item[Argument] With reliable dissemination, all participants eventually observe the same blocklace. The $\tau$ function is deterministic. Therefore, all participants compute the same finalized sequence.
+\end{description}
+
+\subsection{What Attestation Provides}
+
+The correctness argument relies on:
+\begin{itemize}
+\item No equivocation (each participant creates at most one block per round)
+\item Reliable dissemination (all blocks eventually reach all participants)
+\item Protocol compliance (participants follow the protocol)
+\end{itemize}
+
+Attestation mechanisms ensure these properties. Without attestation, Byzantine agents could equivocate (creating conflicting blocks) or selectively disseminate (sending different blocks to different participants). The protocol would then require $\sigma > 2/3$ and additional mechanisms (nack blocks, equivocation detection) to maintain safety.
+
+\section{Exercises}
+\label{sec:consensus-exercises}
+
+\begin{enumerate}
+\item \textbf{Quiescence Detection.} Implement a predicate \verb|is_quiescent/2| that determines whether a wave in the blocklace is quiescent (all blocks empty).
+
+\item \textbf{Conflict Detection.} Implement \verb|has_conflict/2| that detects whether a round contains multiple non-empty blocks from different participants.
+
+\item \textbf{Leader Verification.} Implement \verb|is_leader_block/3| that verifies whether a block is from the formal leader for its wave.
+
+\item \textbf{Endorsement Counting.} Implement \verb|count_endorsements/3| that counts how many participants endorsed a given candidate block.
+
+\item \textbf{Finality Checker.} Implement \verb|check_finality/3| that takes a blocklace and returns the list of all finalized blocks in wave order.
+
+\item \textbf{Mode Transition.} Extend the agent to explicitly track mode transitions, logging when it switches between low and high-throughput modes.
+
+\item \textbf{Timeout Integration.} Implement the timeout mechanism using \verb|wait/1|, ensuring the agent proceeds to the next round if the leader block doesn't arrive within $\Delta$.
+
+\item \textbf{Transaction Queue.} Extend the agent to maintain a queue of pending transactions, proposing them one at a time as waves complete.
+
+\item \textbf{Blocklace Visualisation.} Write a predicate that outputs the blocklace structure showing waves, rounds, and finalized blocks.
+
+\item \textbf{Byzantine Simulation.} Modify the implementation to simulate a Byzantine participant who equivocates (creates two conflicting blocks). Verify that with $\sigma = 1/2$, safety can be violated, demonstrating why attestation is necessary.
+\end{enumerate}
