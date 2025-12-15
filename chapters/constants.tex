@@ -411,3 +411,7 @@ R = [0,0,0,1]
 The result \verb|[0,0,0,1]| is 1011 in binary (LSB first), which is 11 in decimal: $5 + 6 = 11$.
 
 The trace shows the ripple-carry behavior: each \verb|adder| stage suspends waiting for the carry from the previous stage, then reactivates when the carry arrives.
+
+\subsection{Stream-Based Gates}
+
+The simple fact-based gates presented in this chapter process single values. Chapter~\ref{ch:streams} introduces \emph{stream-based gates} that process sequences of bit values concurrently, enabling simulation of clocked digital circuits where signals evolve over time.

@@ -609,6 +609,13 @@ continuation that receives the channel as a reader.
 \begin{enumerate}
 \item[$\star$] Implement \verb|length(Xs?, N)| that computes the length of a list using an accumulator.
 
+\item[$\star$] \textbf{Count-Up Producer.} The text shows a countdown producer. Implement a count-up producer that generates an infinite stream $[0, 1, 2, 3, \ldots]$:
+\begin{verbatim}
+producer(Xs) :- producer(Xs?, 0).
+producer([N?|Xs], N) :- N1 := N? + 1, producer(Xs, N1?).
+\end{verbatim}
+Explain why this producer never terminates and why the consumer must not have a clause for \verb|[]|.
+
 \item[$\star$] Implement \verb|map_inc(Xs?, Ys)| that increments each element of a list of numbers.
 
 \item[$\star\star$] Implement \verb|filter_even(Xs?, Ys)| that keeps only even numbers from a list.
