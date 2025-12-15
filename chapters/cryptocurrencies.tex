@@ -3,4 +3,521 @@
 \chapter{Grassroots Cryptocurrencies}
 \label{ch:cryptocurrencies}
 
-[TO BE DEVELOPED]
+This chapter presents grassroots cryptocurrencies and their implementation in \GLP. We implement the Grassroots Flash payment system~\cite{lewis2023grassroots}, demonstrating how interlaced streams (Chapter~\ref{ch:interlaced-streams}) provide the blocklace data structure, and how the multiagent architecture enables agents to issue personal currencies and trade with one another.
+
+\section{Introduction}
+\label{sec:crypto-intro}
+
+Grassroots cryptocurrencies~\cite{shapiro2024gc} are a permissionless digital means for turning mutual trust into liquidity. Their coins are IOUs---units of debt that can be issued digitally by anyone and traded by anyone.
+
+\subsection{Personal Currencies}
+
+Each agent is the \emph{sovereign} of their own currency. Alice issues Alice-coins; Bob issues Bob-coins. An Alice-coin is an IOU from Alice---a unit of debt that Alice owes to whoever holds it.
+
+Alice can \emph{mint} Alice-coins (create new ones) and \emph{burn} them (destroy ones she holds). She can also price her goods and services in Alice-coins: if Alice sells bread, she might price a loaf at 5 Alice-coins.
+
+\subsection{Mutual Credit}
+
+Liquidity arises through \emph{mutual credit}. When Alice and Bob trust each other, they exchange personal coins: Alice gives Bob some Alice-coins, Bob gives Alice some Bob-coins. Each now holds IOUs from the other---effectively, they have extended each other credit.
+
+This exchange requires no external capital. The coins come into existence through the exchange itself, backed only by the trust between Alice and Bob.
+
+\mypara{Example} Alice and Bob each issue 100 of their personal coins to the other. Now Alice holds 100 Bob-coins (claims against Bob) and Bob holds 100 Alice-coins (claims against Alice). If Carol also exchanges 100 coins with both Alice and Bob, then each of the three holds 200 coins from the other two---liquidity created entirely from mutual trust.
+
+\subsection{Trading}
+
+To buy from someone, a trader needs coins that the seller will accept. If Alice wants to buy bread from Bob, she can pay in Bob-coins (which Bob will certainly accept, as they reduce his debt). If Alice has run out of Bob-coins, she must obtain some---perhaps by selling something to Bob, or through coin redemption.
+
+\subsection{Coin Redemption}
+
+The \emph{coin redemption principle} integrates personal currencies into a coherent economy: a sovereign must agree to redeem any domestic coin issued in return for any foreign coin held~\cite{shapiro2024gc}.
+
+\mypara{Example} Bob holds 50 Alice-coins (IOUs from Alice). Bob can demand that Alice redeem these Alice-coins against any coins Alice holds. If Alice holds Bob-coins, Bob might request Bob-coins in return---reducing his exposure to Alice's debt. If Alice holds Carol-coins and Bob needs to pay Carol, Bob might request Carol-coins instead.
+
+This principle prevents sovereigns from issuing coins irresponsibly. If Alice mints too many Alice-coins and distributes them widely, holders will redeem them, draining Alice's reserves of other currencies. Eventually Alice must provide goods or services directly to satisfy redemption claims.
+
+\subsection{Economic Integrity}
+
+An agent manifests lack of liquidity by not holding coins from other agents and not being able to obtain such coins by trade or redemption. Lack of liquidity may result in insolvency, making the agent's coins `bad debt'---traded at a discount, if at all~\cite{shapiro2024gc}.
+
+If Alice fails to maintain computational or economic integrity, the result would most probably be a bank run on Alice, with holders rushing to redeem their Alice-coins while Alice still has reserves. This causes financial harm to the family, friends, and colleagues who extended Alice credit. Hence, participants in the grassroots economy have strong incentives to maintain their integrity.
+
+\section{The Blocklace}
+\label{sec:crypto-blocklace}
+
+The payment system for grassroots cryptocurrencies is implemented using the \emph{blocklace}~\cite{lewis2023grassroots}---a distributed, partially-ordered counterpart of the replicated, totally-ordered blockchain data structure.
+
+\subsection{Personal Blockchains}
+
+Each agent maintains their own \emph{personal blockchain}---a sequence of blocks where each block contains a \emph{self-pointer} to the agent's previous block. Alice's blocks form a chain; Bob's blocks form another chain; and so on.
+
+Unlike a traditional blockchain where all participants extend a single shared chain, here each agent extends only their own chain. The single-writer property of \GLP streams directly implements this: only Alice can write to Alice's stream.
+
+\subsection{Cross-References}
+
+In addition to self-pointers, blocks contain \emph{non-self pointers} to blocks in other agents' chains. These cross-references weave the individual chains into a DAG---the blocklace.
+
+When Alice creates a block, she includes pointers to blocks she has observed from other agents. These pointers serve specific purposes in the payment protocol:
+\begin{itemize}
+\item A payment block points to the payer's previous self-payment (proving sufficient balance)
+\item An accept block points to the payment being accepted and its approval
+\item An approval block points to the payment being approved
+\end{itemize}
+
+\subsection{Mapping to Interlaced Streams}
+
+The blocklace maps directly to the interlaced streams of Chapter~\ref{ch:interlaced-streams}:
+
+\begin{center}
+\begin{tabular}{ll}
+\textbf{Blocklace Concept} & \textbf{GLP Implementation} \\
+\hline
+Personal blockchain & Agent's stream \\
+Self-pointer & Implicit in stream structure \\
+Non-self pointer & Block reference in \verb|Pointers| list \\
+Block payload & \verb|tx(Currency, Payments, Comment)| \\
+\end{tabular}
+\end{center}
+
+The key difference from generic interlaced streams: payment blocks use \emph{specific} references (to THE payment block, THE approval block) rather than generic tip collection. The protocol dictates which blocks must be referenced.
+
+\subsection{Transaction Blocks}
+
+A transaction block records a payment in a particular currency. In \GLP:
+
+\begin{verbatim}
+block(tx(Currency, Payments, Comment), Pointers)
+\end{verbatim}
+
+Where:
+\begin{itemize}
+\item \verb|Currency| identifies the sovereign (whose coins are being transacted)
+\item \verb|Payments| is a list of \verb|payment(Recipient, Amount)| terms
+\item \verb|Comment| indicates the transaction type (\verb|issue|, \verb|accept|, \verb|approve|, etc.)
+\item \verb|Pointers| contains references to other blocks
+\end{itemize}
+
+\subsection{Self-Payments and Balances}
+
+A \emph{self-payment} is a payment where the recipient is the block's author. When Alice creates a block containing \verb|payment(alice, 50)| in Bob-coins, this records that Alice holds 50 Bob-coins after the transaction.
+
+Self-payments create an audit trail. The most recent self-payment in a currency equals the agent's current balance in that currency. To verify Alice's Bob-coin balance, find her most recent block containing a Bob-coin self-payment.
+
+\subsection{Consuming Blocks}
+
+A block \emph{consumes} another block when it spends coins received in that block. If Bob's block pays Alice 10 Bob-coins, Alice's accepting block must point to (consume) Bob's block. This pointer proves the payment occurred and prevents Alice from accepting the same payment twice.
+
+A block is \emph{balanced} if the sum of its outgoing payments equals the sum of payments to the author in the blocks it consumes. Only minting is unbalanced---the sovereign creates value by fiat.
+
+\subsection{Sovereign Approval}
+
+Payments in a currency require the sovereign's approval before the recipient can accept them. If Alice pays Bob 10 Carol-coins:
+
+\begin{enumerate}
+\item Alice creates an Issue block with the payment, pointing to her previous Carol-coin self-payment
+\item Carol observes Alice's block and creates an Approve block pointing to it
+\item Bob observes both blocks and creates an Accept block pointing to Alice's Issue block and Carol's Approve block
+\end{enumerate}
+
+The sovereign's approval confirms the payment is valid: the payer's block is balanced and the payer has not equivocated (created conflicting blocks that spend the same coins twice).
+
+Payments in one's own currency need no external approval---Alice approving her own Alice-coin payments would be redundant.
+
+\subsection{Equivocation}
+
+Two blocks by the same agent that do not observe each other constitute an \emph{equivocation}. If both blocks spend the same coins, this is a \emph{double-spend} attempt.
+
+The blocklace structure makes equivocation detectable: if Alice creates two blocks that both consume the same previous self-payment, neither block observes the other. Any agent who receives both blocks can detect the equivocation.
+
+A sovereign who detects equivocation creates a Disapprove block pointing to the fraudulent payment and the evidence (the equivocating block).
+
+\section{The Grassroots Flash Protocol}
+\label{sec:flash-protocol}
+
+Grassroots Flash~\cite{lewis2023grassroots} defines four types of transaction blocks.
+
+\subsection{Trader Blocks}
+
+Any agent can create these blocks. Both must be balanced.
+
+\paragraph{Issue.} Alice pays Bob 10 Carol-coins. Her block contains:
+\begin{itemize}
+\item Payment \verb|payment(bob, 10)| in Carol-coins
+\item Self-payment \verb|payment(alice, Z)| recording her new balance
+\item Pointer to her previous Carol-coin self-payment (showing she had at least 10)
+\end{itemize}
+
+\paragraph{Accept.} Bob accepts Alice's payment (after Carol approves it). His block contains:
+\begin{itemize}
+\item Self-payment \verb|payment(bob, Z)| recording his new balance
+\item Pointer to Alice's Issue block (the payment being accepted)
+\item Pointer to Carol's Approve block (proving sovereign approval)
+\item Pointer to his previous Carol-coin self-payment, if any
+\end{itemize}
+
+\subsection{Sovereign Blocks}
+
+Only the currency's sovereign creates these blocks.
+
+\paragraph{Mint.} Carol creates Carol-coins. Her block contains:
+\begin{itemize}
+\item Self-payment \verb|payment(carol, Z)| recording her new balance
+\item Pointer to her previous Carol-coin self-payment, if any
+\end{itemize}
+
+Minting is the only unbalanced operation---the sovereign creates value by fiat.
+
+\paragraph{Approve.} Carol validates Alice's payment to Bob in Carol-coins. Her block contains:
+\begin{itemize}
+\item No payments (empty list)
+\item Comment \verb|approve|
+\item Pointer to Alice's Issue block
+\end{itemize}
+
+Carol approves if Alice's block is balanced and Carol does not observe Alice equivocating (double-spending).
+
+\subsection{Protocol Safety}
+
+The protocol ensures:
+\begin{description}
+\item[Balance Safety] Self-payments accurately record balances.
+\item[No Double-Spend] Each payment block is consumed by at most one Accept block.
+\item[Sovereign Authority] Payments require sovereign approval before acceptance.
+\end{description}
+
+These properties follow from the single-writer constraint: only Alice can extend Alice's stream, so she cannot be forced to accept payments or have her balance modified by others.
+
+\section{Implementation in GLP}
+\label{sec:crypto-implementation}
+
+We implement Grassroots Flash using the agent-and-request-stream pattern established in earlier chapters. Each agent processes a stream of requests, maintains balances as an accumulator, and produces a stream of blocks.
+
+\subsection{Agent Process}
+
+An agent processes requests, updating balances and extending their block stream:
+
+\begin{verbatim}
+agent([], _, []).
+agent([Request|Requests], Balances, Stream) :-
+    handle(Request?, Balances?, Balances1, Stream?, Stream1),
+    agent(Requests?, Balances1?, Stream1?).
+\end{verbatim}
+
+The agent consumes requests one at a time. Each request may update balances and append blocks to the stream. The stream produced is the agent's personal blockchain.
+
+\subsection{Balance Management}
+
+Balances are tracked per currency as an association list:
+
+\begin{verbatim}
+get_balance(Currency, [(Currency?, Bal)|_], Bal?).
+get_balance(Currency?, [_|Balances], Bal?) :-
+    get_balance(Currency, Balances?, Bal).
+get_balance(_, [], 0).
+
+set_balance(Currency, NewBal, [], [(Currency?, NewBal?)]).
+set_balance(Currency, NewBal, [(Currency?, _)|Bs], [(Currency?, NewBal?)|Bs?]).
+set_balance(Currency?, NewBal, [B|Bs], [B?|Bs1?]) :-
+    set_balance(Currency, NewBal?, Bs?, Bs1).
+\end{verbatim}
+
+\subsection{Request Handlers}
+
+\paragraph{Issue.} Pay someone in a given currency. The block points to the payer's previous self-payment (implicit in stream position) and records the new balance:
+
+\begin{verbatim}
+handle(issue(To, Amount, Currency), Balances, Balances1, Stream, Stream1) :-
+    get_balance(Currency?, Balances?, OldBal),
+    Amount? =< OldBal? |
+    NewBal := OldBal? - Amount?,
+    set_balance(Currency?, NewBal?, Balances?, Balances1),
+    Stream = [block(tx(Currency?, 
+                       [payment(To?, Amount?), payment(self, NewBal?)]),
+                    issue, []) 
+             | Stream1?].
+\end{verbatim}
+
+\paragraph{Accept.} Accept an incoming payment. The block points to the payment being consumed and its approval:
+
+\begin{verbatim}
+handle(accept(Amount, Currency, PaymentBlock, ApprovalBlock), 
+       Balances, Balances1, Stream, Stream1) :-
+    get_balance(Currency?, Balances?, OldBal),
+    NewBal := OldBal? + Amount?,
+    set_balance(Currency?, NewBal?, Balances?, Balances1),
+    Stream = [block(tx(Currency?, [payment(self, NewBal?)]),
+                    accept, [PaymentBlock?, ApprovalBlock?]) 
+             | Stream1?].
+\end{verbatim}
+
+\paragraph{Approve.} Sovereign approves a payment in their currency. The block points to the payment being approved:
+
+\begin{verbatim}
+handle(approve(PaymentBlock), Balances, Balances?, Stream, Stream1) :-
+    Stream = [block(tx(self, []), approve, [PaymentBlock?]) | Stream1?].
+\end{verbatim}
+
+\paragraph{Mint.} Sovereign creates new coins. This is the only unbalanced operation:
+
+\begin{verbatim}
+handle(mint(Amount), Balances, Balances1, Stream, Stream1) :-
+    get_balance(self, Balances?, OldBal),
+    NewBal := OldBal? + Amount?,
+    set_balance(self, NewBal?, Balances?, Balances1),
+    Stream = [block(tx(self, [payment(self, NewBal?)]), mint, []) | Stream1?].
+\end{verbatim}
+
+\subsection{Mutual Credit}
+
+Two agents establish mutual credit by each issuing payment to the other in their own currency, then accepting:
+
+\begin{verbatim}
+alice_mutual_credit(Bob, Amount, BobStream) :-
+    [issue(Bob?, Amount?, alice), 
+     accept(Amount?, bob, BobPayment?, _)] :-
+    find_payment_to(alice, BobStream?, BobPayment).
+
+bob_mutual_credit(Alice, Amount, AliceStream) :-
+    [issue(Alice?, Amount?, bob),
+     accept(Amount?, alice, AlicePayment?, _)] :-
+    find_payment_to(bob, AliceStream?, AlicePayment).
+\end{verbatim}
+
+Each pays in their own currency (so approval is implicit), then accepts the other's payment. The result: Alice holds Bob-coins, Bob holds Alice-coins.
+
+\subsection{Redemption}
+
+Bob holds Alice-coins and wants to redeem them. He creates a redemption claim specifying his preference list of currencies:
+
+\begin{verbatim}
+handle(redeem(Sovereign, Amount, Preferences),
+       Balances, Balances1, Stream, Stream1) :-
+    get_balance(Sovereign?, Balances?, OldBal),
+    Amount? =< OldBal? |
+    NewBal := OldBal? - Amount?,
+    set_balance(Sovereign?, NewBal?, Balances?, Balances1),
+    Stream = [block(tx(Sovereign?, [payment(Sovereign?, Amount?)]), 
+                    (redeem, Preferences?), []) 
+             | Stream1?].
+\end{verbatim}
+
+The sovereign receives the claim and must repay. She pays from the first preferred currency until exhausted, then the second, and so on. Any remainder is paid in her own coins:
+
+\begin{verbatim}
+handle(repay(Claimer, Amount, Preferences, ClaimHash),
+       Balances, Balances1, Stream, Stream1) :-
+    compute_repayments(Amount?, Preferences?, Balances?, Repayments, Balances1),
+    emit_repayments(Claimer?, Repayments?, ClaimHash?, Stream?, Stream1).
+\end{verbatim}
+
+\paragraph{Computing repayments.} Walk the preference list, taking what's available:
+
+\begin{verbatim}
+compute_repayments(0, _, Balances, [], Balances?).
+compute_repayments(Amount, [], Balances, [(self, Amount?)], Balances?) :-
+    Amount? > 0 | .
+compute_repayments(Amount, [Currency|Rest], Balances, Repayments?, Balances1) :-
+    Amount? > 0 |
+    get_balance(Currency?, Balances?, Available),
+    take_from_currency(Amount?, Currency?, Available?, Rest?, 
+                       Balances?, Repayments, Balances1).
+
+take_from_currency(Amount, _, 0, Rest, Balances, Repayments?, Balances1) :-
+    compute_repayments(Amount?, Rest?, Balances?, Repayments, Balances1).
+take_from_currency(Amount, Currency, Available, _, Balances, 
+                   [(Currency?, Amount?)], Balances1) :-
+    Available? >= Amount? |
+    NewBal := Available? - Amount?,
+    set_balance(Currency?, NewBal?, Balances?, Balances1).
+take_from_currency(Amount, Currency, Available, Rest, Balances,
+                   [(Currency?, Available?)|Repayments?], Balances1) :-
+    Available? > 0, Available? < Amount? |
+    Remainder := Amount? - Available?,
+    set_balance(Currency?, 0, Balances?, Balances2),
+    compute_repayments(Remainder?, Rest?, Balances2?, Repayments, Balances1).
+\end{verbatim}
+
+\paragraph{Emitting repayment blocks.} Each repayment becomes a block referencing the claim:
+
+\begin{verbatim}
+emit_repayments(_, [], _, Stream, Stream?).
+emit_repayments(Claimer, [(self, Amount)|Rest], ClaimHash, Stream, Stream1) :-
+    Stream = [block(tx(self, [payment(Claimer?, Amount?)]),
+                    (repay, ClaimHash?), []) | Stream2?],
+    emit_repayments(Claimer?, Rest?, ClaimHash?, Stream2?, Stream1).
+emit_repayments(Claimer, [(Currency, Amount)|Rest], ClaimHash, Stream, Stream1) :-
+    Currency? \= self |
+    Stream = [block(tx(Currency?, [payment(Claimer?, Amount?)]), 
+                    (repay, ClaimHash?), []) | Stream2?],
+    emit_repayments(Claimer?, Rest?, ClaimHash?, Stream2?, Stream1).
+\end{verbatim}
+
+\section{A Complete Example}
+\label{sec:crypto-example}
+
+Three agents: Alice, Bob, and Carol. Alice and Bob establish mutual credit, then Alice pays Carol in Bob-coins.
+
+\subsection{The Scenario}
+
+\begin{enumerate}
+\item Alice and Bob exchange 100 personal coins (mutual credit)
+\item Alice pays Carol 20 Bob-coins
+\item Bob approves Alice's payment
+\item Carol accepts the payment
+\end{enumerate}
+
+\subsection{The Play}
+
+\begin{verbatim}
+play_cryptocurrency :-
+    %% Alice: credit with Bob, then pay Carol
+    agent([issue(bob, 100, alice),
+           accept(100, bob, BobPayment?, _),
+           issue(carol, 20, bob)],
+          [], AliceStream),
+    
+    %% Bob: credit with Alice, then approve Alice's payment to Carol
+    agent([issue(alice, 100, bob),
+           accept(100, alice, AlicePayment?, _),
+           approve(AliceToCarol?)],
+          [], BobStream),
+    
+    %% Carol: accept payment from Alice
+    agent([accept(20, bob, AliceToCarol?, BobApproval?)],
+          [], CarolStream),
+    
+    %% Wire up the cross-references
+    find_payment_to(bob, AliceStream?, AlicePayment),
+    find_payment_to(alice, BobStream?, BobPayment),
+    find_payment_to(carol, AliceStream?, AliceToCarol),
+    find_approval(BobStream?, BobApproval),
+    
+    verify(AliceStream?, BobStream?, CarolStream?).
+\end{verbatim}
+
+\subsection{Helper Predicates}
+
+\begin{verbatim}
+find_payment_to(Recipient, [Block|_], Block?) :-
+    Block = block(tx(_, Payments), issue, _),
+    has_payment_to(Recipient?, Payments?) | .
+find_payment_to(Recipient?, [_|Blocks], Block?) :-
+    find_payment_to(Recipient, Blocks?, Block).
+
+has_payment_to(Recipient, [payment(Recipient?, _)|_]).
+has_payment_to(Recipient?, [_|Payments]) :-
+    has_payment_to(Recipient, Payments?).
+
+find_approval([Block|_], Block?) :-
+    Block = block(_, approve, _) | .
+find_approval([_|Blocks], Block?) :-
+    find_approval(Blocks?, Block).
+\end{verbatim}
+
+\subsection{Execution Trace}
+
+The execution proceeds as follows:
+
+\begin{enumerate}
+\item Alice issues 100 Alice-coins to Bob (her stream: \verb|[block(tx(alice, ...), issue, [])]|)
+\item Bob issues 100 Bob-coins to Alice (his stream: \verb|[block(tx(bob, ...), issue, [])]|)
+\item Bob accepts Alice's payment---his block points to Alice's Issue block
+\item Alice accepts Bob's payment---her block points to Bob's Issue block
+\item Alice issues 20 Bob-coins to Carol---her block records new balance of 80 Bob-coins
+\item Bob approves Alice's payment---his block points to Alice's Issue-to-Carol block
+\item Carol accepts the payment---her block points to Alice's Issue block and Bob's Approve block
+\end{enumerate}
+
+Final balances:
+\begin{itemize}
+\item Alice: 80 Bob-coins, 0 Alice-coins (gave 100 to Bob)
+\item Bob: 100 Alice-coins, 0 Bob-coins (gave 100 to Alice)
+\item Carol: 20 Bob-coins
+\end{itemize}
+
+The blocklace structure captures causal dependencies: Carol's Accept block points to both Alice's Issue block and Bob's Approve block, proving the payment was properly authorised before acceptance.
+
+\subsection{Redemption Example}
+
+Bob holds 50 Alice-coins and wants Carol-coins or Dave-coins in return:
+
+\begin{verbatim}
+play_redemption :-
+    %% Bob has 50 Alice-coins, redeems with preference [carol, dave]
+    agent([redeem(alice, 50, [carol, dave])],
+          [(alice, 50)], BobStream),
+    
+    %% Alice has 20 Carol-coins, 15 Dave-coins
+    %% She repays: 20 Carol + 15 Dave + 15 Alice = 50
+    agent([repay(bob, 50, [carol, dave], ClaimHash?)],
+          [(carol, 20), (dave, 15)], AliceStream),
+    
+    find_claim_hash(BobStream?, ClaimHash),
+    verify_redemption(AliceStream?, BobStream?).
+\end{verbatim}
+
+After redemption:
+\begin{itemize}
+\item Alice: 0 Carol-coins, 0 Dave-coins, owes 15 more Alice-coins
+\item Bob: 0 Alice-coins, 20 Carol-coins, 15 Dave-coins, 15 Alice-coins (remainder)
+\end{itemize}
+
+Bob wanted to fully exit Alice-coins but Alice didn't have enough preferred currencies, so Bob still holds 15 Alice-coins.
+
+\section{Security Properties}
+\label{sec:crypto-security}
+
+The implementation inherits security properties from \GLP streams and the Grassroots Flash protocol.
+
+\subsection{From Single-Writer Streams}
+
+\begin{description}
+\item[Immutability] Once a block is added to an agent's stream, its contents cannot be changed. The stream is append-only.
+\item[Unforkability] Each agent's stream has a single writer. An agent cannot create two different extensions of the same stream position---this would require two writer occurrences of the same variable.
+\item[Non-repudiation] In authenticated \GLP, each block carries the agent's signature. Authorship cannot be denied.
+\item[No Forced Transactions] Only Alice can extend Alice's stream. No one can force Alice to accept a payment or modify her recorded balance.
+\end{description}
+
+\subsection{From the Protocol}
+
+\begin{description}
+\item[No Double-Spending] Each payment block can be consumed by at most one Accept block. If Alice tries to spend the same coins twice (creating two Issue blocks that consume the same self-payment), the sovereign will observe the equivocation and refuse to approve.
+\item[Balance Integrity] Self-payments create an audit trail. The most recent self-payment in a currency equals the agent's actual balance. Any discrepancy indicates protocol violation.
+\item[Sovereign Authority] Payments in a currency require that currency's sovereign to approve before the recipient can accept. The sovereign verifies that payments are balanced and that the payer has not equivocated.
+\item[Redemption Obligation] Sovereigns must repay redemption claims according to the specified preference order. Failure to repay damages the sovereign's reputation, potentially triggering a bank run.
+\end{description}
+
+\subsection{Equivocation Detection}
+
+Two blocks by agent $p$ that do not observe each other constitute an equivocation. Detection is straightforward: if an agent receives two $p$-blocks where neither points (directly or transitively) to the other, $p$ has equivocated.
+
+In \GLP terms, equivocation would require Alice to create two blocks at the same stream position---assigning to the same writer variable twice. The SRSW constraint makes this syntactically impossible within a single agent process. Equivocation can only occur through Byzantine behaviour (running modified code), which the protocol detects through the blocklace structure.
+
+\subsection{Limitations}
+
+This implementation assumes all-to-all dissemination: every agent eventually receives every block. The full Grassroots Flash protocol~\cite{lewis2023grassroots} uses \emph{cordial dissemination} over a social graph, where friends relay blocks based on need. This grassroots dissemination mechanism could be implemented using the social graph protocols from Chapter~\ref{ch:social-graph}.
+
+\section{Exercises}
+\label{sec:crypto-exercises}
+
+\begin{enumerate}
+\item \textbf{Disapproval.} Extend the sovereign operations to include a \verb|disapprove| request that rejects unbalanced payments or equivocations. The disapproval block should point to the evidence.
+
+\item \textbf{Balance Query.} Implement a \verb|query_balance/3| predicate that traverses an agent's stream and computes their current balance in a given currency by finding the most recent self-payment.
+
+\item \textbf{Equivocation Detection.} Implement a \verb|detect_equivocation/2| predicate that takes two blocks from the same agent and determines whether they constitute an equivocation (neither observes the other).
+
+\item \textbf{Block Validation.} Implement a \verb|validate_block/2| predicate that checks whether a payment block is balanced: the sum of outgoing payments equals the sum of payments in consumed blocks.
+
+\item \textbf{Community Bank.} Model a community bank that establishes mutual credit lines with villagers. The bank can shift risk by redeeming coins from financially unstable villagers against coins of more stable villagers.
+
+\item \textbf{Cordial Dissemination.} Extend the implementation to use friend-mediated dissemination. Agents only see blocks relayed by friends. A payment from Alice to Carol in Bob-coins requires paths in the social graph connecting all parties.
+
+\item \textbf{Transaction History.} Implement a \verb|payment_history/3| predicate that extracts all payments to a given agent from a blocklace, returning a list of \verb|received(From, Amount, Currency)| records.
+
+\item \textbf{Credit Limit.} Extend mutual credit to enforce a maximum credit line. If Alice and Bob agree to a limit of 100 coins, neither can hold more than 100 of the other's coins at any time.
+
+\item \textbf{Multi-Currency Redemption.} Extend the redemption protocol to allow Bob to redeem coins from multiple sovereigns in a single transaction, specifying a global preference order across all currencies.
+
+\item \textbf{Blocklace Visualisation.} Write a predicate that outputs a blocklace in a format suitable for graph visualisation, showing each agent's chain and the cross-references between chains.
+\end{enumerate}
