@@ -244,8 +244,8 @@ Note: Unification \verb|X = Y| in guard position is not supported; use head unif
 \texttt{is\_list(X)} & succeeds if proper list & suspends if $X?$ unbound & §\ref{sec:flatten} \\
 \texttt{known(X)} & succeeds if principal functor known & suspends if $X?$ unbound & §\ref{sec:glp-plain-meta} \\
 \texttt{unknown(X)} & succeeds if $X$ unbound & fails if functor known & §\ref{sec:glp-plain-meta} \\
-\texttt{atomic(X)} & succeeds if atomic & suspends if $X?$ unbound & §\ref{??} \\
-\texttt{compound(X)} & succeeds if compound & suspends if $X?$ unbound & §\ref{??} \\
+\texttt{atomic(X)} & succeeds if atomic & suspends if $X?$ unbound & §\ref{sec:recursive-numeric} \\
+\texttt{compound(X)} & succeeds if compound & suspends if $X?$ unbound & §\ref{sec:recursive-structures} \\
 \end{tabular}
 \end{center}
 
@@ -398,5 +398,5 @@ Upon reactivation, clause matching restarts from the first clause.
 \item[producer-consumer] §\ref{sec:streams-producer-consumer}: reader suspension, writer assignment
 \item[quicksort] §\ref{sec:quicksort}: partition by comparison, type-testing guards
 \item[reverse] §\ref{sec:streams-reverse}: accumulator, empty list matching
-\item[split] §\ref{??}: alternating element distribution
+\item[split] §\ref{sec:streams-merge}: alternating element distribution
 \end{description}
