@@ -60,7 +60,7 @@ guard ::= guard_atom
         | guard_atom, guard       % conjunction
 
 guard_atom ::= ground(term)
-             | var(term)
+             | unknown(term)
              | term == term       % identity
              | term \== term      % non-identity
              | arithmetic_comparison

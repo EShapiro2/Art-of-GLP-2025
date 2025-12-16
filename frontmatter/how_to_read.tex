@@ -51,19 +51,13 @@ No prior knowledge of Prolog or concurrent programming is assumed, though reader
 
 \section*{Chapter Dependencies}
 
-The book is organized into six parts:
+The book is organized into three parts:
 
 \mypara{Part I: Foundations} Chapters 1--4 must be read in order. They establish the core concepts of logic programs and \GLP.
 
-\mypara{Part II: Programming with Streams} Chapters 5--7 build on Part I and introduce stream programming. They should be read in order.
+\mypara{Part II: Concurrent Programming} Chapters 5--7 build on Part I. They cover stream programming, recursive programming, and metaprogramming.
 
-\mypara{Part III: Recursive Programming} Chapters 8--10 can be read after Part II. They cover classical recursive programming patterns adapted to \GLP.
-
-\mypara{Part IV: Objects and Processes} Chapters 11--12 require Parts I--II. They show how object-oriented concepts emerge naturally in \GLP.
-
-\mypara{Part V: Metaprogramming} Chapters 13--15 require Parts I--III. They explore programs that manipulate programs.
-
-\mypara{Part VI: Grassroots Protocols} Chapters 16--19 require Parts I--II. They present the crown jewel: protocols for grassroots social networking and security.
+\mypara{Part III: Simulating Multiagent Systems} Chapters 8--12 require Parts I--II. They present grassroots protocols: the social graph, social networks, interlaced streams, cryptocurrencies, and constitutional consensus.
 
 \section*{Exercises}
 
@@ -74,7 +68,7 @@ Each chapter concludes with exercises of varying difficulty:
 \item[$\star\star\star$] Advanced exercises exploring extensions
 \end{itemize}
 
-Solutions to selected exercises appear on the book's companion website.
+Solutions to selected exercises appear in Appendix~\ref{app:solutions}.
 
 \section*{Notation Conventions}
 
@@ -83,6 +77,6 @@ Solutions to selected exercises appear on the book's companion website.
 \item Variables in programs start with uppercase: \texttt{X}, \texttt{Stream}, \texttt{Result}
 \item Constants and functors start with lowercase: \texttt{merge}, \texttt{person(alice)}
 \item Reader variables use suffix \texttt{?}: \texttt{X?}
-\item Writer variables use suffix \texttt{!}: \texttt{X!}
+\item Writer variables have no suffix: \texttt{X}
 \item Mathematical variables appear in italics: $x$, $\sigma$, $\theta$
 \end{itemize}
