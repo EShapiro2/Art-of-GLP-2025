@@ -19,7 +19,7 @@ Note that in each clause, each reader or writer occurs exactly once.
 
 The operational semantics of GLP extends and simplifies that of LP as follows:
 \begin{enumerate}
-\item \textbf{Term matching instead of unification}: In LP, unification computes a most-general unifier that may bind any variable on either side. In GLP, term matching is a simpler operation: it assigns values only to writers, suspends when a reader requires a value not yet available, and fails when terms are structurally incompatible or when two variables of the same kind meet. The occurs check is not performed; its role in preventing circular terms is replaced by the SO invariant, which also makes it infeasible in a multiagent setting.
+\item \textbf{Term matching instead of unification}: In LP, unification computes a most-general unifier that may bind any variable on either side. In GLP, term matching is a simpler operation: it assigns values only to writers, suspends when a reader requires a value not yet available, and fails when terms are structurally incompatible or when two variables of the same kind meet. The occurs check is not performed, as it is infeasible in a multiagent setting. Circular terms may form through cross-goal communication; implementations must handle them gracefully.
 
 \item \textbf{Synchronization}: Term matching may only assign writers, so in addition to succeed/fail, it may suspend if it requires assigning readers.
 
@@ -163,12 +163,8 @@ Next, we establish essential safety properties for GLP that distinguish it from 
 If the initial goal $G_0$ in a $GLP$ run satisfies SO, then every goal in the run satisfies SO.
 \end{restatable}
 
-\mypara{Acyclicity}
-The SO invariant prevents the formation of circular terms: since each variable occurs at most once, a variable cannot appear in a term to which it is assigned.
-
-\begin{restatable}[Acyclicity]{proposition}{Acyclicity}\label{proposition:acyclicity}
-If the initial goal $G_0$ in a $GLP$ run contains no circular terms, then no goal in the run contains a circular term.
-\end{restatable}
+\mypara{Circular Terms}
+Circular terms may form through cross-goal communication. For example, given clause \verb|p(X?,X)| and goals \verb|p(X,f(Y?)), p(Y,f(X?))|, after both reductions \verb|X| becomes \verb|f(f(X?)))|---circular. In a multiagent setting, these goals may execute on different agents, making any occurs check infeasible. Implementations must handle circular terms gracefully.
 
 \mypara{Monotonicity}
 Unlike LP where variable instantiation can cause a previously reducible goal to fail, GLP exhibits monotonicity. In a run, if a goal $A$ can be reduced at some point, it remains reducible at all future points in that run, where 
