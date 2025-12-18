@@ -61,6 +61,7 @@ guard ::= guard_atom
 
 guard_atom ::= ground(term)
              | unknown(term)
+             | known(term)
              | term == term       % identity
              | term \== term      % non-identity
              | arithmetic_comparison
