@@ -179,13 +179,13 @@ dmerge(Xs, [merge(Ws)|Ys], Zs?) :-
 dmerge([X|Xs], Ys, [X?|Zs?]) :-
     tuple(X?), ~(X? =?= merge(_)) | dmerge(Ys?, Xs?, Zs).
 dmerge([X|Xs], Ys, [X?|Zs?]) :-
-    atom(X?) | dmerge(Ys?, Xs?, Zs).
+    string(X?) | dmerge(Ys?, Xs?, Zs).
 dmerge([X|Xs], Ys, [X?|Zs?]) :-
     number(X?) | dmerge(Ys?, Xs?, Zs).
 dmerge(Xs, [Y|Ys], [Y?|Zs?]) :-
     tuple(Y?), ~(Y? =?= merge(_)) | dmerge(Xs?, Ys?, Zs).
 dmerge(Xs, [Y|Ys], [Y?|Zs?]) :-
-    atom(Y?) | dmerge(Xs?, Ys?, Zs).
+    string(Y?) | dmerge(Xs?, Ys?, Zs).
 dmerge(Xs, [Y|Ys], [Y?|Zs?]) :-
     number(Y?) | dmerge(Xs?, Ys?, Zs).
 dmerge([], [], []).
@@ -193,7 +193,7 @@ dmerge([], [], []).
 dmerger(Ws, Xs, Out?) :- dmerge(Ws?, Xs?, Out).
 \end{verbatim}
 
-The type guards (\verb|tuple|, \verb|atom|, \verb|number|) distinguish regular messages from \verb|merge| requests. For tuples, the additional guard \verb|~(X? =?= merge(_))| ensures we don't accidentally match a merge request. Splitting clauses by type is SRSW-compliant: type guards permit multiple reader occurrences (per Formal Box~\ref{formal:guards-multiple-reads}), so \verb|X?| can appear both in the output and in the type test.
+The type guards (\verb|tuple|, \verb|string|, \verb|number|) distinguish regular messages from \verb|merge| requests. For tuples, the additional guard \verb|~(X? =?= merge(_))| ensures we don't accidentally match a merge request. Splitting clauses by type is SRSW-compliant: type guards permit multiple reader occurrences (per Formal Box~\ref{formal:guards-multiple-reads}), so \verb|X?| can appear both in the output and in the type test.
 
 \subsection{Static Balanced Merge Tree}
 
@@ -438,8 +438,8 @@ variables. A ground term can be safely replicated because there are no writers
 to share.
 
 \mypara{Type Guards}
-Type guards like \verb|atom(X?)|, \verb|number(X?)|, and \verb|integer(X?)|
-also enable multiple reader occurrences. An atom or number cannot contain
+Type guards like \verb|string(X?)|, \verb|number(X?)|, and \verb|integer(X?)|
+also enable multiple reader occurrences. A string or number cannot contain
 variables, so success implies groundness.
 
 \mypara{The known Guard Does Not Enable Multiple Reads}
@@ -454,7 +454,7 @@ value. Thus \verb|known| does not grant multiple-read permission.
 \textbf{Guard} & \textbf{Multiple reads?} \\
 \hline
 \verb|ground(X?)| & Yes (no variables) \\
-\verb|atom(X?)|, \verb|number(X?)| & Yes (atoms/numbers have no variables) \\
+\verb|string(X?)|, \verb|number(X?)| & Yes (strings/numbers have no variables) \\
 \verb|compound(X?)| & Yes (compound structure exists) \\
 \verb|known(X?)| & No (value may contain writers) \\
 \end{tabular}
@@ -562,12 +562,12 @@ Consider an attempt to write a request-response protocol:
 \begin{verbatim}
 % INCORRECT - causes deadlock
 alice([msg(hello, Reply)|Rest]) :-
-    atom(Reply?) |       % Waits for Reply to be bound
+    string(Reply?) |       % Waits for Reply to be bound
     process(Reply?),     % Process the response
     alice(Rest?).
 \end{verbatim}
 
-This deadlocks. The guard \verb|atom(Reply?)| waits for \verb|Reply| to be
+This deadlocks. The guard \verb|string(Reply?)| waits for \verb|Reply| to be
 bound---but \verb|Reply| is a writer in alice's clause head. Only another
 process (bob) can bind it, by receiving the message and filling in the response.
 But alice hasn't sent the message yet; she's blocked in her guard.
@@ -583,7 +583,7 @@ alice([msg(hello, Reply)|Rest]) :-
     alice_wait(Reply?, Rest?).
 
 alice_wait(Reply, Rest) :-
-    atom(Reply?) |       % Now waiting for bob's response
+    string(Reply?) |       % Now waiting for bob's response
     process(Reply?),
     alice(Rest?).
 \end{verbatim}

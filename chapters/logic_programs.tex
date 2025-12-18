@@ -104,7 +104,7 @@ Given LP goal $A$ and clause $C$,  with $H \verb|:-| B$ being the result of rena
 \begin{definition}[Logic Programs Transition System]\label{definition:lp-ts}
 A transition system $LP = (C,c0, T)$ is a \temph{Logic Programs transition system} for a logic program $M$ and initial goal $G_0 \in \mathcal{G}(M)$ if
 $C=\mathcal{G}(M)$, $c0=G_0$, and $T$
-is the set of all transitions $G \rightarrow G' \in \mathcal{G}(M)^2$ such that for some atom $A \in G$ and clause $C \in M$  the LP reduction of $A$ with $C$ succeeds with result $(B,\sigma)$, and $G' = (G \setminus \{A\} \cup B)\sigma$.
+is the set of all transitions $G \rightarrow G' \in \mathcal{G}(M)^2$ such that for some unit goal $A \in G$ and clause $C \in M$  the LP reduction of $A$ with $C$ succeeds with result $(B,\sigma)$, and $G' = (G \setminus \{A\} \cup B)\sigma$.
 \end{definition}
 We write $G \xrightarrow{\sigma} G'$ when we want to make the substitution of a reduction explicit.
 As a tribute to resolution theorem proving~\cite{robinson1965machine}—the intellectual ancestor of logic programming—a configuration of $LP$ is also referred to as a \emph{resolvent}.

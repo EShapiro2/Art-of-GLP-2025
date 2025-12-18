@@ -33,7 +33,7 @@ The simulation omits aspects that are orthogonal to protocol logic:
 
 \paragraph{Physical distribution.} Real grassroots systems run on separate devices with no shared memory. The GLPSAM runs everything on one machine with a shared heap. This difference is invisible to protocol logic, which sees only streams and channels.
 
-\paragraph{Agent identity.} In deployment, agents are identified by public keys derived from cryptographic keypairs. In simulation, agents are simply atoms: \verb|alice|, \verb|bob|, \verb|carol|. Protocol logic treats identities as opaque values for routing and addressing.
+\paragraph{Agent identity.} In deployment, agents are identified by public keys derived from cryptographic keypairs. In simulation, agents are simply strings: \verb|alice|, \verb|bob|, \verb|carol|. Protocol logic treats identities as opaque values for routing and addressing.
 
 \paragraph{Byzantine failures.} The simulation assumes all agents follow the protocol correctly. Malicious agents who deviate from specified behavior, forge messages, or attempt to violate invariants are not modeled. Security against Byzantine behavior requires the cryptographic layer that simulation omits.
 

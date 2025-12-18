@@ -8,14 +8,14 @@ This appendix provides a complete reference for GLP syntax, guards, system predi
 \mypara{Variables}
 A \emph{writer} is an alphanumeric string beginning with an uppercase letter: \verb|X|, \verb|X1|, \verb|Xs|, \verb|MyVar|. A \emph{reader} is a writer followed by \verb|?|: \verb|X?|, \verb|Xs?|. The underscore \verb|_| is an anonymous variable (don't-care), matching any value without binding.
 
-\mypara{Constants}
-An \emph{atom} is a string beginning with a lowercase letter: \verb|a|, \verb|foo|, \verb|myAtom|. Quoted strings are also atoms: \verb|'Hello World'|, \verb|','|.
+\mypara{Strings}
+A \emph{string} begins with a lowercase letter: \verb|a|, \verb|foo|, \verb|myAtom|. Quoted strings are also strings: \verb|'Hello World'|, \verb|','|.
 
 \mypara{Numbers}
 Integers: \verb|0|, \verb|42|, \verb|-17|. Floats: \verb|3.14|, \verb|-0.001|, \verb|2.5e10|.
 
 \mypara{Compound Terms}
-A \emph{structure} has a functor (atom) and arguments: \verb|point(X,Y)|, \verb|node(Left,Value,Right)|. The functor's \emph{arity} is its argument count.
+A \emph{structure} has a functor (string) and arguments: \verb|point(X,Y)|, \verb|node(Left,Value,Right)|. The functor's \emph{arity} is its argument count.
 
 \mypara{Lists}
 The empty list is \verb|[]|. A non-empty list is \verb|[Head|Tail]| where \verb|Head| is the first element and \verb|Tail| is the rest. Syntactic sugar: \verb|[1,2,3]| means \verb|[1|[2|[3|[]]]]|. Mixed notation: \verb|[1,2|Xs]| means \verb|[1|[2|Xs]]|.
@@ -59,7 +59,7 @@ Guards appear between the head and \verb$|$, testing conditions without side eff
 
 \item[\texttt{number(X)}] Succeeds if \verb|X| is bound to a number (integer or float).
 
-\item[\texttt{atom(X)}] Succeeds if \verb|X| is bound to an atom.
+\item[\texttt{string(X)}] Succeeds if \verb|X| is bound to a string.
 
 \item[\texttt{compound(X)}] Succeeds if \verb|X| is bound to a compound term.
 
@@ -99,7 +99,7 @@ collect_tips([[Block|Bs]|Others], [Block?|Tips?], ...) :-
 Any negatable guard \verb|G| can be negated using the syntax \verb|~G|. The negated guard succeeds when \verb|G| fails, fails when \verb|G| succeeds, and suspends when \verb|G| suspends.
 
 \mypara{Negatable guards}
-Type guards: \verb|ground|, \verb|known|, \verb|unknown|, \verb|integer|, \verb|number|, \verb|atom|, \verb|string|, \verb|constant|, \verb|compound|, \verb|tuple|, \verb|list|, \verb|is_list|, \verb|writer|, \verb|reader|. Equality guard: \verb|=?=|.
+Type guards: \verb|ground|, \verb|known|, \verb|unknown|, \verb|integer|, \verb|number|, \verb|string|, \verb|constant|, \verb|compound|, \verb|tuple|, \verb|list|, \verb|is_list|, \verb|writer|, \verb|reader|. Equality guard: \verb|=?=|.
 
 \mypara{Non-negatable guards}
 Arithmetic comparisons (\verb|<|, \verb|>|, \verb|=<|, \verb|>=|, \verb|=:=|, \verb|=\=|) cannot be negated. Control guards (\verb|otherwise|) and time guards (\verb|wait|, \verb|wait_until|) also cannot be negated.

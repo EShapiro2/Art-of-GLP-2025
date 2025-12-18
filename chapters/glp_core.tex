@@ -33,7 +33,7 @@ The remainder of this section presents GLP syntax, nondeterministic operational 
 \mypara{Reader/Writer pairs}
 GLP extends Logic Programs with paired reader/writer variables, where a \emph{writer} $X$ is a single-assignment variable (promise) and its \emph{paired reader $X?$} provides read-only access to the (future) value of $X$. We denote by $V$ the set of all writers, $V?$ the set of all readers and, $\mathcal{V} = V \cup V?$ the set of all variables, where for each writer $X \in V$ there exists a paired reader $X? \in V?$.
 We view $?$ as an identity suffix operator on non-writers, namely  $(X?)?=X?$ for $X?\in V?$ and $T?=T$ for $T\notin \calV$.
-We use $\calA_?$ and $\calG_?$ to denote the set of all atoms and goals, respectively, over $\calV$ (i.e., goals that may contain both readers and writers), and for a GLP program $M$,  $\calA_?(M)$  and $\calG_?(M)$ to denote the subsets of  $\calA_?$ and $\calG_?$, respectively,  restricted to the vocabulary of $M$.
+We use $\calG_?$ to denote the set of all goals over $\calV$ (i.e., goals that may contain both readers and writers), and for a GLP program $M$, $\calG_?(M)$ denotes the subset of $\calG_?$ restricted to the vocabulary of $M$.
 
 
 \mypara{Single-Reader/Single Writer (SRSW)} The fundamental requirement in GLP is \emph{single-writer}: any writer may occur at most once in any state of a computation, ensuring there can be no conflict when writing on a logic variable. We extend it to the \emph{single-reader/single-writer (SRSW) requirement} that any reader also occurs at most once. The reason is that with multiple instances of a reader, instantiating the writer to a term containing another writer would give all instances of the paired reader access to that writer, violating the single-writer requirement.
@@ -208,7 +208,7 @@ A transition system $GLP = (\calC,c0,\calT)$ is a \temph{GLP transition system} 
     \item $c0= (G_0,\emptyset)$
     \item $\calT$ is the set of all transitions $(G,\sigma)\rightarrow (G',\sigma')$ satisfying:
     \begin{enumerate}
-        \item \textbf{Reduce:} there exists an atom $A \in G$ such that $C \in M$ is the first clause for which the GLP reduction of $A$ with $C$ succeeds with result $(B,\hat\sigma)$,  $G' = (G \setminus \{A\} \cup B)\hat\sigma$, and $\sigma' = \sigma \circ \hat\sigma?$
+        \item \textbf{Reduce:} there exists a unit goal $A \in G$ such that $C \in M$ is the first clause for which the GLP reduction of $A$ with $C$ succeeds with result $(B,\hat\sigma)$,  $G' = (G \setminus \{A\} \cup B)\hat\sigma$, and $\sigma' = \sigma \circ \hat\sigma?$
         \item \textbf{Communicate:} $\hat\sigma = \{X?:=T\} \in \sigma$, $G'= G\hat\sigma$, and $\sigma' = \sigma \setminus \hat\sigma$
 \end{enumerate}
 \end{enumerate}
@@ -261,7 +261,7 @@ In any $GLP$ run $G_0 \rightarrow G_1 \rightarrow \cdots$, if $G_i \rightarrow G
 \end{restatable}
 
 \begin{restatable}[Monotonicity]{proposition}{Monotonicity}\label{proposition:GLP-monotonicity}
-In any $GLP$ run $G_0 \rightarrow G_1 \rightarrow \cdots$, if atom $A \in G_i$ can reduce with clause $C$, then for any $j > i$, either $A$ has been reduced by step $j$, or there exists $A' \in G_j$ where $A' = A\tau$ for some reader assignment $\tau$, and $A'$ can reduce with $C$.
+In any $GLP$ run $G_0 \rightarrow G_1 \rightarrow \cdots$, if unit goal $A \in G_i$ can reduce with clause $C$, then for any $j > i$, either $A$ has been reduced by step $j$, or there exists $A' \in G_j$ where $A' = A\tau$ for some reader assignment $\tau$, and $A'$ can reduce with $C$.
 \end{restatable}
 
 \subsection{Deterministic Transition System for Concurrent GLP}\label{subsection:irGLP}
@@ -399,7 +399,7 @@ Type guards test the structure of a value:
 \item \verb|ground(X)| --- succeeds if \verb|X| contains no unbound variables
 \item \verb|known(X)| --- succeeds if \verb|X| is bound (may contain unbound subterms)
 \item \verb|unknown(X)| --- succeeds if \verb|X| is an unbound variable
-\item \verb|integer(X)|, \verb|number(X)|, \verb|atom(X)| --- test for specific types
+\item \verb|integer(X)|, \verb|number(X)|, \verb|string(X)| --- test for specific types
 \item \verb|compound(X)|, \verb|tuple(X)| --- test for compound terms
 \item \verb|is_list(X)| --- tests for proper list structure
 \end{itemize}
