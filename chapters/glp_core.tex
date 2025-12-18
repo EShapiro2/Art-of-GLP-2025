@@ -164,7 +164,36 @@ If the initial goal $G_0$ in a $GLP$ run satisfies SO, then every goal in the ru
 \end{restatable}
 
 \mypara{Circular Terms}
-Circular terms may form through cross-goal communication. For example, given clause \verb|p(X?,X)| and goals \verb|p(X,f(Y?)), p(Y,f(X?))|, after both reductions \verb|X| becomes \verb|f(f(X?)))|---circular. In a multiagent setting, these goals may execute on different agents, making any occurs check infeasible. Implementations must handle circular terms gracefully.
+Circular terms may form through cross-goal communication. Consider the clause \verb|p(X?,X)| and goals \verb|p(X,f(Y?)), p(Y,f(X?))|. After both reductions, \verb|X| is assigned \verb|f(Y?)| and \verb|Y| is assigned \verb|f(X?)|, yielding the circular term \verb|X = f(f(X?))|. In a multiagent setting these goals may execute on different agents, making any occurs check infeasible. Implementations must handle circular terms gracefully.
+
+\begin{formal}{Circular Term Semantics}
+\label{formal:circular-terms}
+Circular terms arise when a variable appears (via its reader) within its own assigned value. The following operations must handle circular terms:
+
+\begin{description}
+\item[Dereferencing.] Following a chain of assignments must detect cycles and terminate. When a cycle is detected, dereferencing returns the circular structure itself rather than diverging.
+
+\item[Ground test.] A term is \temph{ground} if it contains no variables. A circular term such as \verb|f(f(f(...)))| contains no variables and is therefore ground. A term like \verb|f(g(X?), f(f(...)))| where \verb|X?| is unbound is not ground, regardless of the cycle in its second argument.
+
+\item[Equality test.] Two terms are equal if they have identical structure. For circular terms, this requires comparing corresponding positions while tracking pairs already visited. If two positions in the respective terms both point back to previously compared positions, they are equal at that point.
+
+\item[Term copying.] Copying a circular term produces a circular copy with the same structure. The cycle in the copy is independent of the original.
+
+\item[Term display.] Displaying a circular term must detect the cycle and use a finite representation, such as indicating the cycle point.
+\end{description}
+\end{formal}
+
+\begin{example}[Circular Term Formation]
+\label{example:circular-term}
+Given clause \verb|p(X?,X)| and query \verb|p(X,f(Y?)), p(Y,f(X?))|:
+\begin{enumerate}
+\item Goal \verb|p(X,f(Y?))| reduces with clause \verb|p(X?,X)|. Term matching assigns \verb|X := f(Y?)|.
+\item Goal \verb|p(Y,f(X?))| reduces with clause \verb|p(X1?,X1)| (renamed). Term matching assigns \verb|Y := f(X?)|.
+\item Applying the readers counterpart: \verb|Y?| receives \verb|f(X?)| and \verb|X?| receives \verb|f(Y?)|.
+\item Result: \verb|X = f(Y?) = f(f(X?))| --- a circular term.
+\end{enumerate}
+The term \verb|X| is ground (contains no unbound variables) despite being circular.
+\end{example}
 
 \mypara{Monotonicity}
 Unlike LP where variable instantiation can cause a previously reducible goal to fail, GLP exhibits monotonicity. In a run, if a goal $A$ can be reduced at some point, it remains reducible at all future points in that run, where 
