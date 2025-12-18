@@ -1,3 +1,8 @@
+% chapters/glp_core.tex - GLP Core
+
+\chapter{GLP Core}
+\label{ch:glp-core}
+
 \section{GLP}\label{section:GLP}
 
 We present GLP as an extension and simplification of Logic Programs: The syntax is extended with reader variables \verb|X?|, where \verb|X| and \verb|X?| form a reader/writer pair, and with the Single-Reader/Single-Writer syntactic restriction on clauses. Term matching replaces unification. For example, here is the quintessential concurrent logic program for merging two streams (incrementally constructed, potentially unbounded lists), written in GLP. Its first two arguments are the input streams to be merged, the third is the merged output stream:
