@@ -27,7 +27,38 @@ A transition $c \rightarrow c' \in T$ is \temph{enabled} from configuration $c$.
 
 \subsection{Logic Programs Syntax}
 
-The syntax of Logic Programs follows the standard in logic programming and Prolog, and is formally defined in Appendix~\ref{appendix:lp}. We note that $V$ denotes the set of all variables and $\calT$ the set of all terms.
+\begin{definition}[Terms]\label{definition:terms}
+\begin{itemize}
+    \item A \temph{term} is a variable, a number, or $f(T_1, T_2, \ldots, T_n)$ where $f$ is a string (called the \temph{functor}), $n \ge 0$ is the \temph{arity}, and each $T_i$ is a term. A term with arity 0 is identified with its functor. Let $\calT$ denote the set of all terms.
+
+    \item A \temph{variable} is an alphanumeric string beginning with an uppercase letter or underscore \verb|_| (e.g., \verb|X|, \verb|X1|, \verb|Xs|, \verb|_|, \verb|_Result|). Let $V$ denote the set of all variables.
+
+    \item A \temph{number} is a numeric literal, optionally signed, which may include a decimal point (e.g., \verb|0|, \verb|-1|, \verb|3.14|).
+
+    \item A \temph{string} is an alphanumeric string beginning with a lowercase letter (e.g., \verb|a|, \verb|foo|, \verb|mergeSort|), or a quoted string (e.g., \verb|','|, \verb|'Hello World'|).
+
+    \item A term is \temph{ground} if it contains no variables.
+\end{itemize}
+\end{definition}
+
+\begin{definition}[Logic Programs]\label{definition:logic-programs}
+\begin{itemize}
+    \item A \temph{goal} is a term $f(T_1, T_2, \ldots, T_n)$ where $f$ is a string, $n \ge 0$, and each $T_i$ is a term. A goal is \temph{conjunctive} if its functor is \verb|','| and arity is 2; otherwise it is a \temph{unit goal}. Let $\calG$ denote the set of all goals.
+
+    \item A \temph{clause} is a term of the form $A$ \verb|:-| $B$ (read ``$A$ if $B$''), where $A$ is a goal called the clause's \temph{head}, and $B$ is a goal called the clause's \temph{body}. If $B$ is the unit goal \verb|true|, the clause is called a \temph{unit clause} and may be written simply as $A$. The underscore \verb|_| is a \temph{don't-care variable} that stands for a distinct variable occurring only once.
+
+    \item A \temph{logic program} is a finite sequence of clauses. By convention, clauses with the same functor and arity in their heads are grouped together and called a \temph{procedure}.
+\end{itemize}
+\end{definition}
+
+\begin{definition}[Auxiliary Notation]\label{definition:auxiliary-notation}
+\begin{itemize}
+    \item A \temph{constant} is a string or a number.
+
+    \item \temph{Lists}: The term \verb|[]| represents the empty list. The term \verb|'.'(X, Xs)|, written \verb|[X|Xs]|, represents a list with first element \verb|X| and rest \verb|Xs|. The notation \verb|[X]| abbreviates \verb|[X|[]]|, and \verb|[X1, X2, ..., Xn]| abbreviates the nested term \verb|[X1|[X2|...[Xn|[]]...]]|.
+\end{itemize}
+\end{definition}
+
 We recall the quintessential logic program for list concatenation as an example:
 \begin{example}[Append]
 \begin{verbatim}
@@ -35,7 +66,7 @@ append([X|Xs], Ys, [X|Zs]) :- append(Xs, Ys, Zs).
 append([], Ys, Ys).
 \end{verbatim}
 Logically, a logic program clause $A$\verb|:-| $B$ is a universally-quantified implication in which $B$ implies $A$, and a program is a conjunction of its clauses.
-By convention, we use plural variable names like \verb|Xs| to denote a list of \verb|X|'s,
+By convention, we use plural variable names like \verb|Xs| to denote a list of \verb|X|'s.
 \end{example}
 
 \subsection{Logic Programs Operational Semantics}
