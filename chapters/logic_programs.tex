@@ -153,3 +153,41 @@ Let $D$ represent ``one dollar'' and $C$ represent ``one coffee.'' The linear im
 \end{example}
 
 The connection between linear logic and type systems is well established~\cite{wadler1990linear,wadler1993taste}. A \temph{linear type} ensures that a value is used exactly once: it cannot be duplicated (no aliasing) and cannot be discarded (no resource leaks). Related notions include \temph{uniqueness types}~\cite{barendsen1996uniqueness}, which guarantee a value has no other references, and \temph{affine types}, which permit discarding but not duplication.
+
+\subsection{GLP as Linear Logic Programming}
+
+GLP realizes the linear discipline in logic programming by applying it to \emph{equality assertions}---the fundamental operation of unification.
+
+In standard LP, unification may assert multiple equalities involving the same variable. For example, unifying \verb|p(X,X)| with \verb|p(a,a)| asserts both $X = a$ (from the first argument) and $X = a$ (from the second). The unification algorithm reconciles these assertions, which in general requires checking consistency across all occurrences. This corresponds to \emph{contraction}: the variable $X$ is used multiple times.
+
+In GLP, the SO invariant restricts each variable to at most one occurrence in any resolvent. This eliminates contraction: each variable participates in exactly one equality assertion. The distinction between writer \verb|X| and reader \verb|X?| makes this precise:
+\begin{itemize}
+    \item A \emph{writer} \verb|X| is the target of an equality assertion $X := T$. By SO, it occurs exactly once, so there is exactly one such assertion.
+    \item A \emph{reader} \verb|X?| observes the value established by its paired writer. By SO, it also occurs exactly once, so there is exactly one observer.
+\end{itemize}
+
+This corresponds directly to the linear discipline:
+\begin{itemize}
+    \item \emph{No contraction}: A variable cannot be duplicated. Each writer and each reader occurs exactly once.
+    \item \emph{No weakening}: A variable cannot be discarded unused. Each writer must have a paired reader (enforced by SRSW), and each reader eventually receives a value or the computation suspends.
+\end{itemize}
+
+The \verb|ground(X)| guard provides the equivalent of the exponential modality $!A$: when a term is known to be ground (containing no variables), it may be safely duplicated because it carries no linear resources.
+
+\begin{formal}{Linear Equality Assertions}
+\label{formal:linear-equality}
+The correspondence between GLP and linear logic:
+\begin{center}
+\begin{tabular}{ll}
+\textbf{Linear Logic} & \textbf{GLP} \\
+\hline
+Assertion used exactly once & Variable occurs exactly once (SO) \\
+No contraction & Single writer, single reader (SRSW) \\
+No weakening & Paired reader/writer required \\
+$!A$ (of course) & \verb|ground(X)| guard \\
+Linear implication $A \limp B$ & Communication: writer $\rightarrow$ reader \\
+\end{tabular}
+\end{center}
+\end{formal}
+
+The practical consequence is that GLP eliminates distributed unification. In LP, reconciling multiple equality assertions on the same variable requires coordination across all occurrences---in a distributed setting, this requires atomic transactions~\cite{kleinman1990distributed}. In GLP, each equality assertion involves a unique writer, and communication is point-to-point from writer to reader. No coordination is needed because there are no conflicts to resolve.
