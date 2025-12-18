@@ -338,7 +338,7 @@ distribute([X|Xs], [Y?|Ys?], [Z?|Zs?]) :-
     distribute(Xs?, Ys, Zs).
 distribute([], [], []).
 
-copy(X, Y, Z) :- string(X?) | Y = X?, Z = X?.
+copy(X, Y, Z) :- constant(X?) | Y = X?, Z = X?.
 copy(X, Y, Z) :- number(X?) | Y = X?, Z = X?.
 copy(X, Y, Z) :- compound(X?) |
     X? =.. [F|Args],
@@ -352,9 +352,9 @@ copy_list([H|T], [H1?|T1?], [H2?|T2?]) :-
     copy_list(T?, T1, T2).
 \end{verbatim}
 
-The \verb|copy| predicate dispatches on the type of term: strings and numbers are copied directly (the type guard permits multiple reader occurrences per Formal Box~\ref{formal:guards-multiple-reads}), while compound terms are decomposed using \verb|=..| (univ), their arguments copied recursively, and the results reassembled.
+The \verb|copy| predicate dispatches on the type of term: constants are copied directly (the type guard permits multiple reader occurrences per Formal Box~\ref{formal:guards-multiple-reads}), while compound terms are decomposed using \verb|=..| (univ), their arguments copied recursively, and the results reassembled.
 
-The key insight is that no explicit handling of unbound variables is needed. If a subterm is unbound, none of the guards (\verb|string(X?)|, \verb|number(X?)|, \verb|compound(X?)|) succeed, so the goal suspends. When the producer later binds the subterm, the appropriate guard succeeds and copying proceeds. This is GLP's natural suspension behavior at work.
+The key insight is that no explicit handling of unbound variables is needed. If a subterm is unbound, none of the guards (\verb|constant(X?)|, \verb|compound(X?)|) succeed, so the goal suspends. When the producer later binds the subterm, the appropriate guard succeeds and copying proceeds. This is GLP's natural suspension behavior at work.
 
 \begin{verbatim}
 GLP> distribute([msg(hello, world), msg(foo, bar)]?, Out1, Out2).
@@ -373,7 +373,7 @@ The stream observer in Chapter~\ref{ch:streams} monitors unidirectional communic
 
 \begin{verbatim}
 %% A->B: value available at A (position 1)
-observe(A, A?, A?) :- string(A?) | true.
+observe(A, A?, A?) :- constant(A?) | true.
 observe(A, A?, A?) :- number(A?) | true.
 observe(A, B?, Log?) :- compound(A?) |
     A? =.. [F|ArgsA],
@@ -382,7 +382,7 @@ observe(A, B?, Log?) :- compound(A?) |
     Log =.. [F?|ArgsLog?].
 
 %% B->A: value available at B (position 2)
-observe(A?, A, A?) :- string(A?) | true.
+observe(A?, A, A?) :- constant(A?) | true.
 observe(A?, A, A?) :- number(A?) | true.
 observe(A?, B, Log?) :- compound(B?) |
     B? =.. [F|ArgsB],
@@ -414,7 +414,7 @@ alice([msg(1, hello, response(Name, Age)) | C1?]) :-
     alice_wait1(Name?, Age?, C1).
 
 alice_wait1(Name, Age, [msg(2, offer(50), Response) | C2?]) :-
-    string(Name?), number(Age?) |
+    constant(Name?), constant(Age?) |
     alice_wait2(Response?, C2).
 \end{verbatim}
 
@@ -430,7 +430,7 @@ Bob consumes the stream, filling response fields with constants:
 
 \begin{verbatim}
 bob([msg(1, Greeting, response(bob, 25)) | R1?]) :-
-    string(Greeting?) |
+    constant(Greeting?) |
     bob_round2(R1).
 
 bob_round2([msg(2, offer(Price), accept) | R2?]) :-
@@ -438,7 +438,7 @@ bob_round2([msg(2, offer(Price), accept) | R2?]) :-
     bob_round3(R2).
 \end{verbatim}
 
-When bob's clause head \verb|response(bob, 25)| unifies with alice's \verb|response(Name, Age)|, the writers \verb|Name| and \verb|Age| receive the constants \verb|bob| and \verb|25|. The induced reader assignment propagates these values to alice's waiting guards \verb|string(Name?)| and \verb|number(Age?)|.
+When bob's clause head \verb|response(bob, 25)| unifies with alice's \verb|response(Name, Age)|, the writers \verb|Name| and \verb|Age| receive the constants \verb|bob| and \verb|25|. The induced reader assignment propagates these values to alice's waiting guards \verb|constant(Name?)| and \verb|constant(Age?)|.
 
 \begin{formal}{Guard Placement in Protocols}
 \label{formal:protocol-guards}
@@ -448,7 +448,7 @@ A common error is placing guards that test response fields in the same clause th
 \begin{verbatim}
 % INCORRECT - deadlocks
 alice([msg(hello, Reply)|Rest]) :-
-    string(Reply?) |    % Waits for Reply before sending
+    constant(Reply?) |    % Waits for Reply before sending
     process(Reply?),
     alice(Rest?).
 \end{verbatim}
