@@ -3,9 +3,14 @@
 \chapter{GLP Core}
 \label{ch:glp-core}
 
+% chapters/glp_core.tex - GLP Core
+
+\chapter{GLP Core}
+\label{ch:glp-core}
+
 \section{GLP}\label{section:GLP}
 
-We present GLP as an extension of Logic Programs: The syntax is extended with reader variables $X?$, where $X$ and $X?$ form a reader/writer pair, and with the Single-Reader/Single-Writer syntactic restriction on clauses.  For example, here is the quintessential concurrent logic program for merging two streams (incrementally constructed, potentially unbounded lists), written in GLP.  Its first two arguments are the input streams to be merged,  the third is the merged output stream:
+We present GLP as an extension and simplification of Logic Programs: The syntax is extended with reader variables \verb|X?|, where \verb|X| and \verb|X?| form a reader/writer pair, and with the Single-Reader/Single-Writer syntactic restriction on clauses. Term matching replaces unification. For example, here is the quintessential concurrent logic program for merging two streams (incrementally constructed, potentially unbounded lists), written in GLP. Its first two arguments are the input streams to be merged, the third is the merged output stream:
 
 \Program{GLP Fair Stream Merger}\label{program:merge}
 \begin{small}
@@ -15,15 +20,17 @@ merge(Xs,[Y|Ys],[Y?|Zs?]) :- merge(Xs?,Ys?,Zs). % output from second stream
 merge([],[],[]).                                % terminate on empty streams
 \end{verbatim}
 \end{small}
-Note that in each clause, each reader or writer occurs at most once.
+Note that in each clause, each reader or writer occurs exactly once.
 
-The operational semantics of GLP extends that of LP as follows:
+The operational semantics of GLP extends and simplifies that of LP as follows:
 \begin{enumerate}
-\item \textbf{Synchronisation}: Unification may only instantiate writers, so in addition to succeed/fail, unification may suspend if it requires instantiating readers.
+\item \textbf{Term matching instead of unification}: In LP, unification computes a most-general unifier that may bind any variable on either side. In GLP, term matching is a simpler operation: it assigns values only to writers, suspends when a reader requires a value not yet available, and fails when terms are structurally incompatible or when two variables of the same kind meet. The occurs check is not performed; its role in preventing circular terms is replaced by the SO invariant, which also makes it infeasible in a multiagent setting.
 
-\item \textbf{Communication}: When a unifying writer assignment binds a writer $X$ to a term $T$, the message  $X? := T$ encoding its induced reader assignment is created and added to the configuration. Its application happens asynchronously, realizing a message $T$ from the single occurrence of $X$ to the single occurrence of $X?$.
+\item \textbf{Synchronization}: Term matching may only assign writers, so in addition to succeed/fail, it may suspend if it requires assigning readers.
 
-\item \textbf{Deterministic clause selection}: The first applicable clause is chosen, not nondeterministically as in LP. This provides for the fairness of \verb|merge| presented above:  As long as the two input streams are available the output dovetails the two inputs, due to switching their order in the recursive call of the first clause; as long as only one stream is available, its elements are copied to the output; and when both streams are unavailable the goal suspends.
+\item \textbf{Communication}: When term matching assigns a writer \verb|X| to a term \verb|T|, the message \verb|X? := T| encoding its paired reader assignment is created and added to the configuration. Its application happens asynchronously, realizing a message \verb|T| from the single occurrence of \verb|X| to the single occurrence of \verb|X?|.
+
+\item \textbf{Deterministic clause selection}: The first applicable clause is chosen, not nondeterministically as in LP. This provides for the fairness of \verb|merge| presented above: As long as the two input streams are available the output dovetails the two inputs, due to switching their order in the recursive call of the first clause; as long as only one stream is available, its elements are copied to the output; and when both streams are unavailable the goal suspends.
 \end{enumerate}
 
 The remainder of this section presents GLP syntax, nondeterministic operational semantics, and safety properties. A deterministic `workstation implementation-ready' transition-system specification for GLP is presented in Appendix~\ref{appendix:irGLP}.
@@ -31,102 +38,84 @@ The remainder of this section presents GLP syntax, nondeterministic operational 
 \subsection{GLP Syntax}
 
 \mypara{Reader/Writer pairs}
-GLP extends Logic Programs with paired reader/writer variables, where a \emph{writer} $X$ is a single-assignment variable (promise) and its \emph{paired reader $X?$} provides read-only access to the (future) value of $X$. We denote by $V$ the set of all writers, $V?$ the set of all readers and, $\mathcal{V} = V \cup V?$ the set of all variables, where for each writer $X \in V$ there exists a paired reader $X? \in V?$.
-We view $?$ as an identity suffix operator on non-writers, namely  $(X?)?=X?$ for $X?\in V?$ and $T?=T$ for $T\notin \calV$.
-We use $\calG_?$ to denote the set of all goals over $\calV$ (i.e., goals that may contain both readers and writers), and for a GLP program $M$, $\calG_?(M)$ denotes the subset of $\calG_?$ restricted to the vocabulary of $M$.
+GLP extends Logic Programs with paired reader/writer variables, where a \emph{writer} \verb|X| is a single-assignment variable (promise) and its \emph{paired reader} \verb|X?| provides read-only access to the (future) value of \verb|X|. We denote by $V$ the set of all writers, $V?$ the set of all readers and, $\mathcal{V} = V \cup V?$ the set of all variables, where for each writer $X \in V$ there exists a paired reader $X? \in V?$.
+We view $?$ as an identity suffix operator on non-writers, namely $(X?)?=X?$ for $X?\in V?$ and $T?=T$ for $T\notin \calV$.
+We use $\calG_?$ to denote the set of all goals over $\calV$, and for a GLP program $M$, $\calG_?(M)$ denotes the subset restricted to the vocabulary of $M$.
+
+\mypara{Single-Occurrence (SO) Invariant}
+The fundamental requirement in GLP is that any variable may occur at most once in any resolvent. This \emph{single-occurrence (SO) invariant} ensures there can be no conflict when assigning a writer, and no duplication when reading from a reader.
+
+\mypara{SRSW Syntactic Restriction on Clauses}
+A clause satisfies the \emph{single-reader/single-writer (SRSW) syntactic restriction} if every writer occurs exactly once and every reader occurs exactly once in the clause.
+
+The SO invariant is maintained by the SRSW syntactic restriction: given a resolvent satisfying SO, reducing a goal with a clause satisfying SRSW produces a new resolvent satisfying SO.
+
+This restriction excludes programs like the equality definition \verb|X=X| as it has two occurrences of the writer \verb|X|. At the same time it eliminates the need for distributed atomic unification~\cite{kleinman1990distributed}—replacing it with efficient point-to-point communication of a single assignment from the single occurrence of a writer to the single occurrence of its paired reader.
+
+\subsection{GLP Operational Semantics}
+
+\begin{definition}[Writers Assignment, Readers Counterpart]\label{definition:writers-assignment}
+A \temph{writers assignment} $\sigma$ is a set of assignments $\{$\verb|X1|}$ := T_1, \ldots, $\verb|Xk|$ := T_k\}$ where each \verb|Xi| $\in V$ is a writer.
+
+A \temph{readers assignment} $\sigma$ is a set of assignments where each variable in the domain is a reader.
+
+If $\sigma$ is a writers assignment then its \temph{readers counterpart} is the readers assignment $\sigma?$ defined by \verb|X?|$\sigma? = $\verb|X|$\sigma$ for every \verb|X| $\in \mathrm{dom}(\sigma)$.
+\end{definition}
+
+\begin{definition}[Term Matching]\label{definition:term-matching}
+Given two terms \verb|T1| and \verb|T2| that jointly satisfy the SO assumption (every variable occurs at most once in \verb|T1| and \verb|T2| combined), \temph{term matching} of \verb|T1| with \verb|T2| produces one of three outcomes: \temph{succeed} with a writers assignment, \temph{suspend}, or \temph{fail}. The outcome is determined by the following table, where \verb|X1|, \verb|X2| denote writers, \verb|X1?|, \verb|X2?| denote readers, and $f/n$, $f'/n'$ denote terms with functor $f$, $f'$ and arity $n$, $n'$:
+
+\begin{center}
+\begin{tabular}{l|lll}
+\verb|T1| $\backslash$ \verb|T2| & Writer \verb|X2| & Reader \verb|X2?| & Term $f'/n'$ \\
+\hline
+Writer \verb|X1| & fail & \verb|X1| $:=$ \verb|X2?| & \verb|X1| $:=$ \verb|T2| \\
+Reader \verb|X1?| & \verb|X2| $:=$ \verb|X1?| & fail & suspend \\
+Term $f/n$ & \verb|X2| $:=$ \verb|T1| & suspend & see below \\
+\end{tabular}
+\end{center}
+
+For matching term $f/n$ with term $f'/n'$: if $f \ne f'$ or $n \ne n'$, the match fails. Otherwise, recursively match all $n$ pairs of corresponding arguments.
+
+Outcomes combine as follows: if any match fails, the overall match fails; otherwise, if any match suspends, the overall match suspends; otherwise, the overall match succeeds with the union of all writers assignments.
+\end{definition}
+
+\begin{remark}
+Writer-to-writer matching (\verb|X1| vs \verb|X2|) fails because, by the SO invariant, no other occurrences of \verb|X1| or \verb|X2| exist to assign them values, leaving their paired readers \verb|X1?| and \verb|X2?| \emph{abandoned}.
+
+Reader-to-reader matching (\verb|X1?| vs \verb|X2?|) fails because neither can be assigned, and they cannot be equated without violating SO.
+\end{remark}
+
+Renaming (Definition~\ref{definition:renaming}) is extended to respect variable pairing:
+\begin{definition}[GLP Renaming]\label{definition:GLP-renaming}
+Two GLP terms \verb|T|, \verb|T'| have a variable in common if for some writer \verb|X| $\in V$, either \verb|X| or \verb|X?| occur in \verb|T| and either \verb|X| or \verb|X?| occur in \verb|T'|. A \temph{GLP renaming} is a renaming substitution $\rho: \mathcal{V} \mapsto \mathcal{V}$ such that for each \verb|X| $\in V$: \verb|X|$\rho \in V$ and \verb|X?|$\rho = ($\verb|X|$\rho)?$.
+\end{definition}
+
+\begin{definition}[GLP Goal/Clause Reduction]\label{definition:GLP-goal-clause-reduction}
+Given GLP unit goal \verb|A| and clause \verb|C|, with \verb|H| \verb|:-| \verb|B| being the result of the GLP renaming of \verb|C| apart from \verb|A|, the \temph{GLP reduction} of \verb|A| with \verb|C| fails or suspends if the term matching of \verb|A| and \verb|H| fails or suspends, respectively, and succeeds with result $(B\sigma, \sigma?)$ if the term matching succeeds with writers assignment $\sigma$.
+\end{definition}
 
 
-\mypara{Single-Reader/Single Writer (SRSW)} The fundamental requirement in GLP is \emph{single-writer}: any writer may occur at most once in any state of a computation, ensuring there can be no conflict when writing on a logic variable. We extend it to the \emph{single-reader/single-writer (SRSW) requirement} that any reader also occurs at most once. The reason is that with multiple instances of a reader, instantiating the writer to a term containing another writer would give all instances of the paired reader access to that writer, violating the single-writer requirement.
-The SRSW requirement is realized by two complementary concepts:
+
+The GLP operational semantics is defined via the following transition system, which employs the notions defined above to extend LP (Definition~\ref{definition:lp-ts}). It abstracts-away goal suspension and failure; these are used in the implementation-ready specifications (Appendixes~\ref{appendix:irGLP} and~\ref{appendix:irmaGLP}) for explicit goal scheduling, suspension and activation.
+
+\begin{definition}[GLP Transition System]\label{definition:GLP-ts}
+Given a GLP program $M$, an \temph{asynchronous resolvent} over $M$ is a pair $(G,\sigma)$ where $G\in \calG_?(M)$ and $\sigma$ is a readers assignment.
+
+A transition system $GLP = (\calC,c0,\calT)$ is a \temph{GLP transition system} over $M$ and initial goal $G_0 \in \mathcal{G}_?(M)$ satisfying SO if:
 \begin{enumerate}
-    \item \emph{SRSW syntactic restriction on clauses}: Variables in a clause occur as reader/writer pairs, with exactly one of each.
-    \item \emph{SRSW invariant}:  Given a resolvent that satisfies the SRSW requirement, applying to it a goal reduction with a clause that satisfies the SRSW syntactic restriction produces a new resolvent that also satisfies the SRSW requirement.
-\end{enumerate}
-This SRSW syntactic restriction excludes programs like the equality definition $X=X$ as it has two occurrences of the writer $X$. At the same time it
-eliminates the need for distributed atomic unification~\cite{kleinman1990distributed}—replacing it with efficient point-to-point communication of a single assignment from the single occurrence of a writer to the single occurrence of its paired reader.
-
-\mypara{No writer-to-writer binding (WxW)}
-In addition, GLP requires \emph{no writer-to-writer} binding (WxW).  A reader/writer pair $X?/X$ is a communication channel from the writer $X$ to the reader $X?$.
-It two writers $X$ and $Y$ are unified during execution, the SRSW requirement implies that no occurrences of either $X$ or $Y$ are left to instantiate them, and therefore their paired readers $X?$ and $Y?$ will be left \emph{abandoned}.  Combined,  the WxW and SRSW restrictions ensure that communication channels are properly closed, with no reader is left abandoned by their paired variable.\footnote{We discuss below a relaxation, allowing a reader to abandon its paired writer using anonymous variables \texttt{\_}, which is useful in case there is no need to read the channel any more.}
-
-\subsection{GLP Operational semantics}
-
-\subsection{Writer and Reader Assignments}
-
-When a goal unifies with a clause head, values flow in one direction: writers can
-receive values, readers cannot. A \emph{writer assignment} captures exactly which
-writers get bound and to what. The \emph{induced reader assignment} then propagates
-those values to the paired readers. This asymmetry---writers are assigned, readers
-receive---is fundamental to GLP's communication model.
-
-\begin{definition}[Writer Assignment, Reader Assignment, Suspension Set]
-\label{definition:GLP-unification}
-
-A \temph{writer assignment} is a substitution $\sigma$ whose domain is writers
-($V_\sigma \subset V$) that:
-\begin{enumerate}
-    \item does not bind writers to writers: if $X \ne X\sigma$ for $X \in V$
-          then $X\sigma \notin V$
-    \item does not form cycles through readers: $X?$ does not occur in $X\sigma$
-          for any $X \in V_\sigma$
-\end{enumerate}
-
-A \temph{reader assignment} is a substitution $\sigma$ whose domain is readers
-($V_\sigma \subset V?$).
-
-If $\sigma$ is a writer assignment then its \temph{induced reader assignment} is
-the reader assignment $\sigma?$ defined by $X?\sigma? = X\sigma$ for every
-$X \in V_\sigma$.
-
-The \temph{suspension set} of a (regular) substitution $\sigma$ is
-$W_\sigma := \{X? \in V? : X?\sigma \notin \calV\}$.
-
-\temph{Writer unification} of two terms:
-\begin{enumerate}
-    \item \temph{succeeds with $\sigma$} if they have an mgu $\sigma$ that is a
-          writer assignment.
-    \item else \temph{suspends on $W_\sigma$} if they have a (regular) mgu $\sigma$
-    \item else \temph{fails}
+    \item $\calC$ is the set of all asynchronous resolvents over $M$
+    \item $c0= (G_0,\emptyset)$
+    \item $\calT$ is the set of all transitions $(G,\sigma)\rightarrow (G',\sigma')$ satisfying:
+    \begin{enumerate}
+     \item \textbf{Reduce:} there exists a unit goal $A \in G$ such that $C \in M$ is the first clause for which the GLP reduction of $A$ with $C$ succeeds with result $(B, \hat\sigma)$, $G' = (G \setminus \{A\} \cup B)\hat\sigma$, and $\sigma' = \sigma \circ \hat\sigma$
+        \item \textbf{Communicate:} $\hat\sigma = \{$\verb|X?|$:=T\} \in \sigma$, $G'= G\hat\sigma$, and $\sigma' = \sigma \setminus \hat\sigma$
+    \end{enumerate}
 \end{enumerate}
 \end{definition}
 
-\begin{remark}[How Values Flow]
-The induced reader assignment is the mechanism by which readers receive values.
-When writer $X$ is assigned value $T$, its paired reader $X?$ automatically
-receives that same value $T$. This is point-to-point communication: one writer
-to one reader, with no possibility of conflict.
+The monotonicity of GLP goal/clause reduction (Proposition~\ref{proposition:GLP-monotonicity}) allows a simple \emph{GLP fairness requirement}: A goal that can be reduced is eventually reduced.
 
-The suspension set identifies which readers are ``blocking''---they appear where
-a non-variable value is needed, but their paired writers have not been assigned yet.
-Unification suspends until those writers receive values, at which point the induced
-reader assignments make the values available and unification can proceed.
-\end{remark}
-
-\begin{remark}[Why Writer-to-Writer Assignment is Forbidden]
-Condition 1 prohibits assigning a writer to another writer. If writers $X$ and $Y$
-were unified, the SRSW requirement implies no occurrences of either remain to
-assign them values. Their paired readers $X?$ and $Y?$ would be
-\emph{abandoned}---waiting forever for values that will never arrive. The
-implementation treats writer-to-writer unification as failure, not suspension.
-\end{remark}
-
-\subsubsection{Writer Unification Cases}
-
-The complete enumeration of all writer unification cases between goal and head arguments appears in Appendix~\ref{appendix:unification-catalog}.
-
-For compound terms, writer unification proceeds in two phases:
-
-\begin{enumerate}
-\item \textbf{Collection phase:} Process arguments left-to-right, accumulating tentative writer bindings $\hat{\sigma}_w$ and a preliminary suspension set $S$ (readers matched against non-variable terms whose paired writers are not yet in $\hat{\sigma}_w$). If a structural mismatch occurs (e.g., distinct constants, incompatible functors), fail immediately.
-
-\item \textbf{Resolution phase:} Apply $\hat{\sigma}_w$ to the preliminary suspension set: $S' = \{X? \in S : X \notin \text{dom}(\hat{\sigma}_w)\}$. If $S' = \emptyset$, succeed with $\hat{\sigma}_w$. If $S' \neq \emptyset$, suspend on $S'$.
-\end{enumerate}
-
-The resolution phase is essential: a reader $X?$ encountered before its paired writer $X$ is bound should not cause suspension if a later argument position binds $X$. The suspension decision is deferred until all argument positions have been processed.
-
-\begin{remark}[Key Observations]
-Goal writers always succeed (can be assigned any value). Goal readers suspend against non-variables (must wait for their paired writer). Head readers behave like head writers during unification since the fresh variable can be assigned; the distinction matters only in the clause body.
-\end{remark}
 
 \subsubsection{Worked Examples}
 
@@ -162,64 +151,9 @@ First argument: $a = a$, succeeds. Second argument: $b \ne c$, no mgu exists. Fa
 \mypara{Example 4: Writer-to-Writer Failure}
 Goal $g = p(X)$, Head $h = p(Y)$.
 
-A regular mgu exists: $\{X \mapsto Y\}$. But this assigns writer to writer,
-violating condition 1. No writer assignment exists. Fails (not suspends).
-
-\begin{remark}[Programming Style: Fold Unifications into the Head]
-When a clause needs to test the structure of an argument, fold the pattern directly into the clause head rather than using explicit unification in the guard.
-
-For example, to process a list with at least two elements:
-\begin{verbatim}
-% Avoid: explicit unification in guard
-merge_tree(Streams, Out?) :-
-    Streams = [_,_|_] |
-    merge_layer(Streams?, Layer),
-    merge_tree(Layer?, Out).
-
-% Prefer: pattern in head
-merge_tree([X,Y|Rest], Out?) :-
-    merge_layer([X?,Y?|Rest?], Layer),
-    merge_tree(Layer?, Out).
-\end{verbatim}
-
-The second form is correct GLP style. The first form has \verb|Streams| appearing both in the head (as writer) and in the guard (as another occurrence), which can confuse SRSW analysis. By folding the structural test into the head pattern, the clause clearly shows that \verb|X|, \verb|Y|, and \verb|Rest| are bound by pattern matching and then read in the body.
-
-This principle applies generally: if you find yourself writing \verb|X = Pattern| in a guard where \verb|X| comes from the head, restructure the clause to put the pattern directly in the head.
-\end{remark}
-
-Renaming  (Definition~\ref{definition:renaming}) is extended to respect variable pairing:
-\begin{definition}[GLP Renaming]\label{definition:GLP-renaming}
- Two GLP terms $T, T'$ have a variable in common if for some writer $X\in V$, either $X$ or $X?$ occur in $T$ and either $X$ or $X?$ occur in $T'$. A \temph{GLP renaming} is a renaming substitution $\sigma: \mathcal{V} \mapsto \mathcal{V}$ such that for each $X\in V$: $X\sigma \in V$ and $X?\sigma = (X\sigma)?$.
-\end{definition}
-
-\begin{definition}[GLP Goal/Clause Reduction]\label{definition:GLP-goal-clause-reduction}
- Given GLP goal $A$ and clause $C$,  with $H \verb|:-| B$ being the result of the GLP renaming of $C$ apart from $A$,
- the \temph{GLP reduction} of $A$ with $C$ \temph{succeeds with result} $(B,\sigma)$,
-\temph{suspends on $W$}, or \temph{fails}, respectively, depending on the result of the writer unification of $A$ and $H$.
-\end{definition}
-
-The GLP operational semantics is defined via the following transition system, which employs the notions defined above to extend LP (Definition~\ref{definition:lp-ts}). It abstracts-away goal suspension and failure; these are used in the implementation-ready specifications (Appendixes~\ref{appendix:irGLP} and~\ref{appendix:irmaGLP}) for explicit goal scheduling, suspension and activation.
-\begin{definition}[GLP Transition System]\label{definition:GLP-ts}
-Given a GLP program $M$, an \temph{asynchronous resolvent} over $M$ is a pair $(G,\sigma)$ where $G\in \calG_?(M)$ and $\sigma$ is a reader assignment.
-%
-A transition system $GLP = (\calC,c0,\calT)$ is a \temph{GLP transition system} over $M$ and initial goal $G_0 \in \mathcal{G}_?(M)$ satisfying SRSW if:
-\begin{enumerate}
-    \item $\calC$ is the set of all asynchronous resolvents over $M$
-    \item $c0= (G_0,\emptyset)$
-    \item $\calT$ is the set of all transitions $(G,\sigma)\rightarrow (G',\sigma')$ satisfying:
-    \begin{enumerate}
-        \item \textbf{Reduce:} there exists a unit goal $A \in G$ such that $C \in M$ is the first clause for which the GLP reduction of $A$ with $C$ succeeds with result $(B,\hat\sigma)$,  $G' = (G \setminus \{A\} \cup B)\hat\sigma$, and $\sigma' = \sigma \circ \hat\sigma?$
-        \item \textbf{Communicate:} $\hat\sigma = \{X?:=T\} \in \sigma$, $G'= G\hat\sigma$, and $\sigma' = \sigma \setminus \hat\sigma$
-\end{enumerate}
-\end{enumerate}
-\end{definition}
-The monotonicity of GLP goal/clause reduction (Proposition~\ref{proposition:GLP-monotonicity}) allows a simple \emph{GLP fairness requirement}: A goal that can be reduced is eventually reduced.
-
-
 \mypara{Guards and system predicates}
 GLP also includes \emph{guards}—predicates that test runtime conditions (e.g., \verb|ground(X)| tests if \verb|X| contains no variables) without modifying state, appearing after clause heads separated by \verb=|=—and \emph{system predicates} that provide access to the GLP runtime state and operating system and hardware capabilities (variable state and name, arithmetic evaluation, timestamps). Guards enable conditional clause selection. The \verb|ground(X)| guard allows relaxing the single-reader constraint for \verb|X?| for the clause it occurs in, as having multiple occurrences of \verb|X?| instantiated to a ground term does not violate the fundamental single-writer requirement.
 Their specification appears in Appendix~\ref{appendix:guards-system}.
-
 
 \subsection{GLP Safety}
 
@@ -228,156 +162,42 @@ Here we prove that, like LP, GLP computations are deductions, but, unlike LP, a 
 \mypara{GLP computations are deductions}  First we show that the extensions of GLP over LP do not take it outside of the logic programming realm.
 
 \begin{definition}[Pure Logic Variant]\label{definition:pure-logic}
-Given a GLP term or goal $T$, the \temph{pure logic variant} $L(T)$ of $T$ is defined by replacing every reader $X?$ in $T$ with its paired writer $X$. Given a GLP computation  $r$, its pure logic variant $L(r)$ is the result of replacing every configuration $(G,\sigma)$ in $r$ by $L(G)$,  removing duplications and labelling the remaining transitions by the mgu of their respective reduction.
+Given a GLP term or goal $T$, the \temph{pure logic variant} $L(T)$ of $T$ is defined by replacing every reader \verb|X?| in $T$ with its paired writer \verb|X|. Given a GLP computation $r$, its pure logic variant $L(r)$ is the result of replacing every configuration $(G,\sigma)$ in $r$ by $L(G)$, removing duplications and labelling the remaining transitions by the mgu of their respective reduction.
 \end{definition}
 Note that duplications as above result from Communicate transitions.
 
 \begin{restatable}[GLP Computations are Deductions]{proposition}{GLPComputationsareDeductions}\label{theorem:GLP-computation-deduction}
-For any finite GLP run $r$, let
-$L(r) = G0\xrightarrow{\sigma_1}G_1\xrightarrow{\sigma_2}\ldots G_n$,
-with $\sigma = \sigma_1\cdot \ldots \cdot \sigma_n$, then  $(G_ :- G_n)\sigma$ is a logical consequence of $L(M)$.
+For any finite GLP run $r$, let 
+$L(r) = G_0\xrightarrow{\sigma_1}G_1\xrightarrow{\sigma_2}\ldots G_n$, 
+with $\sigma = \sigma_1\cdot \ldots \cdot \sigma_n$, then $(G_0 \verb|:-| G_n)\sigma$ is a logical consequence of $L(M)$.
 \end{restatable}
 
 Next, we establish essential safety properties for GLP that distinguish it from standard LP. The key is monotonicity—once a goal becomes reducible in GLP, it remains reducible.
 
-\mypara{SRSW}
-\begin{restatable}[SRSW Invariant]{proposition}{SRSWInvariant}\label{proposition:srsw-preservation}
-If the initial goal $G_0$ in a $GLP$ run satisfies SRSW, then every goal in the run satisfies SRSW.
+\mypara{SO Invariant}
+\begin{restatable}[SO Invariant]{proposition}{SOInvariant}\label{proposition:so-preservation}
+If the initial goal $G_0$ in a $GLP$ run satisfies SO, then every goal in the run satisfies SO.
 \end{restatable}
 
 \mypara{Acyclicity}
-The occurs check in readers prevents the formation of circular terms.
+The SO invariant prevents the formation of circular terms: since each variable occurs at most once, a variable cannot appear in a term to which it is assigned.
 
 \begin{restatable}[Acyclicity]{proposition}{Acyclicity}\label{proposition:acyclicity}
 If the initial goal $G_0$ in a $GLP$ run contains no circular terms, then no goal in the run contains a circular term.
 \end{restatable}
 
 \mypara{Monotonicity}
-Unlike LP where variable instantiation can cause a previously reducible goal to fail, GLP exhibits monotonicity. In a run, if a goal $A$ can be reduced at some point, it remains reducible at all future points in that run, where
-``future" implies that readers in $A$  (and only readers) have been further instantiated by other goal reductions.
+Unlike LP where variable instantiation can cause a previously reducible goal to fail, GLP exhibits monotonicity. In a run, if a goal $A$ can be reduced at some point, it remains reducible at all future points in that run, where 
+``future" implies that readers in $A$ (and only readers) have been further instantiated by other goal reductions.
 
 \begin{restatable}[Reader-Instance]{lemma}{ReaderOnlyInstantiation}\label{lemma:reader-only}
-In any $GLP$ run $G_0 \rightarrow G_1 \rightarrow \cdots$, if $G_i \rightarrow G_{i+1}$ via reduction with substitution $\sigma?$ does not reduce $A \in G_{i}$, then $A\tau \in G_{i+1}$ where $\tau$ instantiates only readers.
+In any $GLP$ run $G_0 \rightarrow G_1 \rightarrow \cdots$, if $G_i \rightarrow G_{i+1}$ via reduction with readers assignment $\sigma$ does not reduce $A \in G_{i}$, then $A\tau \in G_{i+1}$ where $\tau$ instantiates only readers.
 \end{restatable}
 
 \begin{restatable}[Monotonicity]{proposition}{Monotonicity}\label{proposition:GLP-monotonicity}
-In any $GLP$ run $G_0 \rightarrow G_1 \rightarrow \cdots$, if unit goal $A \in G_i$ can reduce with clause $C$, then for any $j > i$, either $A$ has been reduced by step $j$, or there exists $A' \in G_j$ where $A' = A\tau$ for some reader assignment $\tau$, and $A'$ can reduce with $C$.
+In any $GLP$ run $G_0 \rightarrow G_1 \rightarrow \cdots$, if unit goal $A \in G_i$ can reduce with clause $C$, then for any $j > i$, either $A$ has been reduced by step $j$, or there exists $A' \in G_j$ where $A' = A\tau$ for some readers assignment $\tau$, and $A'$ can reduce with $C$.
 \end{restatable}
 
-\subsection{Deterministic Transition System for Concurrent GLP}\label{subsection:irGLP}
-
-This section specifies a workstation (single-agent) implementation-ready transition system for GLP with deterministic execution.
-
-The nondeterministic GLP transition system (Definition~\ref{definition:GLP-ts}) specifies \emph{what} computations are valid without prescribing \emph{how} to execute them. The implementation-ready transition system makes three deterministic choices:
-\begin{enumerate}
-    \item \textbf{Goal order}: Goals are processed front-to-back from an ordered queue. The first goal is selected for reduction.
-    \item \textbf{Clause order}: Clauses are tried top-to-bottom. The ``first applicable clause'' is the textually first clause in $M$ for which reduction succeeds.
-    \item \textbf{Unification order}: Compound term arguments are unified left-to-right, depth-first. Unification stops at the first suspension or failure encountered.
-\end{enumerate}
-
-The left-to-right unification order processes arguments sequentially, but the suspension decision is deferred until all arguments have been examined. This ensures that a reader encountered early can be resolved by a writer binding discovered later. Structural failures (functor mismatch, arity mismatch, distinct constants) are detected immediately.
-
-\begin{definition}[Depth-First Writer Unification]\label{definition:df-unification}
-The \temph{depth-first writer unification} of terms $T_1$ and $T_2$, denoted $\mathit{dfunify}(T_1, T_2)$, proceeds in two phases:
-
-\textbf{Phase 1 (Collection):} Traverse the terms, accumulating a tentative writer assignment $\hat\sigma$ and a preliminary suspension set $S$:
-\begin{enumerate}
-    \item If $T_1$ and $T_2$ are identical: return $(\hat\sigma, S)$ unchanged.
-    \item If $T_1$ is a writer:
-    \begin{itemize}
-        \item If $T_2$ is a writer: \emph{fails} immediately.
-        \item Otherwise: add $T_1 := T_2$ to $\hat\sigma$.
-    \end{itemize}
-    \item If $T_2$ is a writer: add $T_2 := T_1$ to $\hat\sigma$.
-    \item If $T_1$ is a reader: add $T_1$ to $S$.
-    \item If $T_2$ is a reader: add $T_2$ to $S$.
-    \item If $T_1 = f(S_1, \ldots, S_n)$ and $T_2 = g(R_1, \ldots, R_m)$:
-    \begin{itemize}
-        \item If $f \neq g$ or $n \neq m$: \emph{fails} immediately.
-        \item Otherwise, for $i = 1, \ldots, n$ in order, recursively process $(S_i\hat\sigma, R_i\hat\sigma)$, updating $\hat\sigma$ and $S$. If any recursive call fails, \emph{fail}.
-    \end{itemize}
-\end{enumerate}
-
-\textbf{Phase 2 (Resolution):} Compute the resolved suspension set:
-\[
-S' = \{X? \in S : X \notin \mathrm{dom}(\hat\sigma)\}
-\]
-\begin{itemize}
-    \item If $S' = \emptyset$: \emph{succeeds} with $\hat\sigma$.
-    \item If $S' \neq \emptyset$: \emph{suspends} on $S'$.
-\end{itemize}
-\end{definition}
-
-\mypara{Example: Resolution of Preliminary Suspension}
-Consider goal $p(X?, X)$ against head $p(a, a)$.
-
-Phase 1: First argument $X?$ against $a$—reader against constant, add $X?$ to $S$. Second argument $X$ against $a$—writer against constant, add $X := a$ to $\hat\sigma$. Result: $\hat\sigma = \{X := a\}$, $S = \{X?\}$.
-
-Phase 2: Compute $S' = \{X? \in S : X \notin \mathrm{dom}(\hat\sigma)\}$. Since $X \in \mathrm{dom}(\hat\sigma)$, we have $S' = \emptyset$.
-
-Result: \emph{succeeds} with $\{X := a\}$. The induced reader assignment gives $X? = a$.
-
-Without the two-phase approach, the algorithm would incorrectly suspend at the first argument, missing the binding from the second argument.
-
-\begin{definition}[irGLP Configuration]
-An \emph{irGLP configuration} over program $M$ is a triple $R = (Q, S, F)$ where:
-\begin{itemize}
-\item $Q \in \mathcal{A}^*$ is a sequence of active goals
-\item $S \subseteq \mathcal{A} \times 2^{V?}$ contains suspended goals with their suspension sets
-\item $F \subseteq \mathcal{A}$ contains failed goals
-\end{itemize}
-\end{definition}
-
-The irGLP reduction extends GLP reduction by activating goals that were suspended on variables instantiated by the reduction, and explicitly failing goals that do not succeed or suspend.
-
-\begin{definition}[irGLP Goal/Clause Reduction]
-Given configuration $(Q, S, F)$ with $Q = A\cdot Q'$, clause $C \in M$ with head $H$ and body $B$ (renamed apart from $A$), the \emph{irGLP reduction} of $A$ with $C$:
-\begin{itemize}
-\item \textbf{succeeds with} $(B, \hat\sigma, R)$ if $\mathit{dfunify}(A, H)$ succeeds with $\hat\sigma$, and $R = \{G : (G, W) \in S \wedge X?\in W \wedge X?\hat\sigma? \neq X?\}$
-\item \textbf{suspends with} $W$ if $\mathit{dfunify}(A, H)$ suspends on $W$
-\item \textbf{fails} if $\mathit{dfunify}(A, H)$ fails
-\end{itemize}
-\end{definition}
-
-\begin{definition}[Implementation-Ready GLP Transition System]
-The transition system $\text{irGLP} = (\mathcal{C}, c_0, \mathcal{T})$ over $M$ and initial goal $G_0$ has configurations $\mathcal{C}$ being all irGLP configurations over $M$, with initial configuration $c_0 = (G_0, \emptyset, \emptyset)$, and transitions $\mathcal{T}$ being all transitions $(Q, S, F) \rightarrow (Q', S', F')$ where $Q = A \cdot Q_r$ and:
-    \begin{enumerate}
-    \item \textbf{Reduce:} If irGLP reduction of $A$ with first applicable clause $C \in M$ succeeds with $(B, \hat\sigma, R)$:
-        \begin{itemize}
-        \item \textbf{Activate:}  $S' = S \setminus \{(G, W) : G \in R\}$,  $F' = F$
-        \item \textbf{Schedule:} $Q' = (Q_r \cdot B \cdot R)\hat\sigma\hat\sigma?$
-        \end{itemize}
-    \item \textbf{Suspend:} Else if $W = \bigcup_{C \in M} W_{C} \neq \emptyset$ then $Q' = Q_r$, $S' = S \cup \{(A, W)\}$, $F' = F$
-    \item \textbf{Fail:} Else, $Q' = Q_r$, $S' = S$, $F' = F \cup \{A\}$.
-    \end{enumerate}
-\end{definition}
-
-\begin{remark}[Immediate vs.\ Asynchronous Communication]
-The GLP transition system (Definition~\ref{definition:GLP-ts}) models communication asynchronously in two steps:
-\begin{enumerate}
-\item \textbf{Reduce}: The writer assignment $\hat\sigma$ is applied to the goal. Its induced reader assignment $\hat\sigma?$ is added to the pending substitution $\sigma$.
-\item \textbf{Communicate}: Later, an assignment $\{X? := T\}$ is selected from $\sigma$ and applied to the goal.
-\end{enumerate}
-
-The irGLP transition system combines these into a single step. The Schedule operation applies both the writer assignment and its induced reader assignment immediately:
-\[
-Q' = (Q_r \cdot B \cdot R)\hat\sigma\hat\sigma?
-\]
-
-This simplification is valid for single-agent execution because all variables are local---there is no network delay between writer and reader. The observable behavior is identical: the reader receives its value before any subsequent goal can observe it.
-
-In multiagent GLP, where readers and writers may reside on different machines, the two-step model becomes essential. The pending substitution $\sigma$ represents messages in flight between agents.
-\end{remark}
-
-\begin{remark}[Scheduling Freedom]
-The monotonicity property (Proposition~\ref{proposition:GLP-monotonicity}) ensures that a goal reducible in configuration $c$ remains reducible in any subsequent configuration. This provides significant scheduling freedom:
-\begin{itemize}
-\item \textbf{Any fair schedule works}: As long as every reducible goal eventually gets a turn, the computation makes progress.
-\item \textbf{No complex failure handling}: Unlike systems where delays can cause failures, a message arriving late in GLP does not invalidate pending computations.
-\item \textbf{Distributed execution}: In a distributed setting, network delays affect performance but not correctness.
-\end{itemize}
-The GLP fairness requirement is simply: a goal that can be reduced is eventually reduced.
-\end{remark}
 
 \section{Guards}
 \label{sec:guards}
@@ -399,7 +219,7 @@ Type guards test the structure of a value:
 \item \verb|ground(X)| --- succeeds if \verb|X| contains no unbound variables
 \item \verb|known(X)| --- succeeds if \verb|X| is bound (may contain unbound subterms)
 \item \verb|unknown(X)| --- succeeds if \verb|X| is an unbound variable
-\item \verb|integer(X)|, \verb|number(X)|, \verb|constant(X)| --- test for specific types
+\item \verb|integer(X)|, \verb|number(X)|, \verb|atom(X)| --- test for specific types
 \item \verb|compound(X)|, \verb|tuple(X)| --- test for compound terms
 \item \verb|is_list(X)| --- tests for proper list structure
 \end{itemize}
