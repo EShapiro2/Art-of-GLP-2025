@@ -32,7 +32,7 @@ positive(1) :- true
 -> succeeds
 \end{verbatim}
 
-These traces illustrate the two constant-vs-constant cases from writer unification (Appendix~\ref{appendix:atomic-unification}). When the goal constant matches the head constant, unification succeeds with the empty assignment. When they differ, no unifier exists and the clause fails. The runtime tries clauses in order; if none succeed, the goal fails.
+These traces illustrate the two constant-vs-constant cases from term matching (Appendix~\ref{appendix:atomic-unification}). When the goal constant matches the head constant, term matching succeeds with the empty assignment. When they differ, term matching fails and the clause fails. The runtime tries clauses in order; if none succeed, the goal fails.
 
 A unary predicate with one writer parameter generates a value:
 
@@ -48,7 +48,7 @@ X = 42
 -> succeeds
 \end{verbatim}
 
-Here the goal argument \verb|X| is a writer and the head argument is the constant \verb|42|. Writer unification succeeds with assignment $\{X \leftarrow 42\}$ (Appendix~\ref{appendix:atomic-unification}, Goal Writer vs.\ Term). The writer receives the constant value directly.
+Here the goal argument \verb|X| is a writer and the head argument is the constant \verb|42|. Term matching succeeds with assignment $\{$\verb|X| $\leftarrow 42\}$ (Appendix~\ref{appendix:atomic-unification}, Goal Writer vs.\ Term). The writer receives the constant value directly.
 
 \section{Parameter Passing Patterns}
 
@@ -225,7 +225,7 @@ In GLP, output parameters in the clause head are \emph{readers}, not writers. Th
 
 This follows directly from SRSW. Consider a goal \verb|nand(1,1,X)| calling head \verb|nand(A,B,Z?)|:
 \begin{itemize}
-\item The caller's \verb|X| (a writer) unifies with the head's \verb|Z?| (a reader)
+\item The caller's \verb|X| (a writer) matches with the head's \verb|Z?| (a reader)
 \item The body must contain writer \verb|Z| to produce the output
 \item Each variable occurs exactly once as writer, once as reader
 \end{itemize}
@@ -246,28 +246,28 @@ X = 0
 -> succeeds
 \end{verbatim}
 
-This trace illustrates several unification cases and body activation. The goal \verb|nand(1,1,X)| unifies with head \verb|nand(A,B,Z?)|:
+This trace illustrates several term matching cases and body activation. The goal \verb|nand(1,1,X)| matches head \verb|nand(A,B,Z?)|:
 \begin{itemize}
 \item Arguments 1 and 2: goal constants \verb|1|, \verb|1| against head writers \verb|A|, \verb|B|. This is the constant-vs-variable case (Appendix~\ref{appendix:atomic-unification}): the head writers receive the constants, yielding $\hat\sigma = \{A \leftarrow 1, B \leftarrow 1\}$.
 \item Argument 3: goal writer \verb|X| against head reader \verb|Z?|. This succeeds with $\{X \leftarrow Z?\}$ (Appendix~\ref{appendix:atomic-unification}, Goal Writer vs.\ Term). The goal writer is assigned the head reader, connecting the two communication channels.
 \end{itemize}
 
-After head unification succeeds, the body is activated. The Schedule operation (Definition~\ref{definition:df-unification}) applies both the writer assignment $\hat\sigma$ and its induced reader assignment $\hat\sigma?$ to the renamed clause body. The body goals \verb|and(A?,B?,W)| and \verb|not(W?,Z)| become \verb|and(1,1,W)| and \verb|not(W?,Z)|---the readers \verb|A?| and \verb|B?| receive values \verb|1| and \verb|1| via the induced reader assignment.
+After head term matching succeeds, the body is activated. The Schedule operation applies both the writers assignment $\hat\sigma$ and its readers counterpart $\hat\sigma?$ to the renamed clause body. The body goals \verb|and(A?,B?,W)| and \verb|not(W?,Z)| become \verb|and(1,1,W)| and \verb|not(W?,Z)|---the readers \verb|A?| and \verb|B?| receive values \verb|1| and \verb|1| via the induced reader assignment.
 
 The body goals execute concurrently. The \verb|and| goal succeeds immediately, binding \verb|W| to \verb|1|. This induced reader assignment propagates to \verb|W?| in the \verb|not| goal, which then matches \verb|not(1,0)| and binds \verb|Z| to \verb|0|. Since \verb|X| was assigned \verb|Z?|, the value flows through: \verb|X = 0|.
 
 \begin{formal}{Input and Output Parameters: Derivation from Writer Unification}
 \label{formal:input-output-derivation}
 
-The parameter conventions in \verb|nand| follow necessarily from writer unification
-(Definition~\ref{definition:GLP-unification}). Understanding this derivation prevents
+The parameter conventions in \verb|nand| follow necessarily from term matching
+(Definition~\ref{definition:term-matching}). Understanding this derivation prevents
 common errors.
 
 \mypara{Output Parameters}
 Consider the third argument of \verb|nand(A,B,Z?) :- and(A?,B?,W), not(W?,Z).|
 
-When the goal \verb|nand(1,1,X)| unifies with the head, the third argument position
-has goal writer \verb|X| against head reader \verb|Z?|. From the unification catalog
+When the goal \verb|nand(1,1,X)| matches with the head, the third argument position
+has goal writer \verb|X| against head reader \verb|Z?|. From the term matching catalog
 (Appendix~\ref{appendix:atomic-unification}, Goal Writer vs.\ Term), this succeeds
 with assignment $\{Z \leftarrow X?\}$.
 
@@ -295,7 +295,7 @@ caller's channel.
 
 \mypara{Why This Matters}
 These are not arbitrary conventions. They follow from the asymmetry of writer
-unification: only writers can be assigned, and goal writers can receive values
+term matching: only writers can be assigned, and goal writers can receive values
 while goal readers must wait. A common error is reversing the convention---using
 a writer where a reader is needed, or vice versa---which leads to either SRSW
 violations or incorrect dataflow.
@@ -358,7 +358,7 @@ half_adder(X1?,1,X3,X4) -> suspended
 or(X2?,X4?,X5) -> suspended
 \end{verbatim}
 
-The second \verb|half_adder| suspends because its first argument \verb|X1?| is a reader matched against the head constant \verb|A|. A goal reader against a constant suspends on $\{X1?\}$ (Appendix~\ref{appendix:atomic-unification}, Goal Reader vs.\ Term). Similarly, \verb|or| suspends on $\{X2?, X4?\}$. When the first \verb|half_adder| completes and binds \verb|X1| to \verb|0|, the induced reader assignment delivers this value to \verb|X1?|, reactivating the suspended goal (Appendix~\ref{appendix:suspension}). The reactivated goal restarts clause matching from the first clause.
+The second \verb|half_adder| suspends because its first argument \verb|X1?| is a reader matched against the head constant \verb|A|. A goal reader against a constant suspends (Appendix~\ref{appendix:atomic-unification}, Goal Reader vs.\ Term). Similarly, \verb|or| suspends. When the first \verb|half_adder| completes and binds \verb|X1| to \verb|0|, the readers counterpart delivers this value to \verb|X1?|, reactivating the suspended goal (Appendix~\ref{appendix:suspension}). The reactivated goal restarts clause matching from the first clause.
 
 \begin{verbatim}
 xor(1,1,X6) :- true

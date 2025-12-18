@@ -1,13 +1,3 @@
-% chapters/glp_core.tex - GLP Core
-
-\chapter{GLP Core}
-\label{ch:glp-core}
-
-% chapters/glp_core.tex - GLP Core
-
-\chapter{GLP Core}
-\label{ch:glp-core}
-
 \section{GLP}\label{section:GLP}
 
 We present GLP as an extension and simplification of Logic Programs: The syntax is extended with reader variables \verb|X?|, where \verb|X| and \verb|X?| form a reader/writer pair, and with the Single-Reader/Single-Writer syntactic restriction on clauses. Term matching replaces unification. For example, here is the quintessential concurrent logic program for merging two streams (incrementally constructed, potentially unbounded lists), written in GLP. Its first two arguments are the input streams to be merged, the third is the merged output stream:
@@ -122,34 +112,23 @@ The monotonicity of GLP goal/clause reduction (Proposition~\ref{proposition:GLP-
 \mypara{Example 1: Success}
 Goal $g = p(X, a)$, Head $h = p(b, Y)$ (after renaming).
 
-Unification: $X$ matches $b$, $a$ matches $Y$. Both are writer-to-constant.
-Writer assignment: $\{X \mapsto b, Y \mapsto a\}$. Succeeds.
+Term matching: \verb|X| matches \verb|b|, \verb|a| matches \verb|Y|. Both are writer-to-constant.
+Writers assignment: $\{$\verb|X| $\mapsto$ \verb|b|$,$ \verb|Y| $\mapsto$ \verb|a|$\}$. Succeeds.
 
 \mypara{Example 2: Suspension}
 Goal $g = p(X?, a)$, Head $h = p(b, Y)$.
 
-First argument: $X?$ (goal reader) against $b$ (constant). A regular mgu would
-require $X? \mapsto b$, but readers cannot be assigned. Suspension set: $\{X?\}$.
-Suspends on $\{X?\}$, waiting for the paired writer $X$ to be assigned.
-
-\mypara{Example 2b: Resolution of Preliminary Suspension}
-Goal $g = p(X?, X)$, Head $h = p(a, a)$ (constant $a$ in both positions).
-
-Collection phase: First argument $X?$ against $a$---reader against constant, add $X?$ to preliminary suspension set $S = \{X?\}$. Second argument $X$ against $a$---writer against constant, add $X \mapsto a$ to $\hat{\sigma}_w$.
-
-Resolution phase: Apply $\hat{\sigma}_w = \{X \mapsto a\}$ to $S = \{X?\}$. Since $X \in \text{dom}(\hat{\sigma}_w)$, remove $X?$ from set. Result: $S' = \emptyset$.
-
-Succeeds with $\{X \mapsto a\}$. The induced reader assignment gives $X? = a$.
-
-This example demonstrates why the two-phase approach is necessary. A naive left-to-right algorithm that suspends on the first reader would incorrectly suspend, missing the binding information from the second argument.
+First argument: \verb|X?| (goal reader) against \verb|b| (constant). Readers cannot be assigned, so term matching suspends, waiting for the paired writer \verb|X| to be assigned.
 
 \mypara{Example 3: Failure}
 Goal $g = p(a, b)$, Head $h = p(a, c)$.
 
-First argument: $a = a$, succeeds. Second argument: $b \ne c$, no mgu exists. Fails.
+First argument: \verb|a| $=$ \verb|a|, succeeds. Second argument: \verb|b| $\ne$ \verb|c|, term matching fails.
 
 \mypara{Example 4: Writer-to-Writer Failure}
 Goal $g = p(X)$, Head $h = p(Y)$.
+
+Both \verb|X| and \verb|Y| are writers. Writer-to-writer matching fails (not suspends).
 
 \mypara{Guards and system predicates}
 GLP also includes \emph{guards}—predicates that test runtime conditions (e.g., \verb|ground(X)| tests if \verb|X| contains no variables) without modifying state, appearing after clause heads separated by \verb=|=—and \emph{system predicates} that provide access to the GLP runtime state and operating system and hardware capabilities (variable state and name, arithmetic evaluation, timestamps). Guards enable conditional clause selection. The \verb|ground(X)| guard allows relaxing the single-reader constraint for \verb|X?| for the clause it occurs in, as having multiple occurrences of \verb|X?| instantiated to a ground term does not violate the fundamental single-writer requirement.
@@ -219,7 +198,7 @@ Type guards test the structure of a value:
 \item \verb|ground(X)| --- succeeds if \verb|X| contains no unbound variables
 \item \verb|known(X)| --- succeeds if \verb|X| is bound (may contain unbound subterms)
 \item \verb|unknown(X)| --- succeeds if \verb|X| is an unbound variable
-\item \verb|integer(X)|, \verb|number(X)|, \verb|atom(X)| --- test for specific types
+\item \verb|integer(X)|, \verb|number(X)|, \verb|string(X)|, \verb|constant(X)| --- test for specific types
 \item \verb|compound(X)|, \verb|tuple(X)| --- test for compound terms
 \item \verb|is_list(X)| --- tests for proper list structure
 \end{itemize}

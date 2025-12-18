@@ -61,7 +61,7 @@ When the goal \verb|consumer([1|T], 0, R)| matches the head, the argument
 \verb|Xs| in the head is assigned \verb|T?| (the tail's reader view).
 
 The writer \verb|Xs| has now served its purpose: it received a value during
-head unification. The SRSW syntactic restriction allows exactly one writer
+head term matching. The SRSW syntactic restriction allows exactly one writer
 occurrence per clause. Since \verb|Xs| already occurred as writer in the head,
 it cannot appear as writer again in the body. Its paired reader \verb|Xs?|
 must be used instead.
@@ -77,7 +77,7 @@ syntactic violation, this is semantically wrong: it attempts to receive through
 channels that have already received their values.
 
 \textbf{Principle:} In continuation calls, pass readers for values already
-received. The writer served its purpose during unification; the reader carries
+received. The writer served its purpose during term matching; the reader carries
 the value forward.
 \end{formal}
 
@@ -274,7 +274,7 @@ The two clauses handle opposite directions:
 \item Clause 2: First argument has reader tail \verb|Xs?|, second has writer tail \verb|Ys|. The second stream is producing.
 \end{itemize}
 
-This technique relies on writer-to-writer unification being \emph{immediate failure}, not suspension. If WxW suspended on an empty set, clause 2 would never be tried. The observer pattern demonstrates that WxW failure is semantically meaningful for clause selection, not merely an optimization.
+This technique relies on writer-to-writer term matching being \emph{immediate failure}, not suspension. If WxW suspended on an empty set, clause 2 would never be tried. The observer pattern demonstrates that WxW failure is semantically meaningful for clause selection, not merely an optimization.
 
 The Writer/Reader Tail Discrimination table in Appendix~\ref{appendix:list-unification} summarizes these cases.
 
@@ -304,7 +304,7 @@ The power of difference lists: O(1) concatenation. To append two difference list
 append_dl(H1, T1?, T1, T2?, H1?, T2).
 \end{verbatim}
 
-The append completed in constant time---six unifications regardless of list length.
+The append completed in constant time---six term matchings regardless of list length.
 
 %% ============================================
 %% Section 2: Buffered Communication
@@ -337,7 +337,7 @@ close([end_of_stream|_]).
 closed(end_of_stream).
 \end{verbatim}
 
-The \verb|--| operator is simply a binary functor with no special meaning---we use it to pair the read and write ends of the buffer. When the goal \verb|receive(I, Buf?, NBuf)| unifies with the head \verb|receive(Msg, [Msg|NBuf]--[_|NTail?], NBuf--NTail)|, the second argument demonstrates compound term unification (Appendix~\ref{appendix:compound-unification}): the goal's \verb|Buf?| must match the structure \verb|[...]--[...]|. If \verb|Buf?| is unbound (its paired writer not yet assigned), unification suspends. When \verb|Buf| receives a difference-list value, the goal reactivates and unification proceeds by matching the \verb|--| functor and recursively unifying its arguments.
+The \verb|--| operator is simply a binary functor with no special meaning---we use it to pair the read and write ends of the buffer. When the goal \verb|receive(I, Buf?, NBuf)| unifies with the head \verb|receive(Msg, [Msg|NBuf]--[_|NTail?], NBuf--NTail)|, the second argument demonstrates compound term matching (Appendix~\ref{appendix:compound-unification}): the goal's \verb|Buf?| must match the structure \verb|[...]--[...]|. If \verb|Buf?| is unbound (its paired writer not yet assigned), unification suspends. When \verb|Buf| receives a difference-list value, the goal reactivates and unification proceeds by matching the \verb|--| functor and recursively unifying its arguments.
 
 The key insight: \verb|receive| not only extracts a message but also extends the tail with a new slot \verb|[_|NTail?]|. This ``credits'' the producer to send one more message.
 
@@ -410,7 +410,7 @@ counter_loop([read(C?)|In], C) :- number(C?) | counter_loop(In?, C?).
 counter_loop([], _).
 \end{verbatim}
 
-The \verb|read(C?)| pattern uses the state reader directly in the message structure. The client sends \verb|read(V)| retaining reader \verb|V?|; when the clause head matches, pattern unification binds the client's writer \verb|V| to the current count \verb|C?|. The \verb|number(C?)| guard permits replication of \verb|C?| to both the message and the recursive call (per Formal Box~\ref{formal:guards-multiple-reads}).
+The \verb|read(C?)| pattern uses the state reader directly in the message structure. The client sends \verb|read(V)| retaining reader \verb|V?|; when the clause head matches, pattern matching binds the client's writer \verb|V| to the current count \verb|C?|. The \verb|number(C?)| guard permits replication of \verb|C?| to both the message and the recursive call (per Formal Box~\ref{formal:guards-multiple-reads}).
 
 \begin{formal}{Which Guards Enable Multiple Reader Occurrences?}
 \label{formal:guards-multiple-reads}
@@ -457,7 +457,7 @@ value. Thus \verb|known| does not grant multiple-read permission.
 \end{center}
 \end{formal}
 
-From a unification perspective, when the monitor's clause head \verb|counter_loop([read(V)|In], C)| matches a goal, the \verb|V| in the message is a fresh writer (renamed from the clause). The body assignment \verb|V = C?| binds this writer to the current count. The induced reader assignment then propagates this value through the communication channel: the client's reader \verb|V?| receives the count.
+From a term matching perspective, when the monitor's clause head \verb|counter_loop([read(V)|In], C)| matches a goal, the \verb|V| in the message is a fresh writer (renamed from the clause). The body assignment \verb|V = C?| binds this writer to the current count. The induced reader assignment then propagates this value through the communication channel: the client's reader \verb|V?| receives the count.
 
 \subsection{Shared Queue}
 \label{sec:monitors-queue}
