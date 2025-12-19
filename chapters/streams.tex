@@ -278,33 +278,71 @@ This technique relies on writer-to-writer term matching being \emph{immediate fa
 
 The Writer/Reader Tail Discrimination table in Appendix~\ref{appendix:list-unification} summarizes these cases.
 
-\section{Difference Lists}
+\subsection{Difference Lists}
+\label{sec:difference-lists}
 
-A \emph{difference list} represents the difference between two potentially-indefinite streams. While streams may be unbounded, their difference is always finite---hence it represents a list.
+Difference lists are a programming technique inherited from Prolog and FCP that enables efficient list construction and concatenation. In GLP, difference lists require explicit mode annotations that reflect their data flow semantics, making the technique both more disciplined and more transparent than in earlier logic programming languages.
 
-\subsection{Representation}
+\subsubsection{The Concept}
 
-A difference list has two components:
-\begin{itemize}
-\item The \emph{head}: a list structure with an unbound variable at its end (a ``hole'')
-\item The \emph{tail}: the writer variable that can fill the hole
-\end{itemize}
+A difference list represents a list with a ``hole'' at the end---a position where additional elements can be appended. Rather than representing a complete list like \texttt{[a,b,c]}, a difference list represents the \emph{difference} between a list and its tail. The list \texttt{[a,b,c]} can be represented as the difference between \texttt{[a,b,c|T]} and \texttt{T}, where \texttt{T} is an unbound variable serving as the hole.
 
-For example, the list \verb|[1,2]| as a difference list:
+The key advantage of difference lists is that concatenation becomes a constant-time operation. To append two difference lists, we simply connect the hole of the first to the front of the second. This contrasts with ordinary list append, which requires traversing the entire first list.
+
+\subsubsection{Notation}
+
+GLP uses the notation \texttt{H\textbackslash T} to denote a difference list, where \texttt{H} is the list structure (the ``front'') and \texttt{T} is the hole reference (the ``back''). This notation makes difference lists visually distinct from ordinary lists and emphasizes their two-component nature.
+
+The list \texttt{[a,b,c]} can be represented as a difference list in several equivalent ways:
 \begin{verbatim}
-Head: [1,2|T?]    (structure with hole T?)
-Tail: T           (writer that can fill the hole)
+[a,b,c|T]\T          % List [a,b,c] with hole T
+[a,b|T]\T            % List [a,b] with hole T
+[a|T]\T              % List [a] with hole T
+T\T                  % Empty difference list
 \end{verbatim}
 
-\subsection{Constant-Time Append}
+\subsubsection{The Mode Invariant}
 
-The power of difference lists: O(1) concatenation. To append two difference lists, unify the first tail with the second head:
+In GLP, difference lists obey a fundamental mode invariant: the two components always have complementary modes. A difference list is either \texttt{H?\textbackslash T} (reader head, writer tail) or \texttt{H\textbackslash T?} (writer head, reader tail), but never \texttt{H?\textbackslash T?} or \texttt{H\textbackslash T}.
 
+\begin{formal}{Difference List Mode Invariant}
+A well-formed difference list \texttt{H\textbackslash T} in a GLP clause satisfies exactly one of:
+\begin{enumerate}
+\item \texttt{H?\textbackslash T} --- The head is a reader (consuming the list structure) and the tail is a writer (providing access to the hole).
+\item \texttt{H\textbackslash T?} --- The head is a writer (constructing the list structure) and the tail is a reader (receiving the hole position).
+\end{enumerate}
+This invariant extends to partially instantiated forms: \texttt{[A?,B?|H]\textbackslash T?} and \texttt{H?\textbackslash [\_|T]} preserve the complementary mode relationship.
+\end{formal}
+
+The mode invariant directly reflects data flow. When a difference list is being constructed, the head grows (writer) while the tail remains a reference point (reader). When consumed, the head is traversed (reader) while the tail may be connected elsewhere (writer).
+
+\subsubsection{SRSW Compliance}
+
+The mode invariant ensures that difference list programs naturally satisfy SRSW. Consider difference list append:
+
+\begin{program}{Difference List Append}
 \begin{verbatim}
-append_dl(H1, T1?, T1, T2?, H1?, T2).
+dl_append(H1\Xs?, Xs\T2?, H1?\T2).
+\end{verbatim}
+\end{program}
+
+Tracing SRSW compliance: \texttt{Xs} has one writer (in \texttt{Xs\textbackslash T2?}) and one reader (in \texttt{H1\textbackslash Xs?}). \texttt{H1} has one writer (in \texttt{H1\textbackslash Xs?}) and one reader (in \texttt{H1?\textbackslash T2}). \texttt{T2} has one writer (in \texttt{H1?\textbackslash T2}) and one reader (in \texttt{Xs\textbackslash T2?}). Each variable appears exactly once as writer and once as reader.
+
+\subsubsection{Comparison with FCP}
+
+In FCP, difference list programs rely on implicit unification:
+\begin{verbatim}
+%% FCP style (implicit unification)
+append_dl(H1-T1, T1-T2, H1-T2).
 \end{verbatim}
 
-The append completed in constant time---six term matchings regardless of list length.
+The variable \texttt{T1} appears three times; unification handles the connection implicitly. In GLP, explicit modes make data flow visible:
+\begin{verbatim}
+%% GLP style (explicit modes)
+dl_append(H1\Xs?, Xs\T2?, H1?\T2).
+\end{verbatim}
+
+The annotations show that \texttt{Xs} is provided by the second argument (writer) and consumed by the first (reader). This explicitness aids understanding and enables compile-time SRSW verification.
 
 %% ============================================
 %% Section 2: Buffered Communication
