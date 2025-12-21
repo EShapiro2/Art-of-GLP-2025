@@ -1,0 +1,280 @@
+%% Chapter: Types and Modes
+%% Presents moded types following the Yardeni-Shapiro approach extended for GLP
+
+\chapter{Types and Modes}
+\label{ch:types}
+
+Types describe the structure of terms; modes describe the direction of data flow. Together, \emph{moded types} specify both what values can appear at each argument position and whether those values flow from caller to callee or from callee to caller. Moded type declarations enable static verification of the SRSW restriction.
+
+\section{Type Definitions}
+\label{sec:type-definitions}
+
+A type definition introduces a type name and specifies its valid constructors. The syntax uses \verb|::=| to introduce a type and \verb|;| to separate alternatives:
+
+\begin{verbatim}
+Bit ::= 0 ; 1.
+\end{verbatim}
+
+This defines \verb|Bit| as a type with exactly two values: \verb|0| and \verb|1|.
+
+Recursive types define structures containing instances of themselves:
+
+\begin{verbatim}
+Nat ::= 0 ; s(Nat).
+\end{verbatim}
+
+This defines natural numbers in Peano notation: \verb|0|, \verb|s(0)|, \verb|s(s(0))|, and so on.
+
+Lists are the most common recursive type:
+
+\begin{verbatim}
+NumList ::= [] ; [Number | NumList].
+\end{verbatim}
+
+A \verb|NumList| is either empty or a cons cell where the head is a \verb|Number| and the tail is a \verb|NumList|.
+
+\begin{formal}{Type Definition Syntax}
+A type definition has the form:
+\begin{center}
+\textit{TypeName} \verb|::=| \textit{Alt}$_1$ \verb|;| \textit{Alt}$_2$ \verb|;| $\ldots$ \verb|;| \textit{Alt}$_n$ \verb|.|
+\end{center}
+
+Each alternative is one of:
+\begin{itemize}
+\item A constant: \verb|0|, \verb|[]|, \verb|ready|
+\item A structure: \verb|s(Nat)|, \verb|node(Tree, Any, Tree)|
+\item A list cons: \verb|[Number | NumList]|
+\item A type reference: another type name
+\end{itemize}
+
+Type names begin with an uppercase letter.
+\end{formal}
+
+\section{Built-in Types}
+\label{sec:builtin-types}
+
+GLP provides built-in types that need no definition:
+
+\begin{center}
+\begin{tabular}{ll}
+\textbf{Type} & \textbf{Description} \\
+\hline
+\verb|Number| & Numeric values (integers and floats) \\
+\verb|Any| & Any term (the universal type) \\
+\verb|Atom| & Atomic symbols \\
+\end{tabular}
+\end{center}
+
+A generic list uses \verb|Any| for elements:
+
+\begin{verbatim}
+List ::= [] ; [Any | List].
+\end{verbatim}
+
+\section{Moded Procedure Declarations}
+\label{sec:moded-declarations}
+
+A procedure declaration specifies both the type and mode of each argument. Modes indicate data flow direction:
+
+\begin{itemize}
+\item \textbf{Consume} (\verb|Type?|): callee consumes data provided by caller
+\item \textbf{Produce} (\verb|Type|): callee produces data received by caller
+\end{itemize}
+
+\begin{verbatim}
+procedure merge(List?, List?, List).
+\end{verbatim}
+
+This declares that \verb|merge/3|:
+\begin{itemize}
+\item Consumes arguments 1 and 2 (caller provides data via readers)
+\item Produces argument 3 (caller receives data via writer)
+\end{itemize}
+
+\begin{formal}{Mode Semantics}
+\label{formal:mode-semantics}
+Modes describe data flow between caller and callee:
+
+\begin{center}
+\begin{tabular}{llll}
+\textbf{Mode} & \textbf{Data flows} & \textbf{Caller provides} & \textbf{Head expects} \\
+\hline
+Consume (\verb|Type?|) & caller $\to$ callee & reader & writer \\
+Produce (\verb|Type|) & callee $\to$ caller & writer & reader \\
+\end{tabular}
+\end{center}
+
+At the call boundary, what the caller provides and what the head expects are complementary: for consume mode, the caller's reader pairs with the head's writer; for produce mode, the caller's writer pairs with the head's reader.
+\end{formal}
+
+\section{Mode Checking}
+\label{sec:mode-checking}
+
+The mode checker verifies that variable occurrences have the correct mode for their position:
+
+\begin{itemize}
+\item At consume positions: caller provides reader, head expects writer
+\item At produce positions: caller provides writer, head expects reader
+\end{itemize}
+
+Consider the merge program:
+
+\begin{verbatim}
+List ::= [] ; [Any | List].
+
+procedure merge(List?, List?, List).
+
+merge([X|Xs], Ys, [X?|Zs?]) :- merge(Ys?, Xs?, Zs).
+merge(Xs, [Y|Ys], [Y?|Zs?]) :- merge(Xs?, Ys?, Zs).
+merge([], [], []).
+\end{verbatim}
+
+\mypara{Head Checking}
+First clause head \verb|merge([X|Xs], Ys, [X?|Zs?])|:
+\begin{itemize}
+\item Arg 1: consume mode $\to$ head expects writer. \verb|X|, \verb|Xs| are writers. \checkmark
+\item Arg 2: consume mode $\to$ head expects writer. \verb|Ys| is writer. \checkmark
+\item Arg 3: produce mode $\to$ head expects reader. \verb|X?|, \verb|Zs?| are readers. \checkmark
+\end{itemize}
+
+\mypara{Body Checking}
+The recursive call \verb|merge(Ys?, Xs?, Zs)|:
+\begin{itemize}
+\item Arg 1: consume mode $\to$ caller provides reader. \verb|Ys?| is reader. \checkmark
+\item Arg 2: consume mode $\to$ caller provides reader. \verb|Xs?| is reader. \checkmark
+\item Arg 3: produce mode $\to$ caller provides writer. \verb|Zs| is writer. \checkmark
+\end{itemize}
+
+Each variable has exactly one writer occurrence and one reader occurrence, satisfying SRSW.
+
+\section{Embedded Modes: Response Slots}
+\label{sec:embedded-modes}
+
+Type definitions may contain embedded mode annotations within structures. These create \emph{response slots}---positions where the callee can send data back to the caller within a consumed message.
+
+\begin{verbatim}
+CounterMsg ::= clear ; up ; down ; show(Number?).
+CounterStream ::= [] ; [CounterMsg | CounterStream].
+
+procedure counter(CounterStream?, Number?).
+\end{verbatim}
+
+The \verb|show(Number?)| alternative contains an embedded consume annotation. When modes combine, they follow an involution rule:
+
+\begin{formal}{Mode Involution}
+\label{formal:mode-involution}
+When a moded type appears inside another moded type, their modes combine:
+
+\begin{center}
+\begin{tabular}{lll}
+\textbf{Outer mode} & \textbf{Inner mode} & \textbf{Combined} \\
+\hline
+produce & produce & produce \\
+produce & consume & consume \\
+consume & produce & consume \\
+consume & consume & produce \\
+\end{tabular}
+\end{center}
+
+This is involution: consume $\times$ consume $=$ produce, like double negation.
+\end{formal}
+
+For the counter, argument 1 has consume mode (\verb|CounterStream?|). Inside \verb|show|, the \verb|Number?| position also has consume mode. Combined: consume $\times$ consume $=$ \textbf{produce}. The caller provides a \emph{writer} at this position to receive the counter's response.
+
+\begin{verbatim}
+counter([show(State?)|S], State) :-
+    number(State?) |
+    counter(S?, State?).
+\end{verbatim}
+
+When matching the \verb|show| clause:
+\begin{itemize}
+\item Caller constructs \verb|show(X)| where \verb|X| is a writer (combined mode is produce)
+\item Head matches with \verb|show(State?)| where \verb|State?| is a reader
+\item Term matching connects \verb|X| to \verb|State?|
+\item When \verb|State| is bound from the second argument, the value flows to \verb|X|
+\end{itemize}
+
+The response slot allows bidirectional communication over a unidirectional stream: the caller sends requests and embeds writers to receive responses.
+
+\section{Complete Example: Typed Quicksort}
+\label{sec:typed-quicksort}
+
+\begin{verbatim}
+NumList ::= [] ; [Number | NumList].
+
+procedure quicksort(NumList?, NumList).
+procedure qsort(NumList?, NumList?, NumList).
+procedure partition(NumList?, Number?, NumList, NumList).
+
+quicksort(Unsorted, Sorted?) :- qsort(Unsorted?, Sorted, []).
+
+qsort([X|Unsorted], Sorted?, Rest) :-
+    number(X?) |
+    partition(Unsorted?, X?, Smaller, Larger),
+    qsort(Smaller?, Sorted, [X?|Sorted1?]),
+    qsort(Larger?, Sorted1, Rest?).
+qsort([], Rest?, Rest).
+
+partition([X|Xs], A, Smaller?, [X?|Larger?]) :-
+    A? < X? | partition(Xs?, A?, Smaller, Larger).
+partition([X|Xs], A, [X?|Smaller?], Larger?) :-
+    A? >= X? | partition(Xs?, A?, Smaller, Larger).
+partition([], A, [], []) :- number(A?) | true.
+\end{verbatim}
+
+The declarations specify:
+\begin{itemize}
+\item \verb|quicksort|: consumes unsorted list, produces sorted list
+\item \verb|qsort|: consumes list, produces accumulator head, consumes accumulator tail
+\item \verb|partition|: consumes list and pivot, produces smaller and larger sublists
+\end{itemize}
+
+\section{Type Errors and Mode Errors}
+\label{sec:errors}
+
+The checker reports two kinds of errors:
+
+\mypara{Type errors} occur when a term cannot belong to its declared type:
+\begin{verbatim}
+procedure foo(NumList).
+foo([a, b, c]).  % Type error: 'a' is not a Number
+\end{verbatim}
+
+\mypara{Mode errors} occur when a variable has the wrong mode for its position:
+\begin{verbatim}
+procedure bar(Number?, Number).
+bar(X?, Y).  % Mode error: reader X? where head expects writer,
+             %            writer Y where head expects reader
+\end{verbatim}
+
+With declaration \verb|bar(Number?, Number)|, argument 1 is consume mode (head expects writer) and argument 2 is produce mode (head expects reader). The correct clause:
+\begin{verbatim}
+bar(X, Y?) :- Y := X? + 1.
+\end{verbatim}
+
+\section{Summary}
+
+Moded types combine structural types with data flow annotations:
+
+\begin{itemize}
+\item \textbf{Type definitions} specify valid term structures using \verb|::=| and \verb|;|
+\item \textbf{Consume mode} (\verb|Type?|): data flows from caller to callee
+\item \textbf{Produce mode} (\verb|Type|): data flows from callee to caller
+\item \textbf{Mode checking} verifies correct reader/writer placement
+\item \textbf{Mode involution}: consume $\times$ consume $=$ produce, enabling response slots
+\end{itemize}
+
+Moded type declarations make the SRSW restriction statically checkable, catching errors before runtime.
+
+\begin{exercises}
+\begin{enumerate}
+\item Write moded type declarations for \verb|append/3| and \verb|reverse/2|.
+
+\item Define a \verb|BinaryTree| type and write a moded declaration for \verb|tree_sum/2| that computes the sum of values at nodes.
+
+\item Trace through mode checking for the counter's \verb|show| clause. Why does \verb|show(Number?)| with embedded consume mode create a produce position for the caller?
+
+\item Given \verb|procedure foo(List?, List)|, what modes must the variables have in a clause head \verb|foo([X|Xs], [Y|Ys])|?
+\end{enumerate}
+\end{exercises}
