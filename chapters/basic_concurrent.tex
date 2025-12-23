@@ -458,13 +458,407 @@ C = 1
 The trace shows dataflow: the second half-adder and \verb|or| suspend until the first half-adder produces results.
 
 %% ============================================
-%% Section 2: Streams (TBC)
+%% Section 2: Streams
 %% ============================================
 
 \section{Streams}
 \label{sec:streams}
-%% [TBC] Merge from streams.tex
-%% Include ripple-carry adder here (uses lists)
+
+A \emph{stream} is an incrementally-constructed list. Unlike a complete list that exists all at once, a stream is built element by element during computation. The producer may continue indefinitely, or may close the stream by binding its tail to the empty list \verb|[]|.
+
+This distinction has consequences for consumer design:
+\begin{itemize}
+\item If a stream is \emph{bounded} (will eventually close), the consumer should have a clause for \verb|[]| to handle termination.
+\item If a stream is \emph{indefinite} (never intended to close), the consumer should \emph{not} have a clause for \verb|[]|. Instead, it should fail if the stream unexpectedly terminates, signaling an error condition.
+\end{itemize}
+
+\subsection{Producers and Consumers}
+
+The simplest stream pairs a producer that generates elements with a consumer that processes them. Consider a producer that counts down from $N$:
+
+\begin{verbatim}
+producer([], 0).
+producer([N?|Xs?], N) :- N? > 0 | N1 := N? - 1, producer(Xs, N1?).
+\end{verbatim}
+
+The producer has two clauses:
+\begin{itemize}
+\item When $N = 0$, close the stream with \verb|[]|
+\item Otherwise, emit $N$ as the head, decrement, and continue with the tail
+\end{itemize}
+
+A consumer that sums stream elements:
+
+\begin{verbatim}
+consumer([], Sum, Sum?).
+consumer([X|Xs], Sum, Result?) :- ground(X?) |
+    Sum1 := Sum? + X?,
+    consumer(Xs?, Sum1?, Result).
+\end{verbatim}
+
+\begin{formal}{SRSW in Continuation Calls}
+\label{formal:srsw-continuations}
+
+The recursive call in the consumer passes readers \verb|Xs?|, \verb|Sum1?|, and
+\verb|Result|---not writers. This is required by SRSW.
+
+\mypara{Why Readers in Continuations?}
+When the goal \verb|consumer([1|T], 0, R)| matches the head, the argument
+\verb|[1|T]| (a list with writer tail) unifies with \verb|[X|Xs]|. The writer
+\verb|Xs| in the head is assigned \verb|T?| (the tail's reader view).
+
+The writer \verb|Xs| has now served its purpose: it received a value during
+head term matching. The SRSW syntactic restriction allows exactly one writer
+occurrence per clause. Since \verb|Xs| already occurred as writer in the head,
+it cannot appear as writer again in the body. Its paired reader \verb|Xs?|
+must be used instead.
+
+Similarly, \verb|Sum1| is a fresh writer created by the arithmetic assignment.
+It occurs once as writer (receiving the sum). To pass the value to the
+continuation, we use \verb|Sum1?|---passing the reader.
+
+\mypara{Common Error}
+Writing \verb|consumer(Xs, Sum1, Result)| would violate SRSW: \verb|Xs| would
+occur twice as writer (in head and body), and \verb|Sum1| likewise.
+
+\textbf{Principle:} In continuation calls, pass readers for values already
+received. The writer served its purpose during term matching; the reader carries
+the value forward.
+\end{formal}
+
+The \verb|ground(X?)| guard ensures we only consume elements that are fully available.
+
+\subsubsection{Concurrent Execution}
+
+When producer and consumer run concurrently, they interleave:
+
+\begin{verbatim}
+GLP> producer(H, 5), consumer(H?, 0, R).
+producer(X1, 5) :- :=/2(X3, -(5, 1)), producer(X4, X3?)
+consumer([5 | X4?], 0, X2) :- :=/2(X5, +(0, 5)), consumer(X4?, X5?, X6)
+...
+producer(X20, 0) :- true
+consumer([], 15, X22) :- true
+R = 15
+-> succeeds
+\end{verbatim}
+%% [TBC - trace from GLP Programming]
+
+The trace shows interleaving: the producer emits an element, the consumer processes it, and so on. Neither runs to completion before the other starts---they cooperate through the shared stream.
+
+\subsection{List Reversal}
+
+Reversing a list illustrates the difference between naive recursion and efficient iteration with an accumulator.
+
+\subsubsection{Naive Reverse}
+
+The naive approach: reverse the tail, then append the head at the end.
+
+\begin{verbatim}
+reverse([], []).
+reverse([X|Xs], Ys?) :-
+    reverse(Xs?, Zs),
+    append(Zs?, [X?], Ys).
+
+append([], Ys, Ys?).
+append([X|Xs], Ys, [X?|Zs?]) :- append(Xs?, Ys?, Zs).
+\end{verbatim}
+
+This is correct but inefficient. Each recursive call to \verb|reverse| triggers an \verb|append| that walks the entire accumulated result. For a list of length $n$, the total work is $O(n^2)$.
+
+\subsubsection{Reverse with Accumulator}
+
+The efficient version uses an accumulator to build the result during a single pass:
+
+\begin{verbatim}
+reverse(Xs, Ys?) :- reverse_acc(Xs?, [], Ys).
+
+reverse_acc([], Acc, Acc?).
+reverse_acc([X|Xs], Acc, Ys?) :- reverse_acc(Xs?, [X?|Acc?], Ys).
+\end{verbatim}
+
+Each element is prepended to the accumulator as we traverse the list. When we reach the end, the accumulator holds the reversed list. Total work: $O(n)$.
+
+\begin{verbatim}
+GLP> reverse([a,b,c], Ys).
+reverse([a,b,c], Ys) :- reverse_acc([a,b,c], [], Ys)
+reverse_acc([a,b,c], [], Ys) :- reverse_acc([b,c], [a], Ys)
+reverse_acc([b,c], [a], Ys) :- reverse_acc([c], [b,a], Ys)
+reverse_acc([c], [b,a], Ys) :- reverse_acc([], [c,b,a], Ys)
+reverse_acc([], [c,b,a], Ys) :- true
+Ys = [c,b,a]
+-> succeeds
+\end{verbatim}
+%% [TBC - trace from GLP Programming]
+
+The accumulator version is \emph{iterative}: a single process steps through the list, updating its state at each step. The call to \verb|reverse_acc| in the body is in \emph{tail position}---nothing remains to be done after it returns.
+
+\subsection{Stream Merging}
+
+Merging combines multiple input streams into a single output stream. This is essential for many-to-one communication: multiple producers sharing a single consumer.
+
+\subsubsection{Simple Fair Merge}
+
+The simplest merge alternates between two input streams:
+
+\begin{verbatim}
+merge([X|Xs], Ys, [X?|Zs?]) :- merge(Ys?, Xs?, Zs).
+merge(Xs, [Y|Ys], [Y?|Zs?]) :- merge(Xs?, Ys?, Zs).
+merge([], Ys, Ys?).
+merge(Xs, [], Xs?).
+\end{verbatim}
+
+The key to fairness is swapping the input streams after each element: \verb|merge(Ys?, Xs?, Zs)| puts the second input first. This ensures neither stream is starved.
+
+\begin{verbatim}
+GLP> merge([1,2,3], [a,b], Xs).
+merge([1,2,3], [a,b], Xs) :- merge([a,b], [2,3], X1)
+merge([a,b], [2,3], X1) :- merge([2,3], [b], X2)
+merge([2,3], [b], X2) :- merge([b], [3], X3)
+merge([b], [3], X3) :- merge([3], [], X4)
+merge([3], [], X4) :- merge([], [], X5)
+merge([], [], X5) :- true
+Xs = [1, a, 2, b, 3]
+-> succeeds
+\end{verbatim}
+%% [TBC - trace from GLP Programming]
+
+\subsubsection{Dynamic Merge}
+
+In many applications, the set of producers changes dynamically. A process may fork, creating a new stream that should join the merge. The \emph{dynamic merge} allows adding new streams via special \verb|merge(NewStream)| messages:
+
+\begin{verbatim}
+dmerge([merge(Ws)|Xs], Ys, Zs?) :-
+    dmerger(Ws?, Xs?, Xs1), dmerge(Xs1?, Ys?, Zs).
+dmerge(Xs, [merge(Ws)|Ys], Zs?) :-
+    dmerger(Ws?, Ys?, Ys1), dmerge(Xs?, Ys1?, Zs).
+dmerge([X|Xs], Ys, [X?|Zs?]) :-
+    tuple(X?), ~(X? =?= merge(_)) | dmerge(Ys?, Xs?, Zs).
+dmerge([X|Xs], Ys, [X?|Zs?]) :-
+    constant(X?) | dmerge(Ys?, Xs?, Zs).
+dmerge(Xs, [Y|Ys], [Y?|Zs?]) :-
+    tuple(Y?), ~(Y? =?= merge(_)) | dmerge(Xs?, Ys?, Zs).
+dmerge(Xs, [Y|Ys], [Y?|Zs?]) :-
+    constant(Y?) | dmerge(Xs?, Ys?, Zs).
+dmerge([], [], []).
+
+dmerger(Ws, Xs, Out?) :- dmerge(Ws?, Xs?, Out).
+\end{verbatim}
+
+The type guards (\verb|tuple|, \verb|constant|) distinguish regular messages from \verb|merge| requests.
+
+\subsubsection{Static Balanced Merge Tree}
+
+When the number of streams is known in advance, a balanced tree provides $O(\log n)$ delay:
+
+\begin{verbatim}
+merge_tree([Xs], Xs?).
+merge_tree([X,Y|Rest], Out?) :-
+    merge_layer([X?,Y?|Rest?], Layer),
+    merge_tree(Layer?, Out).
+
+merge_layer([], []).
+merge_layer([Xs], [Xs?]).
+merge_layer([Xs,Ys|Rest], [Zs?|Layer?]) :-
+    merge(Xs?, Ys?, Zs),
+    merge_layer(Rest?, Layer).
+\end{verbatim}
+
+\subsection{Stream Distribution}
+
+Distribution is the dual of merging: one input stream to many output streams.
+
+\subsubsection{Broadcast Distribution}
+
+Broadcast sends each input element to all output streams:
+
+\begin{verbatim}
+distribute([X|Xs], [X?|Ys?], [X?|Zs?]) :- ground(X?) | distribute(Xs?, Ys, Zs).
+distribute([], [], []).
+\end{verbatim}
+
+The \verb|ground(X?)| guard is essential. Without it, placing \verb|X?| in multiple output positions would violate SRSW. The guard verifies that \verb|X| contains no unbound variables, making replication safe.
+
+\subsubsection{Indexed Distribution}
+
+Indexed distribution routes each message to a specific output based on a tag:
+
+\begin{verbatim}
+distribute_indexed([send(1,X)|In], [X?|Out1?], Out2) :-
+    distribute_indexed(In?, Out1, Out2).
+distribute_indexed([send(2,X)|In], Out1, [X?|Out2?]) :-
+    distribute_indexed(In?, Out1, Out2).
+distribute_indexed([], [], []).
+\end{verbatim}
+
+\subsection{Stream Observers}
+
+An \emph{observer} monitors a stream without disrupting the communication between producer and consumer.
+
+\begin{verbatim}
+observer([X|Xs], [X?|Ys?], [X?|Zs?]) :- ground(X?) | observer(Xs?, Ys, Zs).
+observer([], [], []).
+\end{verbatim}
+
+The \verb|ground(X?)| guard is required because \verb|X?| appears twice---once forwarded to the consumer, once copied to the observation stream.
+
+\subsection{Ripple-Carry Adder}
+
+An n-bit ripple-carry adder chains full-adders, with each stage's carry-out feeding the next stage's carry-in. This example combines streams with the logic gates from Section~\ref{sec:constants}:
+
+\begin{verbatim}
+adder([],[],Cin,[Cin?]).
+adder([A|As],[B|Bs],Cin,[S?|Ss?]) :-
+    full_adder(A?,B?,Cin?,S,Cout),
+    adder(As?,Bs?,Cout?,Ss).
+\end{verbatim}
+
+Adding 101 + 110 (5 + 6, LSB first):
+
+\begin{verbatim}
+GLP> adder([1,0,1],[1,1,0],0,R).
+...
+R = [0,0,0,1]
+-> succeeds
+\end{verbatim}
+%% [TBC - trace from GLP Programming]
+
+The result \verb|[0,0,0,1]| is 1011 in binary (LSB first), which is 11 in decimal: $5 + 6 = 11$.
+
+\subsection{Buffered Communication}
+
+In producer-consumer systems, a fast producer can overwhelm a slow consumer. \emph{Back-pressure} is the mechanism by which consumers signal producers to slow down.
+
+\subsubsection{Sliding Window Buffer}
+
+A fixed-size buffer can be implemented using a sliding window of pre-allocated slots:
+
+\begin{verbatim}
+bb :- consumer([X1?, X2? | Xs]), producer(1, [X1, X2 | Xs?]).
+
+consumer([X1, X2, X3 | Xs?]) :- known(X1?) | consumer([X2?, X3? | Xs]).
+
+producer(N, [N? | Xs]) :- number(N?) | N1 := N? + 1, producer(N1?, Xs?).
+\end{verbatim}
+
+The buffer size (2) is determined by the number of pre-allocated slots \verb|X1, X2|. The consumer holds readers for these slots; the producer holds writers.
+
+\begin{itemize}
+\item \textbf{Initial state:} Consumer has \verb|[X1?, X2? | Xs]| (two reader slots, writer tail). Producer has \verb|[X1, X2 | Xs?]| (two writer slots, reader tail).
+\item \textbf{Producer writes:} Binds \verb|X1 = 1|, \verb|X2 = 2|, then continues with \verb|producer(3, Xs?)|.
+\item \textbf{Consumer waits:} Needs three elements \verb|[X1, X2, X3 | Xs?]| but only two are available. Suspends.
+\item \textbf{Producer writes into tail:} Constructs \verb|[3? | Ys]| into \verb|Xs|, providing the third element.
+\item \textbf{Consumer resumes:} Matches, slides window to \verb|[X2?, X3? | Ys]|.
+\end{itemize}
+
+The producer can never get more than 2 elements ahead of the consumer. If the consumer stops, the producer suspends after filling the buffer---back-pressure without difference lists.
+
+\begin{verbatim}
+GLP> bb.
+...
+\end{verbatim}
+%% [TBC - trace from GLP Programming showing interleaving]
+
+\subsection{Objects and Monitors}
+
+Processes maintaining state in recursive parameters, responding to messages via streams, are the \GLP realization of \emph{objects}. A \emph{monitor} is an object accessed by multiple clients through a merge network.
+
+\subsubsection{Counter}
+
+The simplest monitor maintains a counter responding to \verb|clear|, \verb|add|, and \verb|read(X)|:
+
+\begin{verbatim}
+counter(In) :- counter_loop(In?, 0).
+
+counter_loop([clear|In], _) :- counter_loop(In?, 0).
+counter_loop([add|In], C) :- C1 := C? + 1, counter_loop(In?, C1?).
+counter_loop([read(C?)|In], C) :- number(C?) | counter_loop(In?, C?).
+counter_loop([], _).
+\end{verbatim}
+
+The \verb|read(C?)| places the state reader directly in the message structure. The client sends \verb|read(V)| retaining reader \verb|V?|; when the clause head matches, the client's writer \verb|V| receives the current count.
+
+The \verb|number(C?)| guard permits replication of \verb|C?| to both the message and the recursive call (per Formal Box~\ref{formal:guards-multiple-reads}).
+
+\begin{verbatim}
+GLP> counter([add, add, add, read(X), clear, add, read(Y)]).
+...
+X = 3
+Y = 1
+-> succeeds
+\end{verbatim}
+%% [TBC - trace from GLP Programming]
+
+\begin{formal}{Which Guards Enable Multiple Reader Occurrences?}
+\label{formal:guards-multiple-reads}
+
+The counter's \verb|read| clause uses \verb|number(C?)| to enable replication.
+Here \verb|C?| appears twice in the body. Without the guard, this would violate
+SRSW. Why does \verb|number(C?)| make it safe?
+
+\mypara{The Danger of Replicating Readers}
+If \verb|C?|'s value contains an unbound writer \verb|W|, then both occurrences
+of \verb|C?| would have access to \verb|W|. Two references to the same writer
+violates single-writer---both could attempt to bind \verb|W|.
+
+\mypara{Ground Guard}
+The guard \verb|ground(C?)| succeeds only if \verb|C?| contains no unbound
+variables. A ground term can be safely replicated because there are no writers
+to share.
+
+\mypara{Type Guards}
+Type guards like \verb|constant(X?)|, \verb|number(X?)|, and \verb|integer(X?)|
+also enable multiple reader occurrences. These types cannot contain
+variables, so success implies groundness.
+
+\mypara{The known Guard Does Not Enable Multiple Reads}
+The guard \verb|known(X?)| only tests that \verb|X?| is bound to \emph{some}
+value---which may contain unbound variables. After \verb|known(X?)| succeeds,
+replicating \verb|X?| could still replicate access to writers embedded in the
+value. Thus \verb|known| does not grant multiple-read permission.
+
+\textbf{Summary:}
+\begin{center}
+\begin{tabular}{ll}
+\textbf{Guard} & \textbf{Multiple reads?} \\
+\hline
+\verb|ground(X?)| & Yes (no variables) \\
+\verb|constant(X?)| & Yes (constants have no variables) \\
+\verb|number(X?)| & Yes (numbers have no variables) \\
+\verb|integer(X?)| & Yes (integers have no variables) \\
+\verb|tuple(X?)| & No (tuple may contain variables) \\
+\verb|known(X?)| & No (value may contain writers) \\
+\end{tabular}
+\end{center}
+\end{formal}
+
+\subsubsection{Accumulator}
+
+An accumulator with multiple concurrent clients demonstrates the monitor pattern:
+
+\begin{verbatim}
+accumulator(In) :- acc_loop(In?, 0).
+
+acc_loop([add(N)|In], Sum) :- number(N?) |
+    Sum1 := Sum? + N?, acc_loop(In?, Sum1?).
+acc_loop([read(Sum?)|In], Sum) :- number(Sum?) | acc_loop(In?, Sum?).
+acc_loop([], _).
+\end{verbatim}
+
+Multiple clients can send to the accumulator through a merge:
+
+\begin{verbatim}
+test_acc :-
+    merge(Client1?, Client2?, In),
+    accumulator(In?),
+    client1(Client1),
+    client2(Client2).
+
+client1([add(10), add(20), read(X) | []]) :- number(X?) | true.
+client2([add(5), read(Y) | []]) :- number(Y?) | true.
+\end{verbatim}
+
+The merge serializes requests from multiple clients. Each client sees a consistent view of the accumulator state at the moment its \verb|read| is processed.
 
 %% ============================================
 %% Section 3: Recursive Programming (TBC)
