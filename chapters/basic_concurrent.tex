@@ -1,27 +1,482 @@
 %% Chapter: Basic Concurrent Programming
-%% Combines: constants, streams, recursive techniques, meta-interpreters
+%% Part I, Chapter 4
 %% NOTE: This chapter has NO type annotations - untyped GLP programming
 
 \chapter{Basic Concurrent Programming}
 \label{ch:basic-concurrent}
 
-%% [TBC] Content to be merged from:
-%% - chapters/constants.tex (as Section 1)
-%% - chapters/streams.tex (as Section 2)
-%% - chapters/recursive.tex (as Section 3)
-%% - chapters/meta.tex (as Section 4)
+This chapter introduces \GLP programming through progressively richer examples, beginning with the simplest possible programs: those involving only constants.
 
 \section{Programming with Constants}
 \label{sec:constants}
-%% [TBC] Merge from constants.tex
+
+\subsection{Unit Clauses}
+
+A \emph{unit clause} is a clause with an empty body. The simplest \GLP programs consist of unit clauses with constant arguments.
+
+\begin{verbatim}
+p(a).
+\end{verbatim}
+
+This clause defines \verb|p/1| with a single solution: \verb|p(a)| holds.
+
+\paragraph{Goal with matching constant.}
+
+\begin{verbatim}
+GLP> p(a).
+p(a) :- true
+-> succeeds
+\end{verbatim}
+%% [TBC - trace from GLP Programming]
+
+\paragraph{Goal with non-matching constant.}
+
+\begin{verbatim}
+GLP> p(b).
+-> fails
+\end{verbatim}
+%% [TBC - trace from GLP Programming]
+
+\paragraph{Goal with writer argument.}
+
+\begin{verbatim}
+GLP> p(X).
+p(X) :- true
+X = a
+-> succeeds
+\end{verbatim}
+%% [TBC - trace from GLP Programming]
+
+The writer \verb|X| receives the value \verb|a| from the clause head.
+
+\paragraph{Goal with reader argument.}
+
+\begin{verbatim}
+GLP> p(X?).
+p(X?) -> suspended
+\end{verbatim}
+%% [TBC - trace from GLP Programming]
+
+A reader cannot receive a value---it can only observe a value produced elsewhere. With no writer to bind \verb|X|, the goal suspends, waiting for \verb|X| to be bound by another part of the computation.
+
+\subsection{Conjunctive Goals}
+
+When goals share a variable, execution order affects behavior.
+
+\paragraph{Writer then reader.}
+
+\begin{verbatim}
+GLP> p(X), p(X?).
+p(X) :- true
+p(a) :- true
+X = a
+-> succeeds
+\end{verbatim}
+%% [TBC - trace from GLP Programming]
+
+The first goal binds \verb|X = a|. The second goal, with reader \verb|X?|, reactivates and succeeds since \verb|p(a)| matches.
+
+\paragraph{Reader then writer.}
+
+\begin{verbatim}
+GLP> p(X?), p(X).
+p(X?) -> suspended
+p(X) :- true
+p(a) :- true
+X = a
+-> succeeds
+\end{verbatim}
+%% [TBC - trace from GLP Programming]
+
+The first goal suspends on the unbound reader. The second goal binds \verb|X = a|. The first goal reactivates and succeeds.
+
+Both conjunctions succeed, but by different paths.
+
+\subsection{Multiple Clauses}
+
+When multiple clauses define a predicate, the first applicable clause is selected:
+
+\begin{verbatim}
+q(b).
+q(a).
+\end{verbatim}
+
+\paragraph{Goals with constant arguments.}
+
+\begin{verbatim}
+GLP> q(a).
+q(a) :- true
+-> succeeds
+
+GLP> q(b).
+q(b) :- true
+-> succeeds
+
+GLP> q(c).
+-> fails
+\end{verbatim}
+%% [TBC - trace from GLP Programming]
+
+\paragraph{Goal with writer argument.}
+
+\begin{verbatim}
+GLP> q(X).
+q(X) :- true
+X = b
+-> succeeds
+\end{verbatim}
+%% [TBC - trace from GLP Programming]
+
+With a writer argument, \verb|q(X)| commits to the first clause whose head can match. Since \verb|q(b)| is first, \verb|X| is bound to \verb|b|.
+
+\paragraph{Goal with reader argument.}
+
+\begin{verbatim}
+GLP> q(X?).
+q(X?) -> suspended
+\end{verbatim}
+%% [TBC - trace from GLP Programming]
+
+\subsection{Conjunctive Goals with Different Predicates}
+
+Combining \verb|p/1| and \verb|q/1| reveals how bindings propagate between predicates.
+
+\paragraph{Writer from p, reader to q.}
+
+\begin{verbatim}
+GLP> p(X), q(X?).
+p(X) :- true
+q(a) :- true
+X = a
+-> succeeds
+\end{verbatim}
+%% [TBC - trace from GLP Programming]
+
+The binding \verb|X = a| from \verb|p(X)| flows to \verb|q(X?)|, which succeeds because \verb|q(a)| matches the second clause.
+
+\paragraph{Reader from p, writer from q.}
+
+\begin{verbatim}
+GLP> p(X?), q(X).
+p(X?) -> suspended
+q(X) :- true
+p(b) -> failed
+X = b
+-> fails
+\end{verbatim}
+%% [TBC - trace from GLP Programming]
+
+The goal \verb|p(X?)| suspends. Then \verb|q(X)| binds \verb|X = b| (first clause). When \verb|p(X?)| reactivates, it becomes \verb|p(b)|, which fails---there is no clause \verb|p(b)|.
+
+\subsection{Binary Unit Clauses}
+
+Binary unit clauses relate two constants:
+
+\begin{verbatim}
+p(a,b).
+\end{verbatim}
+
+\paragraph{Goals with constants.}
+
+\begin{verbatim}
+GLP> p(a,b).
+p(a,b) :- true
+-> succeeds
+
+GLP> p(a,c).
+-> fails
+\end{verbatim}
+%% [TBC - trace from GLP Programming]
+
+\paragraph{Goals with one writer.}
+
+\begin{verbatim}
+GLP> p(a,X).
+p(a,X) :- true
+X = b
+-> succeeds
+
+GLP> p(X,b).
+p(X,b) :- true
+X = a
+-> succeeds
+\end{verbatim}
+%% [TBC - trace from GLP Programming]
+
+\paragraph{Goal with two writers.}
+
+\begin{verbatim}
+GLP> p(X,Y).
+p(X,Y) :- true
+X = a
+Y = b
+-> succeeds
+\end{verbatim}
+%% [TBC - trace from GLP Programming]
+
+\paragraph{Goal with two readers.}
+
+\begin{verbatim}
+GLP> p(X?,Y?).
+p(X?,Y?) -> suspended
+\end{verbatim}
+%% [TBC - trace from GLP Programming]
+
+With two unbound readers, both suspend---neither can proceed without a value, and no other goal provides one.
+
+\subsection{Shared Variables in Goals}
+
+A goal can use the same variable as both writer and reader:
+
+\begin{verbatim}
+p(a,a).
+\end{verbatim}
+
+\paragraph{Writer-reader order.}
+
+\begin{verbatim}
+GLP> p(X,X?).
+p(X,X?) :- true
+X = a
+-> succeeds
+\end{verbatim}
+%% [TBC - trace from GLP Programming]
+
+\paragraph{Reader-writer order.}
+
+\begin{verbatim}
+GLP> p(X?,X).
+p(X?,X) :- true
+X = a
+-> succeeds
+\end{verbatim}
+%% [TBC - trace from GLP Programming]
+
+When \verb|X| appears as both writer and reader in the same goal, the writer occurrence binds \verb|X|, and the reader occurrence observes that binding. Both orderings succeed.
+
+\paragraph{Two writers.}
+
+\begin{verbatim}
+GLP> p(X,Y).
+p(X,Y) :- true
+X = a
+Y = a
+-> succeeds
+\end{verbatim}
+%% [TBC - trace from GLP Programming]
+
+\subsection{Logic Gates}
+
+Digital logic gates provide a natural example of dataflow computation with constants. We define basic gates as unit clauses:
+
+\begin{verbatim}
+and(1,1,1).
+and(1,0,0).
+and(0,1,0).
+and(0,0,0).
+
+or(1,1,1).
+or(1,0,1).
+or(0,1,1).
+or(0,0,0).
+
+not(1,0).
+not(0,1).
+
+xor(1,1,0).
+xor(1,0,1).
+xor(0,1,1).
+xor(0,0,0).
+\end{verbatim}
+
+Each gate suspends until its inputs are bound:
+
+\begin{verbatim}
+GLP> and(1,1,X).
+and(1,1,X) :- true
+X = 1
+-> succeeds
+
+GLP> and(1,0,X).
+and(1,0,X) :- true
+X = 0
+-> succeeds
+\end{verbatim}
+%% [TBC - trace from GLP Programming]
+
+\subsection{Clauses with Bodies}
+
+Compound gates compose simpler ones. A NAND gate inverts the output of an AND gate:
+
+\begin{verbatim}
+nand(A,B,Z?) :- and(A?,B?,W), not(W?,Z).
+\end{verbatim}
+
+\begin{verbatim}
+GLP> nand(1,1,X).
+nand(1,1,X) :- and(1,1,W), not(W?,Z)
+and(1,1,W) :- true
+not(1,Z) :- true
+X = 0
+-> succeeds
+
+GLP> nand(0,1,X).
+nand(0,1,X) :- and(0,1,W), not(W?,Z)
+and(0,1,W) :- true
+not(0,Z) :- true
+X = 1
+-> succeeds
+\end{verbatim}
+%% [TBC - trace from GLP Programming]
+
+The body goals \verb|and(A?,B?,W)| and \verb|not(W?,Z)| execute concurrently. The \verb|and| goal succeeds immediately, binding \verb|W|. This binding flows to \verb|W?| in the \verb|not| goal, which then succeeds, binding \verb|Z|. Since the clause head has \verb|Z?| (a reader), the caller's writer receives the value.
+
+\begin{formal}{Produces and Consumes Parameters}
+\label{formal:produces-consumes}
+
+In \GLP, a clause \emph{produces} a value through a reader in the head, and
+\emph{consumes} a value through a writer in the head. This follows directly
+from SRSW.
+
+Consider \verb|nand(A,B,Z?) :- and(A?,B?,W), not(W?,Z).|
+
+\mypara{Produces}
+The third parameter \verb|Z?| is a reader in the head. The body contains the
+paired writer \verb|Z|, which produces the output value. The caller provides
+a writer to receive this value:
+
+\begin{itemize}
+\item Goal \verb|nand(1,1,X)| has writer \verb|X| in third position
+\item Head \verb|nand(A,B,Z?)| has reader \verb|Z?| in third position
+\item Body goal \verb|not(W?,Z)| binds writer \verb|Z|
+\item Value flows from \verb|Z| to \verb|X|
+\end{itemize}
+
+If the head used writer \verb|Z| instead of reader \verb|Z?|, there would be
+two writers for \verb|Z|---one in the head, one in the body---violating SRSW.
+
+\mypara{Consumes}
+The first two parameters \verb|A| and \verb|B| are writers in the head. The
+body contains the paired readers \verb|A?| and \verb|B?|, which consume the
+input values. The caller provides constants or readers:
+
+\begin{itemize}
+\item Goal \verb|nand(1,1,X)| has constants in first two positions
+\item Head writers \verb|A| and \verb|B| receive these values
+\item Body readers \verb|A?| and \verb|B?| observe the values
+\end{itemize}
+
+\mypara{Summary}
+\begin{center}
+\begin{tabular}{lll}
+\textbf{Parameter role} & \textbf{Head} & \textbf{Body} \\
+\hline
+Produces & reader & writer \\
+Consumes & writer & reader \\
+\end{tabular}
+\end{center}
+
+\mypara{Derivation from Term Matching}
+These conventions follow from term matching (Definition~\ref{definition:term-matching}).
+
+When goal \verb|nand(1,1,X)| matches head \verb|nand(A,B,Z?)|, the third
+argument has goal writer \verb|X| against head reader \verb|Z?|. From the
+term matching catalog (Appendix~\ref{appendix:atomic-unification}), this
+succeeds with assignment $\{Z \leftarrow X?\}$. The head's writer \verb|Z|
+is assigned the goal's reader \verb|X?|. When \verb|Z| is bound in the body,
+that value flows through to the caller's writer \verb|X|.
+
+For the first two arguments, goal constant \verb|1| against head writer \verb|A|
+succeeds with $\{A \leftarrow 1\}$. The body reader \verb|A?| then observes
+value \verb|1|.
+\end{formal}
+
+\subsection{Guards for Multiple Reader Occurrences}
+
+A half-adder takes two input bits and produces a sum and carry:
+
+\begin{verbatim}
+half_adder(A,B,Sum?,Carry?) :-
+    ground(A?), ground(B?) |
+    xor(A?,B?,Sum), and(A?,B?,Carry).
+\end{verbatim}
+
+The \verb|ground(A?)| and \verb|ground(B?)| guards are necessary because \verb|A?| and \verb|B?| each appear twice in the body. Without guards, this would violate the single-reader constraint. The guards ensure both inputs are fully bound before the body executes, permitting multiple reader occurrences (see Formal Box~\ref{formal:guards-multiple-reads} for the complete derivation).
+
+\begin{verbatim}
+GLP> half_adder(1,1,S,C).
+half_adder(1,1,S,C) :- xor(1,1,S1), and(1,1,C1)
+xor(1,1,S1) :- true
+and(1,1,C1) :- true
+S = 0
+C = 1
+-> succeeds
+
+GLP> half_adder(1,0,S,C).
+half_adder(1,0,S,C) :- xor(1,0,S1), and(1,0,C1)
+xor(1,0,S1) :- true
+and(1,0,C1) :- true
+S = 1
+C = 0
+-> succeeds
+\end{verbatim}
+%% [TBC - trace from GLP Programming]
+
+\subsection{Compound Circuits}
+
+A full-adder adds three bits: two inputs and a carry-in:
+
+\begin{verbatim}
+full_adder(A,B,Cin,Sum?,Cout?) :-
+    half_adder(A?,B?,S1,C1),
+    half_adder(S1?,Cin?,Sum,C2),
+    or(C1?,C2?,Cout).
+\end{verbatim}
+
+Each reader appears only once in the body, so no guards are needed.
+
+\begin{verbatim}
+GLP> full_adder(1,1,1,S,C).
+full_adder(1,1,1,S,C) :- half_adder(1,1,S1,C1),
+    half_adder(S1?,1,S2,C2), or(C1?,C2?,C3)
+half_adder(1,1,S1,C1) :- xor(1,1,X1), and(1,1,X2)
+half_adder(S1?,1,S2,C2) -> suspended
+or(C1?,C2?,C3) -> suspended
+xor(1,1,X1) :- true
+and(1,1,X2) :- true
+half_adder(0,1,S2,C2) :- xor(0,1,X3), and(0,1,X4)
+or(1,C2?,C3) -> suspended
+xor(0,1,X3) :- true
+and(0,1,X4) :- true
+or(1,0,C3) :- true
+S = 1
+C = 1
+-> succeeds
+\end{verbatim}
+%% [TBC - trace from GLP Programming]
+
+The trace shows dataflow: the second half-adder and \verb|or| suspend until the first half-adder produces results.
+
+%% ============================================
+%% Section 2: Streams (TBC)
+%% ============================================
 
 \section{Streams}
 \label{sec:streams}
 %% [TBC] Merge from streams.tex
+%% Include ripple-carry adder here (uses lists)
+
+%% ============================================
+%% Section 3: Recursive Programming (TBC)
+%% ============================================
 
 \section{Recursive Programming}
 \label{sec:recursive}
 %% [TBC] Merge from recursive.tex
+
+%% ============================================
+%% Section 4: Metaprogramming (TBC)
+%% ============================================
 
 \section{Metaprogramming}
 \label{sec:meta}
