@@ -753,11 +753,34 @@ The buffer size (2) is determined by the number of pre-allocated slots \verb|X1,
 
 The producer can never get more than 2 elements ahead of the consumer. If the consumer stops, the producer suspends after filling the buffer---back-pressure without difference lists.
 
+The following trace uses a terminating version with a consumption limit of 10:
+
 \begin{verbatim}
-GLP> bb.
-...
+bb_test :- consumer([X1?, X2? | Xs], 10), producer(1, [X1, X2 | Xs?]).
+
+consumer([X1, X2, X3 | Xs?], N) :- known(X1?), N? > 0 |
+    N1 := N? - 1, consumer([X2?, X3? | Xs], N1?).
+consumer(_, 0).
+
+producer(N, [N? | Xs]) :- number(N?) | N1 := N? + 1, producer(N1?, Xs?).
 \end{verbatim}
-%% [TBC - trace from GLP Programming showing interleaving]
+
+\begin{verbatim}
+GLP> bb_test.
+consumer([X1? | [X2? | X3]], 10) -> suspended
+producer(1, [X1 | [X2 | X3?]]) :- producer(2, [X2 | X3?])
+consumer([1 | [X2? | X3]], 10) :- consumer([X2? | [X6? | X7]], 9)
+producer(2, [X2 | [X6 | X7?]]) :- producer(3, [X6 | X7?])
+consumer([2 | [X6? | X7]], 9) :- consumer([X6? | [X10? | X11]], 8)
+producer(3, [X6 | [X10 | X11?]]) :- producer(4, [X10 | X11?])
+...
+consumer([11 | [X42? | X43]], 0) :- true
+producer(12, [X42 | X43?]) :- producer(13, X43?)
+producer(13, X43?) -> suspended
+-> succeeds
+\end{verbatim}
+
+The consumer suspends until the producer fills the first slot. Once running, they alternate: consumer processes $N$, producer writes $N+2$. When the consumer terminates, the producer suspends---no demand for element 13.
 
 \subsection{Objects and Monitors}
 
