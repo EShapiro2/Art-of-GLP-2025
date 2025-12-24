@@ -419,6 +419,8 @@ merge(Xs, [], Xs?).
 
 The key to fairness is swapping inputs: \verb|merge(Ys?, Xs?, Zs)|.
 
+The two base cases \verb|merge([], Ys, Ys?)| and \verb|merge(Xs, [], Xs?)| have two advantages over a single \verb|merge([], [], [])| base case. First, merge terminates as soon as either stream closes, rather than requiring both to terminate---important when one stream may be indefinite. Second, when one stream closes, the entire remaining stream is copied to the output in a single step (\verb|Ys?| or \verb|Xs?|), rather than element-by-element through continued recursive calls.
+
 \begin{verbatim}
 GLP> merge([1,2,3], [a,b], Xs).
 ...
