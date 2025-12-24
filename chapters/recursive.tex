@@ -526,6 +526,17 @@ inner_product([], [], 0).
 \end{verbatim}
 What happens if the lists have different lengths?
 
+The inner product computation assumes the two vectors have equal length. If they do not, the goal fails---neither the base case (one list non-empty) nor the recursive case (one list empty) applies. The \verb|otherwise| guard can catch this:
+
+\begin{verbatim}
+inner_product(Xs, Ys, unequal_vectors(Xs?, Ys?)) :- otherwise | true.
+\end{verbatim}
+
+This returns a structured error term rather than silent failure. Whether to include such a clause depends on the application: if callers guarantee equal-length inputs, it is unnecessary.
+
+Several list operations share this equal-length requirement, including \verb|zip| which pairs corresponding elements. General techniques for error handling, including failsafe meta-interpreters that catch failures and report their context, are discussed in Section~\ref{sec:meta}.
+%% Note: sec:meta is the Metaprogramming section in basic_concurrent.tex
+
 \item \textbf{Polygon Area.} Implement \verb|area(Chain,Area)| computing the area of a polygon given as a list of $(x,y)$ coordinate pairs using the shoelace formula.
 \end{enumerate}
 
