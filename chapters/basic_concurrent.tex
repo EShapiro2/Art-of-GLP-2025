@@ -5,7 +5,11 @@
 \chapter{Basic Concurrent Programming}
 \label{ch:basic-concurrent}
 
-This chapter introduces \GLP programming through progressively richer examples, beginning with the simplest possible programs: those involving only constants.
+This chapter introduces \GLP programming through progressively richer examples.
+
+%% ============================================
+%% Section 1: Programming with Constants
+%% ============================================
 
 \section{Programming with Constants}
 \label{sec:constants}
@@ -57,7 +61,7 @@ p(X?) -> suspended
 \end{verbatim}
 %% [TBC - trace from GLP Programming]
 
-A reader cannot receive a value---it can only observe a value produced elsewhere. With no writer to bind \verb|X|, the goal suspends, waiting for \verb|X| to be bound by another part of the computation.
+A reader cannot receive a value---it can only observe a value produced elsewhere. With no writer to bind \verb|X|, the goal suspends.
 
 \subsection{Conjunctive Goals}
 
@@ -74,7 +78,7 @@ X = a
 \end{verbatim}
 %% [TBC - trace from GLP Programming]
 
-The first goal binds \verb|X = a|. The second goal, with reader \verb|X?|, reactivates and succeeds since \verb|p(a)| matches.
+The first goal binds \verb|X = a|. The second goal, with reader \verb|X?|, succeeds since \verb|p(a)| matches.
 
 \paragraph{Reader then writer.}
 
@@ -90,8 +94,6 @@ X = a
 
 The first goal suspends on the unbound reader. The second goal binds \verb|X = a|. The first goal reactivates and succeeds.
 
-Both conjunctions succeed, but by different paths.
-
 \subsection{Multiple Clauses}
 
 When multiple clauses define a predicate, the first applicable clause is selected:
@@ -100,22 +102,6 @@ When multiple clauses define a predicate, the first applicable clause is selecte
 q(b).
 q(a).
 \end{verbatim}
-
-\paragraph{Goals with constant arguments.}
-
-\begin{verbatim}
-GLP> q(a).
-q(a) :- true
--> succeeds
-
-GLP> q(b).
-q(b) :- true
--> succeeds
-
-GLP> q(c).
--> fails
-\end{verbatim}
-%% [TBC - trace from GLP Programming]
 
 \paragraph{Goal with writer argument.}
 
@@ -127,19 +113,11 @@ X = b
 \end{verbatim}
 %% [TBC - trace from GLP Programming]
 
-With a writer argument, \verb|q(X)| commits to the first clause whose head can match. Since \verb|q(b)| is first, \verb|X| is bound to \verb|b|.
-
-\paragraph{Goal with reader argument.}
-
-\begin{verbatim}
-GLP> q(X?).
-q(X?) -> suspended
-\end{verbatim}
-%% [TBC - trace from GLP Programming]
+With a writer argument, \verb|q(X)| commits to the first clause. Since \verb|q(b)| is first, \verb|X| is bound to \verb|b|.
 
 \subsection{Conjunctive Goals with Different Predicates}
 
-Combining \verb|p/1| and \verb|q/1| reveals how bindings propagate between predicates.
+Combining \verb|p/1| and \verb|q/1| reveals how bindings propagate.
 
 \paragraph{Writer from p, reader to q.}
 
@@ -152,7 +130,7 @@ X = a
 \end{verbatim}
 %% [TBC - trace from GLP Programming]
 
-The binding \verb|X = a| from \verb|p(X)| flows to \verb|q(X?)|, which succeeds because \verb|q(a)| matches the second clause.
+The binding \verb|X = a| from \verb|p(X)| flows to \verb|q(X?)|, which succeeds because \verb|q(a)| matches.
 
 \paragraph{Reader from p, writer from q.}
 
@@ -160,48 +138,19 @@ The binding \verb|X = a| from \verb|p(X)| flows to \verb|q(X?)|, which succeeds 
 GLP> p(X?), q(X).
 p(X?) -> suspended
 q(X) :- true
-p(b) -> failed
+p(b) -> fails
 X = b
 -> fails
 \end{verbatim}
 %% [TBC - trace from GLP Programming]
 
-The goal \verb|p(X?)| suspends. Then \verb|q(X)| binds \verb|X = b| (first clause). When \verb|p(X?)| reactivates, it becomes \verb|p(b)|, which fails---there is no clause \verb|p(b)|.
+The goal \verb|p(X?)| suspends. Then \verb|q(X)| binds \verb|X = b|. When \verb|p(X?)| reactivates, it becomes \verb|p(b)|, which fails.
 
 \subsection{Binary Unit Clauses}
-
-Binary unit clauses relate two constants:
 
 \begin{verbatim}
 p(a,b).
 \end{verbatim}
-
-\paragraph{Goals with constants.}
-
-\begin{verbatim}
-GLP> p(a,b).
-p(a,b) :- true
--> succeeds
-
-GLP> p(a,c).
--> fails
-\end{verbatim}
-%% [TBC - trace from GLP Programming]
-
-\paragraph{Goals with one writer.}
-
-\begin{verbatim}
-GLP> p(a,X).
-p(a,X) :- true
-X = b
--> succeeds
-
-GLP> p(X,b).
-p(X,b) :- true
-X = a
--> succeeds
-\end{verbatim}
-%% [TBC - trace from GLP Programming]
 
 \paragraph{Goal with two writers.}
 
@@ -214,19 +163,7 @@ Y = b
 \end{verbatim}
 %% [TBC - trace from GLP Programming]
 
-\paragraph{Goal with two readers.}
-
-\begin{verbatim}
-GLP> p(X?,Y?).
-p(X?,Y?) -> suspended
-\end{verbatim}
-%% [TBC - trace from GLP Programming]
-
-With two unbound readers, both suspend---neither can proceed without a value, and no other goal provides one.
-
 \subsection{Shared Variables in Goals}
-
-A goal can use the same variable as both writer and reader:
 
 \begin{verbatim}
 p(a,a).
@@ -242,32 +179,11 @@ X = a
 \end{verbatim}
 %% [TBC - trace from GLP Programming]
 
-\paragraph{Reader-writer order.}
-
-\begin{verbatim}
-GLP> p(X?,X).
-p(X?,X) :- true
-X = a
--> succeeds
-\end{verbatim}
-%% [TBC - trace from GLP Programming]
-
-When \verb|X| appears as both writer and reader in the same goal, the writer occurrence binds \verb|X|, and the reader occurrence observes that binding. Both orderings succeed.
-
-\paragraph{Two writers.}
-
-\begin{verbatim}
-GLP> p(X,Y).
-p(X,Y) :- true
-X = a
-Y = a
--> succeeds
-\end{verbatim}
-%% [TBC - trace from GLP Programming]
+When \verb|X| appears as both writer and reader in the same goal, the writer occurrence binds \verb|X|, and the reader occurrence observes that binding.
 
 \subsection{Logic Gates}
 
-Digital logic gates provide a natural example of dataflow computation with constants. We define basic gates as unit clauses:
+Digital logic gates provide a natural example of dataflow computation:
 
 \begin{verbatim}
 and(1,1,1).
@@ -289,24 +205,17 @@ xor(0,1,1).
 xor(0,0,0).
 \end{verbatim}
 
-Each gate suspends until its inputs are bound:
-
 \begin{verbatim}
 GLP> and(1,1,X).
 and(1,1,X) :- true
 X = 1
--> succeeds
-
-GLP> and(1,0,X).
-and(1,0,X) :- true
-X = 0
 -> succeeds
 \end{verbatim}
 %% [TBC - trace from GLP Programming]
 
 \subsection{Clauses with Bodies}
 
-Compound gates compose simpler ones. A NAND gate inverts the output of an AND gate:
+A NAND gate inverts the output of an AND gate:
 
 \begin{verbatim}
 nand(A,B,Z?) :- and(A?,B?,W), not(W?,Z).
@@ -319,52 +228,25 @@ and(1,1,W) :- true
 not(1,Z) :- true
 X = 0
 -> succeeds
-
-GLP> nand(0,1,X).
-nand(0,1,X) :- and(0,1,W), not(W?,Z)
-and(0,1,W) :- true
-not(0,Z) :- true
-X = 1
--> succeeds
 \end{verbatim}
 %% [TBC - trace from GLP Programming]
-
-The body goals \verb|and(A?,B?,W)| and \verb|not(W?,Z)| execute concurrently. The \verb|and| goal succeeds immediately, binding \verb|W|. This binding flows to \verb|W?| in the \verb|not| goal, which then succeeds, binding \verb|Z|. Since the clause head has \verb|Z?| (a reader), the caller's writer receives the value.
 
 \begin{formal}{Produces and Consumes Parameters}
 \label{formal:produces-consumes}
 
 In \GLP, a clause \emph{produces} a value through a reader in the head, and
-\emph{consumes} a value through a writer in the head. This follows directly
-from SRSW.
+\emph{consumes} a value through a writer in the head.
 
 Consider \verb|nand(A,B,Z?) :- and(A?,B?,W), not(W?,Z).|
 
 \mypara{Produces}
 The third parameter \verb|Z?| is a reader in the head. The body contains the
-paired writer \verb|Z|, which produces the output value. The caller provides
-a writer to receive this value:
-
-\begin{itemize}
-\item Goal \verb|nand(1,1,X)| has writer \verb|X| in third position
-\item Head \verb|nand(A,B,Z?)| has reader \verb|Z?| in third position
-\item Body goal \verb|not(W?,Z)| binds writer \verb|Z|
-\item Value flows from \verb|Z| to \verb|X|
-\end{itemize}
-
-If the head used writer \verb|Z| instead of reader \verb|Z?|, there would be
-two writers for \verb|Z|---one in the head, one in the body---violating SRSW.
+paired writer \verb|Z|, which produces the output value.
 
 \mypara{Consumes}
 The first two parameters \verb|A| and \verb|B| are writers in the head. The
 body contains the paired readers \verb|A?| and \verb|B?|, which consume the
-input values. The caller provides constants or readers:
-
-\begin{itemize}
-\item Goal \verb|nand(1,1,X)| has constants in first two positions
-\item Head writers \verb|A| and \verb|B| receive these values
-\item Body readers \verb|A?| and \verb|B?| observe the values
-\end{itemize}
+input values.
 
 \mypara{Summary}
 \begin{center}
@@ -376,19 +258,8 @@ Consumes & writer & reader \\
 \end{tabular}
 \end{center}
 
-\mypara{Derivation from Term Matching}
-These conventions follow from term matching (Definition~\ref{definition:term-matching}).
-
-When goal \verb|nand(1,1,X)| matches head \verb|nand(A,B,Z?)|, the third
-argument has goal writer \verb|X| against head reader \verb|Z?|. From the
-term matching catalog (Appendix~\ref{appendix:atomic-unification}), this
-succeeds with assignment $\{Z \leftarrow X?\}$. The head's writer \verb|Z|
-is assigned the goal's reader \verb|X?|. When \verb|Z| is bound in the body,
-that value flows through to the caller's writer \verb|X|.
-
-For the first two arguments, goal constant \verb|1| against head writer \verb|A|
-succeeds with $\{A \leftarrow 1\}$. The body reader \verb|A?| then observes
-value \verb|1|.
+These conventions follow from term matching (Definition~\ref{definition:term-matching})
+and the SRSW constraint.
 \end{formal}
 
 \subsection{Guards for Multiple Reader Occurrences}
@@ -401,30 +272,22 @@ half_adder(A,B,Sum?,Carry?) :-
     xor(A?,B?,Sum), and(A?,B?,Carry).
 \end{verbatim}
 
-The \verb|ground(A?)| and \verb|ground(B?)| guards are necessary because \verb|A?| and \verb|B?| each appear twice in the body. Without guards, this would violate the single-reader constraint. The guards ensure both inputs are fully bound before the body executes, permitting multiple reader occurrences (see Formal Box~\ref{formal:guards-multiple-reads} for the complete derivation).
+The \verb|ground(A?)| and \verb|ground(B?)| guards are necessary because \verb|A?| and \verb|B?| each appear twice in the body. The guards ensure both inputs are fully bound before the body executes, permitting multiple reader occurrences (see Formal Box~\ref{formal:guards-multiple-reads}).
 
 \begin{verbatim}
 GLP> half_adder(1,1,S,C).
-half_adder(1,1,S,C) :- xor(1,1,S1), and(1,1,C1)
-xor(1,1,S1) :- true
-and(1,1,C1) :- true
+half_adder(1,1,S,C) :- xor(1,1,S), and(1,1,C)
+xor(1,1,S) :- true
+and(1,1,C) :- true
 S = 0
 C = 1
--> succeeds
-
-GLP> half_adder(1,0,S,C).
-half_adder(1,0,S,C) :- xor(1,0,S1), and(1,0,C1)
-xor(1,0,S1) :- true
-and(1,0,C1) :- true
-S = 1
-C = 0
 -> succeeds
 \end{verbatim}
 %% [TBC - trace from GLP Programming]
 
 \subsection{Compound Circuits}
 
-A full-adder adds three bits: two inputs and a carry-in:
+A full-adder adds three bits:
 
 \begin{verbatim}
 full_adder(A,B,Cin,Sum?,Cout?) :-
@@ -437,25 +300,12 @@ Each reader appears only once in the body, so no guards are needed.
 
 \begin{verbatim}
 GLP> full_adder(1,1,1,S,C).
-full_adder(1,1,1,S,C) :- half_adder(1,1,S1,C1),
-    half_adder(S1?,1,S2,C2), or(C1?,C2?,C3)
-half_adder(1,1,S1,C1) :- xor(1,1,X1), and(1,1,X2)
-half_adder(S1?,1,S2,C2) -> suspended
-or(C1?,C2?,C3) -> suspended
-xor(1,1,X1) :- true
-and(1,1,X2) :- true
-half_adder(0,1,S2,C2) :- xor(0,1,X3), and(0,1,X4)
-or(1,C2?,C3) -> suspended
-xor(0,1,X3) :- true
-and(0,1,X4) :- true
-or(1,0,C3) :- true
+...
 S = 1
 C = 1
 -> succeeds
 \end{verbatim}
 %% [TBC - trace from GLP Programming]
-
-The trace shows dataflow: the second half-adder and \verb|or| suspend until the first half-adder produces results.
 
 %% ============================================
 %% Section 2: Streams
@@ -464,28 +314,21 @@ The trace shows dataflow: the second half-adder and \verb|or| suspend until the 
 \section{Streams}
 \label{sec:streams}
 
-A \emph{stream} is an incrementally-constructed list. Unlike a complete list that exists all at once, a stream is built element by element during computation. The producer may continue indefinitely, or may close the stream by binding its tail to the empty list \verb|[]|.
+A \emph{stream} is an incrementally-constructed list. Unlike a complete list that exists all at once, a stream is built element by element during computation.
 
-This distinction has consequences for consumer design:
 \begin{itemize}
-\item If a stream is \emph{bounded} (will eventually close), the consumer should have a clause for \verb|[]| to handle termination.
-\item If a stream is \emph{indefinite} (never intended to close), the consumer should \emph{not} have a clause for \verb|[]|. Instead, it should fail if the stream unexpectedly terminates, signaling an error condition.
+\item If a stream is \emph{bounded} (will eventually close), the consumer should have a clause for \verb|[]|.
+\item If a stream is \emph{indefinite}, the consumer should \emph{not} have a clause for \verb|[]|---it should fail if the stream unexpectedly terminates.
 \end{itemize}
 
 \subsection{Producers and Consumers}
 
-The simplest stream pairs a producer that generates elements with a consumer that processes them. Consider a producer that counts down from $N$:
+A producer that counts down from $N$:
 
 \begin{verbatim}
 producer([], 0).
 producer([N?|Xs?], N) :- N? > 0 | N1 := N? - 1, producer(Xs, N1?).
 \end{verbatim}
-
-The producer has two clauses:
-\begin{itemize}
-\item When $N = 0$, close the stream with \verb|[]|
-\item Otherwise, emit $N$ as the head, decrement, and continue with the tail
-\end{itemize}
 
 A consumer that sums stream elements:
 
@@ -499,43 +342,23 @@ consumer([X|Xs], Sum, Result?) :- ground(X?) |
 \begin{formal}{SRSW in Continuation Calls}
 \label{formal:srsw-continuations}
 
-The recursive call in the consumer passes readers \verb|Xs?|, \verb|Sum1?|, and
-\verb|Result|---not writers. This is required by SRSW.
+The recursive call passes readers \verb|Xs?|, \verb|Sum1?|---not writers.
 
 \mypara{Why Readers in Continuations?}
-When the goal \verb|consumer([1|T], 0, R)| matches the head, the argument
-\verb|[1|T]| (a list with writer tail) unifies with \verb|[X|Xs]|. The writer
-\verb|Xs| in the head is assigned \verb|T?| (the tail's reader view).
-
-The writer \verb|Xs| has now served its purpose: it received a value during
-head term matching. The SRSW syntactic restriction allows exactly one writer
-occurrence per clause. Since \verb|Xs| already occurred as writer in the head,
-it cannot appear as writer again in the body. Its paired reader \verb|Xs?|
+When the goal matches the head, the writer \verb|Xs| receives a value.
+It cannot appear as writer again in the body. Its paired reader \verb|Xs?|
 must be used instead.
 
-Similarly, \verb|Sum1| is a fresh writer created by the arithmetic assignment.
-It occurs once as writer (receiving the sum). To pass the value to the
-continuation, we use \verb|Sum1?|---passing the reader.
-
-\mypara{Common Error}
-Writing \verb|consumer(Xs, Sum1, Result)| would violate SRSW: \verb|Xs| would
-occur twice as writer (in head and body), and \verb|Sum1| likewise.
-
 \textbf{Principle:} In continuation calls, pass readers for values already
-received. The writer served its purpose during term matching; the reader carries
-the value forward.
+received.
 \end{formal}
-
-The \verb|ground(X?)| guard ensures we only consume elements that are fully available.
 
 \subsubsection{Concurrent Execution}
 
-When producer and consumer run concurrently, they interleave:
-
 \begin{verbatim}
 GLP> producer(H, 5), consumer(H?, 0, R).
-producer(X1, 5) :- :=/2(X3, -(5, 1)), producer(X4, X3?)
-consumer([5 | X4?], 0, X2) :- :=/2(X5, +(0, 5)), consumer(X4?, X5?, X6)
+producer(X1, 5) :- producer(X4, 4)
+consumer([5 | X4?], 0, X2) :- consumer(X4?, 5, X6)
 ...
 producer(X20, 0) :- true
 consumer([], 15, X22) :- true
@@ -544,15 +367,9 @@ R = 15
 \end{verbatim}
 %% [TBC - trace from GLP Programming]
 
-The trace shows interleaving: the producer emits an element, the consumer processes it, and so on. Neither runs to completion before the other starts---they cooperate through the shared stream.
-
 \subsection{List Reversal}
 
-Reversing a list illustrates the difference between naive recursion and efficient iteration with an accumulator.
-
 \subsubsection{Naive Reverse}
-
-The naive approach: reverse the tail, then append the head at the end.
 
 \begin{verbatim}
 reverse([], []).
@@ -564,11 +381,9 @@ append([], Ys, Ys?).
 append([X|Xs], Ys, [X?|Zs?]) :- append(Xs?, Ys?, Zs).
 \end{verbatim}
 
-This is correct but inefficient. Each recursive call to \verb|reverse| triggers an \verb|append| that walks the entire accumulated result. For a list of length $n$, the total work is $O(n^2)$.
+This is $O(n^2)$.
 
 \subsubsection{Reverse with Accumulator}
-
-The efficient version uses an accumulator to build the result during a single pass:
 
 \begin{verbatim}
 reverse(Xs, Ys?) :- reverse_acc(Xs?, [], Ys).
@@ -577,7 +392,7 @@ reverse_acc([], Acc, Acc?).
 reverse_acc([X|Xs], Acc, Ys?) :- reverse_acc(Xs?, [X?|Acc?], Ys).
 \end{verbatim}
 
-Each element is prepended to the accumulator as we traverse the list. When we reach the end, the accumulator holds the reversed list. Total work: $O(n)$.
+Total work: $O(n)$.
 
 \begin{verbatim}
 GLP> reverse([a,b,c], Ys).
@@ -591,15 +406,9 @@ Ys = [c,b,a]
 \end{verbatim}
 %% [TBC - trace from GLP Programming]
 
-The accumulator version is \emph{iterative}: a single process steps through the list, updating its state at each step. The call to \verb|reverse_acc| in the body is in \emph{tail position}---nothing remains to be done after it returns.
-
 \subsection{Stream Merging}
 
-Merging combines multiple input streams into a single output stream. This is essential for many-to-one communication: multiple producers sharing a single consumer.
-
 \subsubsection{Simple Fair Merge}
-
-The simplest merge alternates between two input streams:
 
 \begin{verbatim}
 merge([X|Xs], Ys, [X?|Zs?]) :- merge(Ys?, Xs?, Zs).
@@ -608,24 +417,17 @@ merge([], Ys, Ys?).
 merge(Xs, [], Xs?).
 \end{verbatim}
 
-The key to fairness is swapping the input streams after each element: \verb|merge(Ys?, Xs?, Zs)| puts the second input first. This ensures neither stream is starved.
+The key to fairness is swapping inputs: \verb|merge(Ys?, Xs?, Zs)|.
 
 \begin{verbatim}
 GLP> merge([1,2,3], [a,b], Xs).
-merge([1,2,3], [a,b], Xs) :- merge([a,b], [2,3], X1)
-merge([a,b], [2,3], X1) :- merge([2,3], [b], X2)
-merge([2,3], [b], X2) :- merge([b], [3], X3)
-merge([b], [3], X3) :- merge([3], [], X4)
-merge([3], [], X4) :- merge([], [], X5)
-merge([], [], X5) :- true
+...
 Xs = [1, a, 2, b, 3]
 -> succeeds
 \end{verbatim}
 %% [TBC - trace from GLP Programming]
 
 \subsubsection{Dynamic Merge}
-
-In many applications, the set of producers changes dynamically. A process may fork, creating a new stream that should join the merge. The \emph{dynamic merge} allows adding new streams via special \verb|merge(NewStream)| messages:
 
 \begin{verbatim}
 dmerge([merge(Ws)|Xs], Ys, Zs?) :-
@@ -645,11 +447,7 @@ dmerge([], [], []).
 dmerger(Ws, Xs, Out?) :- dmerge(Ws?, Xs?, Out).
 \end{verbatim}
 
-The type guards (\verb|tuple|, \verb|constant|) distinguish regular messages from \verb|merge| requests.
-
 \subsubsection{Static Balanced Merge Tree}
-
-When the number of streams is known in advance, a balanced tree provides $O(\log n)$ delay:
 
 \begin{verbatim}
 merge_tree([Xs], Xs?).
@@ -666,22 +464,16 @@ merge_layer([Xs,Ys|Rest], [Zs?|Layer?]) :-
 
 \subsection{Stream Distribution}
 
-Distribution is the dual of merging: one input stream to many output streams.
-
 \subsubsection{Broadcast Distribution}
-
-Broadcast sends each input element to all output streams:
 
 \begin{verbatim}
 distribute([X|Xs], [X?|Ys?], [X?|Zs?]) :- ground(X?) | distribute(Xs?, Ys, Zs).
 distribute([], [], []).
 \end{verbatim}
 
-The \verb|ground(X?)| guard is essential. Without it, placing \verb|X?| in multiple output positions would violate SRSW. The guard verifies that \verb|X| contains no unbound variables, making replication safe.
+The \verb|ground(X?)| guard permits replication.
 
 \subsubsection{Indexed Distribution}
-
-Indexed distribution routes each message to a specific output based on a tag:
 
 \begin{verbatim}
 distribute_indexed([send(1,X)|In], [X?|Out1?], Out2) :-
@@ -693,18 +485,14 @@ distribute_indexed([], [], []).
 
 \subsection{Stream Observers}
 
-An \emph{observer} monitors a stream without disrupting the communication between producer and consumer.
-
 \begin{verbatim}
 observer([X|Xs], [X?|Ys?], [X?|Zs?]) :- ground(X?) | observer(Xs?, Ys, Zs).
 observer([], [], []).
 \end{verbatim}
 
-The \verb|ground(X?)| guard is required because \verb|X?| appears twice---once forwarded to the consumer, once copied to the observation stream.
-
 \subsection{Ripple-Carry Adder}
 
-An n-bit ripple-carry adder chains full-adders, with each stage's carry-out feeding the next stage's carry-in. This example combines streams with the logic gates from Section~\ref{sec:constants}:
+An n-bit ripple-carry adder chains full-adders:
 
 \begin{verbatim}
 adder([],[],Cin,[Cin?]).
@@ -712,8 +500,6 @@ adder([A|As],[B|Bs],Cin,[S?|Ss?]) :-
     full_adder(A?,B?,Cin?,S,Cout),
     adder(As?,Bs?,Cout?,Ss).
 \end{verbatim}
-
-Adding 101 + 110 (5 + 6, LSB first):
 
 \begin{verbatim}
 GLP> adder([1,0,1],[1,1,0],0,R).
@@ -723,15 +509,11 @@ R = [0,0,0,1]
 \end{verbatim}
 %% [TBC - trace from GLP Programming]
 
-The result \verb|[0,0,0,1]| is 1011 in binary (LSB first), which is 11 in decimal: $5 + 6 = 11$.
+The result \verb|[0,0,0,1]| is 1011 in binary (LSB first), which is 11: $5 + 6 = 11$.
 
 \subsection{Buffered Communication}
 
-In producer-consumer systems, a fast producer can overwhelm a slow consumer. \emph{Back-pressure} is the mechanism by which consumers signal producers to slow down.
-
 \subsubsection{Sliding Window Buffer}
-
-A fixed-size buffer can be implemented using a sliding window of pre-allocated slots:
 
 \begin{verbatim}
 bb :- consumer([X1?, X2? | Xs]), producer(1, [X1, X2 | Xs?]).
@@ -741,19 +523,7 @@ consumer([X1, X2, X3 | Xs?]) :- known(X1?) | consumer([X2?, X3? | Xs]).
 producer(N, [N? | Xs]) :- number(N?) | N1 := N? + 1, producer(N1?, Xs?).
 \end{verbatim}
 
-The buffer size (2) is determined by the number of pre-allocated slots \verb|X1, X2|. The consumer holds readers for these slots; the producer holds writers.
-
-\begin{itemize}
-\item \textbf{Initial state:} Consumer has \verb|[X1?, X2? | Xs]| (two reader slots, writer tail). Producer has \verb|[X1, X2 | Xs?]| (two writer slots, reader tail).
-\item \textbf{Producer writes:} Binds \verb|X1 = 1|, \verb|X2 = 2|, then continues with \verb|producer(3, Xs?)|.
-\item \textbf{Consumer waits:} Needs three elements \verb|[X1, X2, X3 | Xs?]| but only two are available. Suspends.
-\item \textbf{Producer writes into tail:} Constructs \verb|[3? | Ys]| into \verb|Xs|, providing the third element.
-\item \textbf{Consumer resumes:} Matches, slides window to \verb|[X2?, X3? | Ys]|.
-\end{itemize}
-
-The producer can never get more than 2 elements ahead of the consumer. If the consumer stops, the producer suspends after filling the buffer---back-pressure without difference lists.
-
-The following trace uses a terminating version with a consumption limit of 10:
+The buffer size (2) is the number of pre-allocated slots. The following trace uses a terminating version:
 
 \begin{verbatim}
 bb_test :- consumer([X1?, X2? | Xs], 10), producer(1, [X1, X2 | Xs?]).
@@ -784,11 +554,9 @@ The consumer suspends until the producer fills the first slot. Once running, the
 
 \subsection{Objects and Monitors}
 
-Processes maintaining state in recursive parameters, responding to messages via streams, are the \GLP realization of \emph{objects}. A \emph{monitor} is an object accessed by multiple clients through a merge network.
+Processes maintaining state in recursive parameters are the \GLP realization of \emph{objects}. A \emph{monitor} is an object accessed by multiple clients through a merge.
 
 \subsubsection{Counter}
-
-The simplest monitor maintains a counter responding to \verb|clear|, \verb|add|, and \verb|read(X)|:
 
 \begin{verbatim}
 counter(In) :- counter_loop(In?, 0).
@@ -799,12 +567,8 @@ counter_loop([read(C?)|In], C) :- number(C?) | counter_loop(In?, C?).
 counter_loop([], _).
 \end{verbatim}
 
-The \verb|read(C?)| places the state reader directly in the message structure. The client sends \verb|read(V)| retaining reader \verb|V?|; when the clause head matches, the client's writer \verb|V| receives the current count.
-
-The \verb|number(C?)| guard permits replication of \verb|C?| to both the message and the recursive call (per Formal Box~\ref{formal:guards-multiple-reads}).
-
 \begin{verbatim}
-GLP> counter([add, add, add, read(X), clear, add, read(Y)]).
+GLP> counter([add, add, add, read(X), clear, add, read(Y), []]).
 ...
 X = 3
 Y = 1
@@ -816,48 +580,40 @@ Y = 1
 \label{formal:guards-multiple-reads}
 
 The counter's \verb|read| clause uses \verb|number(C?)| to enable replication.
-Here \verb|C?| appears twice in the body. Without the guard, this would violate
-SRSW. Why does \verb|number(C?)| make it safe?
+Here \verb|C?| appears twice in the body.
 
 \mypara{The Danger of Replicating Readers}
-If \verb|C?|'s value contains an unbound writer \verb|W|, then both occurrences
-of \verb|C?| would have access to \verb|W|. Two references to the same writer
-violates single-writer---both could attempt to bind \verb|W|.
+If \verb|C?|'s value contains an unbound writer, both occurrences
+would have access to it---violating single-writer.
 
 \mypara{Ground Guard}
 The guard \verb|ground(C?)| succeeds only if \verb|C?| contains no unbound
-variables. A ground term can be safely replicated because there are no writers
-to share.
+variables.
 
 \mypara{Type Guards}
 Type guards like \verb|constant(X?)|, \verb|number(X?)|, and \verb|integer(X?)|
-also enable multiple reader occurrences. These types cannot contain
-variables, so success implies groundness.
+also enable multiple reader occurrences---these types cannot contain variables.
 
 \mypara{The known Guard Does Not Enable Multiple Reads}
 The guard \verb|known(X?)| only tests that \verb|X?| is bound to \emph{some}
-value---which may contain unbound variables. After \verb|known(X?)| succeeds,
-replicating \verb|X?| could still replicate access to writers embedded in the
-value. Thus \verb|known| does not grant multiple-read permission.
+value---which may contain unbound variables.
 
 \textbf{Summary:}
 \begin{center}
 \begin{tabular}{ll}
 \textbf{Guard} & \textbf{Multiple reads?} \\
 \hline
-\verb|ground(X?)| & Yes (no variables) \\
-\verb|constant(X?)| & Yes (constants have no variables) \\
-\verb|number(X?)| & Yes (numbers have no variables) \\
-\verb|integer(X?)| & Yes (integers have no variables) \\
-\verb|tuple(X?)| & No (tuple may contain variables) \\
-\verb|known(X?)| & No (value may contain writers) \\
+\verb|ground(X?)| & Yes \\
+\verb|constant(X?)| & Yes \\
+\verb|number(X?)| & Yes \\
+\verb|integer(X?)| & Yes \\
+\verb|tuple(X?)| & No \\
+\verb|known(X?)| & No \\
 \end{tabular}
 \end{center}
 \end{formal}
 
 \subsubsection{Accumulator}
-
-An accumulator with multiple concurrent clients demonstrates the monitor pattern:
 
 \begin{verbatim}
 accumulator(In) :- acc_loop(In?, 0).
@@ -868,7 +624,7 @@ acc_loop([read(Sum?)|In], Sum) :- number(Sum?) | acc_loop(In?, Sum?).
 acc_loop([], _).
 \end{verbatim}
 
-Multiple clients can send to the accumulator through a merge:
+Multiple clients through a merge:
 
 \begin{verbatim}
 test_acc :-
@@ -881,20 +637,353 @@ client1([add(10), add(20), read(X) | []]) :- number(X?) | true.
 client2([add(5), read(Y) | []]) :- number(Y?) | true.
 \end{verbatim}
 
-The merge serializes requests from multiple clients. Each client sees a consistent view of the accumulator state at the moment its \verb|read| is processed.
-
 %% ============================================
-%% Section 3: Recursive Programming (TBC)
+%% Section 3: Recursive Programming
 %% ============================================
 
 \section{Recursive Programming}
 \label{sec:recursive}
-%% [TBC] Merge from recursive.tex
+
+We distinguish \emph{tail recursion} (iteration by a single process) from \emph{true recursion} (concurrent processes forming a computation tree).
+
+\subsection{Peano Arithmetic}
+
+Peano arithmetic represents natural numbers using zero and successor:
+
+\begin{verbatim}
+plus(0, Y, Y?).
+plus(s(X), Y, s(Z?)) :- plus(X?, Y?, Z).
+
+times(0, _, 0).
+times(s(X), Y, Z?) :- tuple(Y?) | times(X?, Y?, XY), plus(XY?, Y?, Z).
+
+lesseq(0, X) :- natural_number(X?) | true.
+lesseq(s(X), s(Y)) :- lesseq(X?, Y?).
+
+natural_number(0).
+natural_number(s(X)) :- natural_number(X?).
+\end{verbatim}
+
+\subsection{Integer Arithmetic}
+
+\begin{verbatim}
+double(X, Y?) :- Y := X? * 2.
+average(X, Y, Avg?) :- Avg := (X? + Y?) / 2.
+
+abs(X, X?) :- X? >= 0 | true.
+abs(X, Y?) :- X? < 0 | Y := 0 - X?.
+
+max(X, Y, X?) :- X? >= Y? | true.
+max(X, Y, Y?) :- X? < Y? | true.
+\end{verbatim}
+
+\subsection{Recursive Numeric Functions}
+
+\paragraph{Factorial.}
+
+\begin{verbatim}
+factorial(0, 1).
+factorial(1, 1).
+factorial(N, F?) :-
+    N? > 1 |
+    N1 := N? - 1,
+    factorial(N1?, F1),
+    F := N? * F1?.
+\end{verbatim}
+
+\paragraph{Tail-Recursive Factorial.}
+
+\begin{verbatim}
+factorial(N, F?) :- fact_acc(N?, 1, F).
+
+fact_acc(0, Acc, Acc?).
+fact_acc(N, Acc, F?) :-
+    N? > 0 |
+    Acc1 := Acc? * N?,
+    N1 := N? - 1,
+    fact_acc(N1?, Acc1?, F).
+\end{verbatim}
+
+\paragraph{Fibonacci.}
+
+\begin{verbatim}
+fib(0, 0).
+fib(1, 1).
+fib(N, F?) :-
+    N? > 1 |
+    N1 := N? - 1,
+    N2 := N? - 2,
+    fib(N1?, F1),
+    fib(N2?, F2),
+    F := F1? + F2?.
+\end{verbatim}
+
+This spawns $O(2^N)$ processes.
+
+\paragraph{Linear Fibonacci.}
+
+\begin{verbatim}
+fib_linear(N, F?) :- fib_acc(N?, 0, 1, F).
+
+fib_acc(0, A, _, A?).
+fib_acc(N, A, B, F?) :-
+    N? > 0 |
+    N1 := N? - 1,
+    AB := A? + B?,
+    fib_acc(N1?, B?, AB?, F).
+\end{verbatim}
+
+\subsection{Flattening Nested Lists}
+
+\begin{verbatim}
+flatten(Xs, Ys?) :- flatten_acc(Xs?, [], Ys).
+
+flatten_acc([], Acc, Acc?).
+flatten_acc([X|Xs], Acc, Ys?) :-
+    ground(X?), is_list(X?) |
+    flatten_acc(X?, Acc?, Acc1),
+    flatten_acc(Xs?, Acc1?, Ys).
+flatten_acc([X|Xs], Acc, Ys?) :-
+    otherwise |
+    flatten_acc(Xs?, [X?|Acc?], Ys).
+\end{verbatim}
+
+\subsection{Binary Trees}
+
+\begin{verbatim}
+tree_sum(void, 0).
+tree_sum(tree(V, L, R), S?) :-
+    tree_sum(L?, SL),
+    tree_sum(R?, SR),
+    S := V? + SL? + SR?.
+\end{verbatim}
+
+The two recursive calls spawn concurrently.
+
+\subsection{Insertion Sort}
+
+\begin{verbatim}
+insertion_sort([], []).
+insertion_sort([X|Xs], Sorted?) :-
+    insertion_sort(Xs?, SortedTail),
+    insert(X?, SortedTail?, Sorted).
+
+insert(X, [], [X?]).
+insert(X, [Y|Ys], [X?|[Y?|Ys?]]) :- X? < Y? | true.
+insert(X, [Y|Ys], [Y?|Zs?]) :- X? >= Y? | insert(X?, Ys?, Zs).
+\end{verbatim}
+
+\subsection{Merge Sort}
+
+\begin{verbatim}
+mergesort([], []).
+mergesort([X], [X?]).
+mergesort([A,B|Xs], Sorted?) :-
+    split2(A?, B?, Xs?, Left, Right),
+    mergesort(Left?, SortedL),
+    mergesort(Right?, SortedR),
+    merge_sorted(SortedL?, SortedR?, Sorted).
+
+split2(A, B, [], [A?], [B?]).
+split2(A, B, [X], [A?,X?], [B?]).
+split2(A, B, [X,Y|Xs], [A?|Left?], [B?|Right?]) :-
+    split2(X?, Y?, Xs?, Left, Right).
+
+merge_sorted([], Ys, Ys?).
+merge_sorted(Xs, [], Xs?).
+merge_sorted([X|Xs], [Y|Ys], [X?|Zs?]) :-
+    number(X?), number(Y?), X? =< Y? |
+    merge_sorted(Xs?, [Y?|Ys?], Zs).
+merge_sorted([X|Xs], [Y|Ys], [Y?|Zs?]) :-
+    number(X?), number(Y?), X? > Y? |
+    merge_sorted([X?|Xs?], Ys?, Zs).
+\end{verbatim}
+
+\begin{verbatim}
+GLP> mergesort([3,1,4,1,5,9,2,6], S).
+...
+S = [1,1,2,3,4,5,6,9]
+-> succeeds
+\end{verbatim}
+%% [TBC - trace from GLP Programming]
+
+\subsection{Non-Ground Stream Distributor}
+
+For messages containing unbound subterms:
+
+\begin{verbatim}
+distribute_ng([X|Xs], [Y?|Ys?], [Z?|Zs?]) :-
+    copy(X?, Y, Z),
+    distribute_ng(Xs?, Ys, Zs).
+distribute_ng([], [], []).
+
+copy(X, Y, Z) :- constant(X?) | Y = X?, Z = X?.
+copy(X, Y, Z) :- number(X?) | Y = X?, Z = X?.
+copy(X, Y, Z) :- compound(X?) |
+    X? =.. [F|Args],
+    copy_list(Args?, Args1, Args2),
+    Y =.. [F?|Args1?],
+    Z =.. [F?|Args2?].
+
+copy_list([], [], []).
+copy_list([H|T], [H1?|T1?], [H2?|T2?]) :-
+    copy(H?, H1, H2),
+    copy_list(T?, T1, T2).
+\end{verbatim}
+
+If a subterm is unbound, none of the guards succeed, so the goal suspends. When the producer later binds the subterm, copying proceeds.
+
+\subsection{Tree Substitution}
+
+\begin{verbatim}
+substitute(_, _, void, void).
+substitute(X, Y, tree(Leaf, Left, Right), tree(Leaf1?, Left1?, Right1?)) :-
+    ground(X?), ground(Y?) |
+    replace(X?, Y?, Leaf?, Leaf1),
+    substitute(X?, Y?, Left?, Left1),
+    substitute(X?, Y?, Right?, Right1).
+
+replace(X, Y, Z, Y?) :- ground(X?), X? =?= Z? | true.
+replace(X, _, Z, Z?) :- ground(X?), ~(X? =?= Z?) | true.
+\end{verbatim}
 
 %% ============================================
-%% Section 4: Metaprogramming (TBC)
+%% Section 4: Metaprogramming
 %% ============================================
 
 \section{Metaprogramming}
 \label{sec:meta}
-%% [TBC] Merge from meta.tex
+
+Programs that manipulate, interpret, and transform other programs. In logic programming, programs are data: clauses are terms, goals are terms.
+
+\subsection{Programs as Data}
+
+A \GLP clause:
+\begin{verbatim}
+merge([X|Xs], Ys, [X?|Zs?]) :- merge(Xs?, Ys?, Zs).
+\end{verbatim}
+
+can be represented using a \verb|reduce/2| encoding:
+\begin{verbatim}
+reduce(merge([X|Xs], Ys, [X?|Zs?]), merge(Xs?, Ys?, Zs)).
+reduce(merge(Xs, [Y|Ys], [Y?|Zs?]), merge(Xs?, Ys?, Zs)).
+reduce(merge([], [], []), true).
+\end{verbatim}
+
+\subsection{Trust Mode Meta-Interpreter}
+
+\begin{verbatim}
+run(M, true).                                    % halt
+run(M, (A,B)) :- run(M?, A?), run(M?, B?).       % fork
+run(M, M1 # G) :- run(M1?, G?).                  % cross-module
+run(M, A) :- tuple(A?) | M # reduce(A?, B), run(M?, B?).  % reduce
+\end{verbatim}
+
+\begin{itemize}
+\item \textbf{Halt}: \verb|true| terminates.
+\item \textbf{Fork}: Conjunction spawns two processes.
+\item \textbf{Cross-module}: \verb|M1 # G| switches modules.
+\item \textbf{Reduce}: Look up clause, continue with body.
+\end{itemize}
+
+\begin{verbatim}
+GLP> run(merge, merge([1,2], [3,4], Zs)).
+...
+Zs = [1, 3, 2, 4]
+-> succeeds
+\end{verbatim}
+%% [TBC - trace from GLP Programming]
+
+\subsection{Fail-safe Meta-Interpreter}
+
+Reports failures using short-circuit:
+
+\begin{verbatim}
+run(M, true, L, L?).                             % halt - close circuit
+run(M, (A,B), L, R?) :-                          % fork - split chain
+    run(M?, A?, L?, Mid),
+    run(M?, B?, Mid?, R).
+run(M, M1 # G, L, R?) :- run(M1?, G?, L?, R).    % cross-module
+run(M, failed(A), L, [failed(A?)|L?]).           % report failure
+run(M, A, L, R?) :-                              % reduce
+    tuple(A?) |
+    M # reduce(A?, B),
+    run(M?, B?, L?, R).
+\end{verbatim}
+
+The object program must include:
+\begin{verbatim}
+reduce(A, failed(A?)) :- otherwise | true.
+\end{verbatim}
+
+\subsection{Control Meta-Interpreter}
+
+Adds control stream for suspend/resume/abort:
+
+\begin{verbatim}
+run(M, true, _, L, L?).                          % halt
+run(M, (A,B), Cs, L, R?) :-                      % fork
+    ground(Cs?) |
+    run(M?, A?, Cs?, L?, Mid),
+    run(M?, B?, Cs?, Mid?, R).
+run(M, M1 # G, Cs, L, R?) :-                     % cross-module
+    run(M1?, G?, Cs?, L?, R).
+run(M, A, [suspend|Cs], L, R?) :-                % suspend
+    suspended_run(M?, A?, Cs?, L?, R).
+run(M, A, Cs, L, R?) :-                          % reduce
+    tuple(A?) |
+    M # reduce(A?, B),
+    run(M?, B?, Cs?, L?, R).
+
+suspended_run(M, A, [resume|Cs], L, R?) :-       % resume
+    run(M?, A?, Cs?, L?, R).
+suspended_run(_, A, [abort|_], L, [A?|L?]).      % abort + dump
+\end{verbatim}
+
+The \verb|ground(Cs?)| guard allows the control stream to be shared among all forked processes.
+
+\subsection{Tracing Meta-Interpreter}
+
+Builds an execution tree:
+
+\begin{verbatim}
+run(M, true, true).                              % halt
+run(M, (A,B), fork(TA?, TB?)) :-                 % fork
+    run(M?, A?, TA),
+    run(M?, B?, TB).
+run(M, A, reduction(A_copy?, I?, TB?)) :-        % reduce
+    tuple(A?) |
+    copy(A?, A_exec, A_copy),
+    M # reduce(A_exec?, B, I),
+    run(M?, B?, TB).
+\end{verbatim}
+
+The \verb|copy/3| predicate (Section~\ref{sec:recursive}) creates independent copies: \verb|A_exec| drives execution, \verb|A_copy| is frozen for the trace.
+
+The object program provides clause indices:
+\begin{verbatim}
+reduce(merge([X|Xs], Ys, [X?|Zs?]), merge(Xs?, Ys?, Zs), 1).
+reduce(merge(Xs, [Y|Ys], [Y?|Zs?]), merge(Xs?, Ys?, Zs), 2).
+reduce(merge([], [], []), true, 3).
+\end{verbatim}
+
+\begin{verbatim}
+GLP> run(merge, merge([1,2], [a,b], Zs), Tree).
+Zs = [1, a, 2, b]
+Tree = reduction(merge([1,2], [a,b], [1,a,2,b]), 1,
+         reduction(merge([2], [a,b], [a,2,b]), 2,
+           ...))
+-> succeeds
+\end{verbatim}
+%% [TBC - trace from GLP Programming]
+
+Given a trace, replay executes deterministically:
+\begin{verbatim}
+replay(M, true, true).
+replay(M, fork(T1, T2), (A?, B?)) :-
+    replay(M?, T1?, A),
+    replay(M?, T2?, B).
+replay(M, reduction(_, I, SubTree), Goal?) :-
+    M # reduce_by_index(I?, Goal, Body),
+    replay(M?, SubTree?, Body?).
+\end{verbatim}
