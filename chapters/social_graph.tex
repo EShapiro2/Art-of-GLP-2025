@@ -23,13 +23,12 @@ Each agent runs on a personal device and maintains its portion of the graph: its
 Each agent begins with the goal \verb|agent(Id, ChUser, ChNet)| where \verb|Id| is the agent's unique identifier, \verb|ChUser| provides bidirectional communication with the user interface, and \verb|ChNet| connects to the network:
 
 \begin{verbatim}
-agent(Id, ChUser, ChNet) :-
-    ChUser = ch(UserIn, UserOut), ChNet = ch(NetIn, NetOut) |
+agent(Id, ch(UserIn, UserOut), ch(NetIn, NetOut)) :-
     merge(UserIn?, NetIn?, In),
     social_graph(Id?, In?, [(user, UserOut), (net, NetOut)]).
 \end{verbatim}
 
-The initialization extracts input and output streams from user and network channels, merges inputs into a unified stream \verb|In|, and stores output streams in the initial friends list with special identifiers \verb|user| and \verb|net|.
+The initialization pattern-matches the channel structures directly in the head, avoiding guard-based unification that would violate SRSW.  The input streams are merged into a unified stream \verb|In|, and output streams are stored in the initial friends list with special identifiers \verb|user| and \verb|net|.
 
 The \verb|social_graph| predicate is the main event loop, processing messages from the merged input stream. Its arguments are: the agent's identity, the input message stream, and the friends list (an association list mapping names to output streams).
 
@@ -58,8 +57,8 @@ The agent sends an introduction message through the network channel containing i
 When an agent receives a self-introduction:
 
 \begin{verbatim}
-social_graph(Id, [msg(From, Id, intro(From, From, Resp))|In], Fs) :-
-    ground(Id), ground(From) |
+social_graph(Id, [msg(From, Id?, intro(From?, From?, Resp))|In], Fs) :-
+    ground(Id?), ground(From?) |
     lookup_send(user, msg(agent, user, befriend(From?, Resp?)), Fs?, Fs1),
     social_graph(Id?, In?, Fs1?).
 \end{verbatim}
