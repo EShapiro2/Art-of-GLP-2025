@@ -1,0 +1,262 @@
+%% Chapter: Module System
+%% Part II — extends moded types with modular structure
+%% New chapter following typed_programming.tex
+
+\chapter{Module System}
+\label{ch:modules}
+
+Programs of any size require modular structure.  This chapter presents a module system for \GLP that integrates with the moded type system, enabling type-safe composition of separately developed components.
+
+\section{Design Principles}
+\label{sec:mod-principles}
+
+The module system rests on four principles:
+
+\mypara{Hierarchy mirrors the file system}
+A \GLP project is a directory tree.  Each \verb|.glp| file is a module; each directory is a scope.  A distinguished file \verb|self.glp| in any directory defines types shared by all modules in that directory and its descendants, following FCP's \verb|self.cp| convention.
+
+\mypara{Implicit ancestor scoping}
+A module sees every type and procedure definition from every ancestor scope---from its directory's \verb|self.glp| up through the project root---without any import directive.  This eliminates type duplication: shared protocol types are defined once at the appropriate level.
+
+\mypara{Self-contained type checking}
+Every module declares the full type signature of every procedure it calls.  Its own procedures are declared with \verb|procedure| or \verb|exported procedure|; procedures from other modules are declared with \verb|imported procedure|.  The type checker needs only the module's own text and its ancestor scope---it never reads another module's source.
+
+\mypara{Structural type compatibility}
+Type identity is structural: two types with the same automaton are compatible regardless of their names or the modules in which they are defined.
+
+\section{Module Structure}
+\label{sec:mod-structure}
+
+A typical project:
+
+\begin{verbatim}
+social/
+  self.glp            -- shared types: Response, AgentContent, ...
+  agent.glp           -- exported agent/4, private helpers
+  ui/
+    self.glp          -- (optional) UI-specific types
+    mediator.glp      -- exported ui_mediator/5
+    actors.glp        -- exported actor procedures
+  boot.glp            -- imports everything, wires system together
+\end{verbatim}
+
+\verb|self.glp| files contain only type definitions.  They have no procedures; their purpose is to establish the type vocabulary visible to all modules at their level and below.
+
+\section{Procedure Declarations}
+\label{sec:mod-declarations}
+
+Every procedure declaration is exactly one of three kinds:
+
+\begin{center}
+\begin{tabular}{lll}
+\textbf{Kind} & \textbf{Syntax} & \textbf{Meaning} \\
+\hline
+Private   & \verb|procedure p(...).|           & Local to module and descendants \\
+Exported  & \verb|exported procedure p(...).|  & Reachable from other modules \\
+Imported  & \verb|imported procedure M#p(...).| & Declares dependency on module~M \\
+\end{tabular}
+\end{center}
+
+An \verb|exported| declaration serves as a module's public interface.  An \verb|imported| declaration records the caller's expectations about a remote procedure's type signature.  Together they carry all the information needed for type checking without cross-module access.
+
+\subsection{Example: Social Agent}
+
+The social agent module exports a single procedure and keeps its helpers private:
+
+\begin{verbatim}
+-module(agent).
+
+exported procedure agent(Constant?, UserInStream?,
+                         NetInStream?, OutputsList?).
+
+procedure merge(Stream?, Stream?, Stream).
+procedure lookup_send(OutputKey?, OutputMsg?,
+                      OutputsList?, OutputsList).
+%% ... more private helpers ...
+
+agent(Id, [msg('_user', Id1, connect(Target))|UserIn], NetIn, Outs) :-
+    Id? =?= Id1?, ground(Target?) |
+    lookup_send('_net', msg(Target?, intro(Id?, Resp)), Outs?, Outs1),
+    %% ...
+\end{verbatim}
+
+The private \verb|merge/3| and \verb|lookup_send/4| are invisible outside this module.  A boot module that needs to call the agent declares:
+
+\begin{verbatim}
+imported procedure agent#agent(Constant?, UserInStream?,
+                               NetInStream?, OutputsList?).
+\end{verbatim}
+
+and calls it as:
+
+\begin{verbatim}
+agent # agent(alice, UserIn?, NetIn?,
+              [output('_user', AgentToUser),
+               output('_net', NetOut)])
+\end{verbatim}
+
+The type checker verifies this call against the local \verb|imported| declaration.  It does not read \verb|agent.glp|.
+
+\subsection{Ancestor Scoping}
+
+Types defined in \verb|self.glp| are visible to all modules in that directory and below without any import:
+
+\begin{verbatim}
+%% self.glp
+Response ::= accept(FriendChannel) ; no.
+AgentContent ::= befriend(Constant, Response?)
+               ; connected(Constant)
+               ; rejected.
+\end{verbatim}
+
+Both \verb|agent.glp| and \verb|ui/mediator.glp| can use \verb|Response| and \verb|AgentContent| directly.  A child directory may shadow an ancestor type with a redefinition; compatibility is checked structurally at each use site.
+
+\begin{formal}{Type Scope Assembly}
+\label{formal:scope-assembly}
+The type scope for a module $M$ at path $p$ in a project rooted at $r$ is constructed by:
+\begin{enumerate}
+\item Start with the prelude environment $E_0$ (built-in types: \verb|Stream|, \verb|Channel|, \verb|Constant|, \verb|Integer|, etc.).
+\item For each directory $d_1, d_2, \ldots, d_k$ on the path from $r$ to the directory containing $M$, if $d_i$ contains \verb|self.glp| with type definitions $T_i$, compute $E_i = E_{i-1} \cup T_i$ (later definitions shadow earlier ones).
+\item Compute $E_M = E_k \cup T_M$ where $T_M$ are the type definitions in $M$ itself.
+\end{enumerate}
+The resulting $E_M$ is the type environment used for type checking $M$.
+\end{formal}
+
+\section{Cross-Module Type Checking}
+\label{sec:mod-type-checking}
+
+When a module calls \verb|M # p(X?, Y)|, the type checker:
+
+\begin{enumerate}
+\item Finds the local \verb|imported procedure M#p(...)| declaration.
+\item Checks the call's arguments against the imported declaration's types, applying the standard well-typing rules including subtyping.
+\end{enumerate}
+
+No access to module $M$ is required.  The imported declaration carries the full type signature, and types referenced in it are resolved against the caller's type scope (which includes ancestor types).
+
+\begin{formal}{Cross-Module Well-Typing}
+\label{formal:cross-module-typing}
+A cross-module call \verb|M # p(a_1, ..., a_n)| in module $N$ is well-typed if:
+\begin{enumerate}
+\item $N$ contains a declaration \verb|imported procedure M#p(T_1, ..., T_n)|.
+\item For each argument $a_i$, the type of $a_i$ in the clause context is a subtype of $T_i$ (with appropriate mode variance).
+\end{enumerate}
+This is identical to the well-typing rule for local calls, substituting the imported declaration for a local one.
+\end{formal}
+
+\section{Project Compilation}
+\label{sec:project-compilation}
+
+\subsection{Overview}
+
+Project compilation transforms a hierarchy of modules into a single flat program.  All inter-module calls become local calls.  The output is indistinguishable from a hand-written single-file program.
+
+The transformation proceeds in four steps: discovery, type checking, procedure renaming, and call resolution.
+
+\subsection{Discovery}
+
+The compiler walks the project directory tree, collecting every \verb|.glp| file.  Each is parsed into a module AST.  The ancestor scope chain is constructed for each module as described in Section~\ref{sec:mod-structure}.
+
+\subsection{Type Checking}
+
+Each module is type-checked independently against its ancestor scope, exactly as for single-file compilation.  Imported declarations are verified against the caller's type scope.  Type checking completes before any renaming occurs.
+
+\subsection{Procedure Renaming}
+
+After type checking, every procedure in every module is prefixed with its module name.  This eliminates name collisions between modules that define procedures with the same name:
+
+\begin{center}
+\begin{tabular}{lll}
+\textbf{Module} & \textbf{Original} & \textbf{Renamed} \\
+\hline
+\verb|agent.glp|       & \verb|merge/3|        & \verb|agent:merge/3| \\
+\verb|agent.glp|       & \verb|agent/4|        & \verb|agent:agent/4| \\
+\verb|ui/mediator.glp| & \verb|ui_mediator/5|  & \verb|mediator:ui_mediator/5| \\
+\verb|boot.glp|        & \verb|merge/3|        & \verb|boot:merge/3| \\
+\verb|boot.glp|        & \verb|play1/0|        & \verb|boot:play1/0| \\
+\end{tabular}
+\end{center}
+
+Without renaming, \verb|agent.glp|'s \verb|merge/3| and \verb|boot.glp|'s \verb|merge/3| would collide in the combined program.
+
+\subsection{Call Resolution}
+
+Every goal in every clause body is resolved to its renamed target:
+
+\begin{itemize}
+\item \textbf{Local calls}: \verb|merge(X, Y, Z)| in \verb|agent.glp| becomes \verb|agent:merge(X, Y, Z)|.
+\item \textbf{Cross-module calls}: \verb|agent # agent(alice, ...)| in \verb|boot.glp| becomes \verb|agent:agent(alice, ...)|.
+\item \textbf{Prelude calls}: calls to built-in procedures (\verb|send|, \verb|receive|, \verb|new_channel|, etc.) remain unprefixed.
+\end{itemize}
+
+\subsection{Entry Points}
+
+The top-level module's exported procedures receive unprefixed aliases, allowing them to be invoked by name:
+
+\begin{verbatim}
+play1 :- boot:play1.
+play2 :- boot:play2.
+\end{verbatim}
+
+If no module exports procedures, all procedures in the top-level module receive aliases for backwards compatibility.
+
+\subsection{Output}
+
+The result is a single module containing all type definitions (deduplicated, inner scopes shadowing outer), all renamed procedures, and the entry-point aliases.  This module is compiled through the standard pipeline: partial evaluation, code generation, and execution.
+
+\begin{formal}{Correctness of Project Compilation}
+\label{formal:project-compilation}
+Project compilation preserves well-typing.  If every module in the project is independently well-typed under its ancestor scope, then the flattened program is well-typed under the combined type environment.
+
+The argument is straightforward: renaming is purely syntactic (replacing $f/n$ with $m{:}f/n$), and call resolution maps each call to the unique procedure that type checking already verified it against.  No new type relationships are introduced.
+\end{formal}
+
+\section{Dynamic Linking}
+\label{sec:dynamic-linking}
+
+Static project compilation is sufficient when all modules are available at compile time.  For cases where modules are loaded at runtime---such as mobile agents or plugin architectures---a dynamic linking mechanism is needed.
+
+\subsection{Load-Time Verification}
+
+When a module $N$ is loaded dynamically and calls a procedure from a separately compiled module $M$, the loader verifies that $M$'s \verb|exported| declaration is subtype-compatible with $N$'s \verb|imported| declaration.
+
+Specifically, the loader checks that the callee's exported type accepts at least the inputs the caller may send (contravariance on consume arguments) and produces at most the outputs the caller expects (covariance on produce arguments).
+
+The \verb|imported| declaration records the caller's expectations; the \verb|exported| declaration records the callee's guarantees.  The loader checks that guarantees meet expectations via the subtyping relation on moded procedure types.
+
+\subsection{Type Automata as Runtime Artifacts}
+
+For dynamic linking, type automata must be available at load time, not just at compile time.  A compiled module carries its type automata alongside its bytecode, enabling the subtype compatibility check without access to source code.
+
+% [TBC] Detailed specification of dynamic linking protocol
+
+\section{Validation: Child-Safe Social Graph}
+\label{sec:mod-cssg}
+
+The module system was validated by restructuring the Child-Safe Social Graph (CSSG) application---a four-agent system with parent-mediated child befriending---from a monolithic program into a modular project.
+
+The original CSSG consisted of three files totaling over 2,500 lines, with approximately 40 type definitions duplicated across all three.  The modular version:
+
+\begin{verbatim}
+cssg_modules/
+  self.glp            -- 40 type definitions, defined once
+  agent.glp           -- exported agent/4, 13 private procedures
+  ui/
+    mediator.glp      -- exported ui_mediator/5, 3 private procedures
+    actors.glp        -- 16 exported actor procedures
+  boot.glp            -- untyped orchestration, 7 plays
+\end{verbatim}
+
+Each typed module (\verb|agent.glp|, \verb|mediator.glp|, \verb|actors.glp|) is checked independently using only its local declarations and the shared types from \verb|self.glp|.  No module reads another module's source.  All seven plays---covering cold-call befriending, friend-mediated introduction (accept and reject scenarios), and parent-mediated child introduction (with acceptance and rejection by each party)---execute correctly.
+
+The \verb|boot.glp| module remains untyped because the generic stream utilities (\verb|tee|, \verb|merge|, \verb|sink|) that wire components together cannot express ``this operation preserves the specific type of its input'' without parameterized types.  This motivates the extension presented in Chapter~\ref{ch:parameterized-types}.
+
+\begin{exercises}
+\begin{enumerate}
+\item Consider a project with modules \verb|A.glp| and \verb|B.glp| that both define a private \verb|helper/2|.  Explain why project compilation avoids the name collision and describe the renamed procedure names.
+
+\item A module \verb|client.glp| declares \verb|imported procedure server#process(Request?, Response).|  The server module exports \verb|exported procedure process(ExtendedRequest?, Response).| where \verb|ExtendedRequest| is a supertype of \verb|Request|.  Is this compatible?  Explain using mode variance.
+
+\item The CSSG boot module uses generic \verb|tee/3| with type \verb|Stream| to split streams that are actually \verb|UserNotifyStream|.  Describe informally what a parameterized \verb|tee| would look like and why it would make the boot module typeable.
+\end{enumerate}
+\end{exercises}
